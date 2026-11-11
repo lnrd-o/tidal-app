@@ -19,3 +19,15 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Other apps that already offer this, with screenshots if you have them.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched the existing issues.
+          required: true

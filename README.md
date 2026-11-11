@@ -1,23 +1,27 @@
-# OpenTune
+<p align="center">
+  <img src="docs/branding/opentune-mark.svg" width="96" alt="OpenTune icon">
+</p>
 
-<img src="docs/branding/opentune-mark.svg" width="72" alt="OpenTune icon">
+<h1 align="center">OpenTune</h1>
 
-An unofficial open source music player for TIDAL, with local playback.
-
-Stream your TIDAL library in lossless quality, with synced lyrics, offline listening, Android Auto and twelve themes. Add your own audio files and folders, and they play alongside TIDAL in the same player. OpenTune has no ads, analytics or tracking, and it connects only to TIDAL.
-
-[![Check](https://github.com/yyan115/tidal-app/actions/workflows/check.yml/badge.svg)](https://github.com/yyan115/tidal-app/actions/workflows/check.yml)
-[![Release](https://img.shields.io/github/v/release/yyan115/tidal-app?include_prereleases)](https://github.com/yyan115/tidal-app/releases)
-[![License](https://img.shields.io/github/license/yyan115/tidal-app)](LICENSE)
+<p align="center">An unofficial open source music player for TIDAL, with local playback.</p>
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="220" alt="Home with a track to continue and saved albums">
-  &nbsp;
-  <img src="docs/screenshots/player.png" width="220" alt="Player showing the source format">
-  &nbsp;
-  <img src="docs/screenshots/lyrics.png" width="220" alt="Lyrics that follow the song">
-  &nbsp;
-  <img src="docs/screenshots/themes.png" width="220" alt="The theme picker with a live preview">
+  <a href="https://github.com/yyan115/tidal-app/actions/workflows/check.yml"><img src="https://github.com/yyan115/tidal-app/actions/workflows/check.yml/badge.svg" alt="Check"></a>
+  <a href="https://github.com/yyan115/tidal-app/releases"><img src="https://img.shields.io/github/v/release/yyan115/tidal-app?include_prereleases" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/yyan115/tidal-app" alt="License"></a>
+</p>
+
+Stream your TIDAL library in lossless quality, with synced lyrics, offline listening, Android Auto and twelve themes. Add your own audio files and folders, and they play alongside TIDAL in the same player. OpenTune has no ads, analytics or tracking.
+
+> [!NOTE]
+> OpenTune is currently in early access, so features may change or break between versions. If you find a bug or have an idea for a feature, please open an issue. Your feedback is welcome!
+
+<p align="center">
+  <img src="docs/screenshots/home.png" width="23%" alt="Home with a track to continue and saved albums">
+  <img src="docs/screenshots/player.png" width="23%" alt="Player showing the source format">
+  <img src="docs/screenshots/lyrics.png" width="23%" alt="Lyrics that follow the song">
+  <img src="docs/screenshots/themes.png" width="23%" alt="The theme picker with a live preview">
 </p>
 
 ## Install
@@ -64,17 +68,14 @@ gh attestation verify opentune-<version>.apk --repo yyan115/tidal-app
 
 - Twelve themes, each with its own colours, shapes and type, and a setting that follows the device. The picker previews every theme before you choose.
 - Listening statistics, and backup and restore.
-- Every piece of text is in a string resource, so translations can be added without changing code, see [docs/translating.md](docs/translating.md).
-
-The [usage guide](docs/usage.md) explains each part.
 
 ## Privacy
 
-OpenTune connects to TIDAL. It has no ads, analytics, crash reporting or server of its own. The only other connection is scrobbling, which is off by default. If you turn it on and add a token, OpenTune sends the artist, title and album of tracks you finish to the ListenBrainz server that you choose.
+OpenTune has no ads, analytics, crash reporting or server of its own. It connects to TIDAL for music and to GitHub to check for updates, which you can turn off in Settings. Scrobbling is off by default. If you turn it on and add a token, OpenTune sends the artist, title and album of tracks you finish to the ListenBrainz server that you choose.
 
 - You sign in on TIDAL's website in your browser. OpenTune never receives your password.
 - Account tokens are stored encrypted with a key held in the Android Keystore.
-- OpenTune requests no storage, location, contacts or microphone permissions. It reads only the files and folders that you pick with the system file picker.
+- OpenTune asks for notifications, and on Android 8 and 9 for storage, to save downloads. It requests no location, contacts or microphone permissions. It reads only the files and folders that you pick with the system file picker.
 - Android backup and device transfer exclude OpenTune data.
 
 TIDAL still receives your account and streaming requests.
@@ -97,8 +98,8 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Debug and rel
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Report security problems as described in [SECURITY.md](SECURITY.md). Maintainers can find the release process in [docs/releasing.md](docs/releasing.md).
+If you find a bug or have an idea for a feature, please open an issue with the form. Code contributions are not accepted at the moment. To report a security problem privately, use **Report a vulnerability** on the Security tab.
 
 ## License
 
-[Apache-2.0](LICENSE). Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[Apache-2.0](LICENSE). The licenses of the libraries and fonts are listed under **Settings**, **About**, **Licenses** in the app and in [THIRD_PARTY_NOTICES.txt](app/src/main/assets/licenses/THIRD_PARTY_NOTICES.txt).

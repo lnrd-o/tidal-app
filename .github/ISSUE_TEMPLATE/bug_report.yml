@@ -9,6 +9,19 @@ body:
       description: Shown in Settings, About.
     validations:
       required: true
+  - type: dropdown
+    id: affects
+    attributes:
+      label: Affects
+      description: Whether the problem happens with TIDAL, with local files or with both.
+      options: [TIDAL, Local files, Both, Not sure]
+    validations:
+      required: true
+  - type: input
+    id: installed-with
+    attributes:
+      label: Installed with
+      placeholder: GitHub APK, Obtainium
   - type: input
     id: device
     attributes:
@@ -33,3 +46,12 @@ body:
     attributes:
       label: Screenshots or logs
       description: Remove account details, tokens, signed audio URLs and private recordings.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I tested the latest version.
+          required: true

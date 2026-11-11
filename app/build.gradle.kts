@@ -8,7 +8,7 @@ val versionParts = releaseVersion.split('.').map(String::toInt)
 require(versionParts.size == 3 && versionParts.all { it in 0..999 })
 val noticeAssets = layout.buildDirectory.dir("generated/noticeAssets")
 val copyNotices = tasks.register<Sync>("copyNotices") {
-    from(rootProject.file("LICENSE"), rootProject.file("THIRD_PARTY_NOTICES.md"), rootProject.file("docs/licenses/Apache-2.0.txt"))
+    from(rootProject.file("LICENSE"), rootProject.file("docs/licenses/Apache-2.0.txt"))
     into(noticeAssets.map { it.dir("licenses") })
 }
 android {
@@ -48,7 +48,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures { compose = true; buildConfig = true }
-    // The list of languages in the system settings follows the values-xx folders, see docs/translating.md.
+    // The list of languages in the system settings follows the values-xx folders.
     androidResources { generateLocaleConfig = true }
     sourceSets.getByName("main").assets.srcDir(noticeAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

@@ -1,8 +1,37 @@
 name: Release
 
-# A release starts from a merged release pull request, which set VERSION, CHANGELOG.md and the F-Droid changelog.
-# The workflow builds and signs the APK, tests the upgrade from the previous release and creates a draft release.
-# Nothing becomes visible to users until the draft is published.
+# Releasing OpenTune
+#
+# One-time setup
+#   Create a PKCS12 keystore with the key alias "opentune". Keep the keystore and its password outside the repository, with an
+#   encrypted backup, because every update must use the same key. Add two repository secrets under Settings, Secrets and
+#   variables, Actions: RELEASE_KEYSTORE_BASE64 (the keystore, base64-encoded) and RELEASE_KEYSTORE_PASSWORD (its password,
+#   which is also the key password). The SHA-256 of the signing certificate is in .github/signing-certificate.sha256 and the
+#   workflow refuses an APK signed with any other certificate. Change that file and the fingerprint in README.md only when the
+#   key is rotated on purpose.
+#
+# Cutting a release
+#   main is protected, so a release has three parts.
+#   1. A pull request that prepares the version. List every change that users can see under Unreleased in CHANGELOG.md. On a
+#      branch run "python3 scripts/release.py prepare X.Y.Z", commit VERSION, CHANGELOG.md and fastlane, and open a pull request
+#      titled "Release X.Y.Z". Merge it when the checks pass.
+#   2. A run of this workflow on main with the same version. "dry_run" builds and tests without creating a release.
+#      The workflow runs the checks, verifies VERSION and the changelog entry, builds and signs the APK, checks its certificate,
+#      attests its provenance, installs the previous release on Android 8 and 16 emulators, installs the new APK over it, starts
+#      both and fails when the app stops or logs a crash, and then creates a draft release with the APK and SHA256SUMS.
+#      Versions below 1.0.0 are marked as prereleases. A draft is invisible to downloaders and to the update check in the app.
+#   3. Download the APK from the draft, install it over the current version on a phone, check sign-in, playback and a download,
+#      and publish the draft on GitHub or with "gh release edit vX.Y.Z --draft=false".
+#
+# Local checks
+#   scripts/smoke_upgrade.sh NEW.apk PREVIOUS.apk runs the upgrade check with an emulator or a device connected.
+#   For a local signed build set OPENTUNE_KEYSTORE, OPENTUNE_STORE_PASSWORD, OPENTUNE_KEY_PASSWORD and, when the alias differs,
+#   OPENTUNE_KEY_ALIAS in a private environment and run "./gradlew :app:assembleRelease". Keep these values out of shell history
+#   and out of committed Gradle properties.
+#
+# Version numbers
+#   VERSION holds MAJOR.MINOR.PATCH. Gradle derives the Android version code as MAJOR x 1,000,000 + MINOR x 1,000 + PATCH,
+#   so each component must stay at or below 999.
 
 on:
   workflow_dispatch:

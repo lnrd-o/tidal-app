@@ -34,7 +34,7 @@ class LicenceEntry(val name: String, val project: String, val licence: Int, val 
 private val FontPages = mapOf("Inter" to SettingsPage.Inter, "Instrument Serif" to SettingsPage.Serif, "Space Grotesk" to SettingsPage.Space, "JetBrains Mono" to SettingsPage.Mono)
 
 /**
- * Reads the components from the table of `THIRD_PARTY_NOTICES.md`: the component, a link to its project and its licence.
+ * Reads the components from the table of `THIRD_PARTY_NOTICES.txt`: the component, a link to its project and its licence.
  * OpenTune comes first, with its own licence.
  */
 fun licenceEntries(notices: String, appName: String): List<LicenceEntry> {
@@ -58,7 +58,7 @@ fun LicencesPage(onOpen: (SettingsPage) -> Unit) {
     val context = LocalContext.current
     val appName = stringResource(R.string.brand_name)
     val entries by produceState<List<LicenceEntry>?>(null) {
-        value = withContext(Dispatchers.IO) { licenceEntries(context.assets.open("licenses/THIRD_PARTY_NOTICES.md").bufferedReader().use { it.readText() }, appName) }
+        value = withContext(Dispatchers.IO) { licenceEntries(context.assets.open("licenses/THIRD_PARTY_NOTICES.txt").bufferedReader().use { it.readText() }, appName) }
     }
     val list = entries
     if (list == null) CircularProgressIndicator(Modifier.padding(24.dp))

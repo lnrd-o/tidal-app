@@ -71,7 +71,7 @@ def main() -> int:
     for path, number, kind, text in problems:
         print(f"{path.relative_to(ROOT)}:{number}: {kind} {text} is not a string resource")
     if problems:
-        print(f"\n{len(problems)} text(s) outside res/values/strings.xml. Move them there, see docs/translating.md.")
+        print(f"\n{len(problems)} text(s) outside res/values/strings.xml. Move them there.")
         return 1
     print("All user-visible text comes from string resources.")
     return 0

@@ -82,6 +82,8 @@ data class AppState(
     val hasMoreFavorites: Boolean = false,
     /** A release that is newer than the installed version, shown in a dialog until it is dismissed. */
     val update: io.github.yyan115.opentune.core.ReleaseNotice? = null,
+    /** What the "Undo" button of the message does, when the message has one. */
+    val undo: (() -> Unit)? = null,
 )
 
 @OptIn(FlowPreview::class)
@@ -246,8 +248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun search(text: String) { query.value = text; ui.update { it.copy(searchQuery = text) } }
     fun retrySearch() { searchRetry.update { it + 1 } }
-    fun messageShown() { ui.update { it.copy(message = null) } }
-    fun notify(message: String) { ui.update { it.copy(message = message) } }
+    fun messageShown() { ui.update { it.copy(message = null, undo = null) } }
+    fun notify(message: String) { ui.update { it.copy(message = message, undo = null) } }
+    /** A message with an Undo button. */
+    fun notify(message: String, undo: () -> Unit) { ui.update { it.copy(message = message, undo = undo) } }
 
     fun beginBrowserLogin(): PkceLogin {
         loginJob?.cancel()
@@ -438,8 +442,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun queue(track: Track, next: Boolean = false) {
         val player = controller ?: return
         if (player.mediaItemCount == 0) { play(listOf(track)); return }
-        player.addMediaItem(if (next) player.currentMediaItemIndex + 1 else player.mediaItemCount, app.sources.unresolved(track))
-        notify(app.getString(if (next) R.string.notify_plays_next else R.string.notify_added_queue))
+        val index = if (next) player.currentMediaItemIndex + 1 else player.mediaItemCount
+        player.addMediaItem(index, app.sources.unresolved(track))
+        // Undo takes the song out again, if it is still where it was put.
+        notify(app.getString(if (next) R.string.notify_plays_next else R.string.notify_added_queue)) {
+            controller?.let { p -> if (index < p.mediaItemCount && p.getMediaItemAt(index).mediaId == track.id) p.removeMediaItem(index) }
+        }
     }
     fun removeQueue(index: Int) { controller?.removeMediaItem(index) }
     fun moveQueue(from: Int, to: Int) { controller?.let { if (to in 0 until it.mediaItemCount) it.moveMediaItem(from, to) } }
@@ -657,6 +665,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun dismissCredits() { ui.update { it.copy(credits = null) } }
+
+    /** The release date and the credits of a song, for the story cards that tell them. A song without an account or a connection has none. */
+    suspend fun storyDetails(track: Track): StoryDetails = withContext(Dispatchers.IO) {
+        if (!app.tidal.signedIn || ui.value.settings.offline) return@withContext StoryDetails()
+        val credits = runCatching { app.tidal.credits("track", track.id) }.getOrDefault(emptyList())
+        val date = track.albumId.takeIf { it.isNotBlank() }?.let { runCatching { app.tidal.albumReleaseDate(it) }.getOrNull() }
+        StoryDetails(date, credits)
+    }
 
     /** When the queue ends, keeps playing music that resembles the last track, as TIDAL's own apps do. */
     private fun continueWithSimilarMusic(player: Player) {

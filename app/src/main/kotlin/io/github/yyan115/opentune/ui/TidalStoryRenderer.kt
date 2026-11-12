@@ -4,13 +4,11 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -18,6 +16,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.Layout
+import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import androidx.core.content.FileProvider
@@ -27,262 +27,490 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.toBitmap
 import io.github.yyan115.opentune.R
+import io.github.yyan115.opentune.core.Credit
 import io.github.yyan115.opentune.core.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 
-/** The nine layouts of the story card. Each one is a 1080 x 1920 design that takes its colours from the cover. */
-enum class StoryLayout(val titleRes: Int) {
+/** The twelve layouts of the story card. The last three tell the credits of the song. */
+enum class StoryLayout(val titleRes: Int, val credits: Boolean = false) {
     CENTERED(R.string.story_layout_1), AURA(R.string.story_layout_2), NOIR(R.string.story_layout_3),
     MINI(R.string.story_layout_4), BACKDROP(R.string.story_layout_5), CARD(R.string.story_layout_6),
-    GLOW(R.string.story_layout_7), SLATE(R.string.story_layout_8), SPLIT(R.string.story_layout_9)
+    GLOW(R.string.story_layout_7), SLATE(R.string.story_layout_8), SPLIT(R.string.story_layout_9),
+    LINER(R.string.story_layout_10, true), SLEEVE(R.string.story_layout_11, true), POSTER(R.string.story_layout_12, true)
 }
 
-/** Draws story cards and shares them. Rendering never throws: a missing cover gives a plain card, and a hardware bitmap is copied before it is drawn. */
+/** What the credit layouts need besides the track: its release date and who made it. */
+class StoryDetails(val releaseDate: String? = null, val credits: List<Credit> = emptyList()) {
+    val isEmpty: Boolean get() = releaseDate == null && credits.isEmpty()
+}
+
+/**
+ * Draws story cards and shares them. Rendering never throws: a missing cover gives a plain card, and a hardware bitmap is copied before it is drawn.
+ *
+ * Every layout is a vertical stack of blocks inside a safe zone, because Instagram covers the top and the bottom of a story with its own controls.
+ * The text is measured and shrinks to fit its width, and the cover takes whatever height is left, so nothing can overlap or run off the card.
+ */
 object TidalStoryRenderer {
     const val STORY_WIDTH = 1080
     const val STORY_HEIGHT = 1920
     private const val W = STORY_WIDTH.toFloat()
     private const val H = STORY_HEIGHT.toFloat()
-    private const val CX = W / 2f
+    private const val SIDE = 96f
+    private const val CONTENT = W - 2 * SIDE
+    private const val TOP = 250f
+    private const val BOTTOM = 1670f
     private const val GOLD = 0xFFE3C07A.toInt()
+    private const val GRAY = 0xFF9A9A9A.toInt()
 
-    /** What a layout draws with: the cover, its colour, the text and the quality chips. */
-    private class Ctx(val canvas: Canvas, val art: Bitmap?, val track: Track, val tint: Int, val chips: List<String>, val maxLabel: String, val detail: String, val face: Typeface, val mono: Typeface)
+    private class Ctx(
+        val context: Context, val canvas: Canvas, val art: Bitmap?, val track: Track, val tint: Int, val chips: List<String>, val maxLabel: String,
+        val face: Typeface, val mono: Typeface, val details: StoryDetails,
+    )
 
-    suspend fun generateStoryCard(context: Context, track: Track, quality: String, layout: StoryLayout = StoryLayout.CENTERED): Bitmap = withContext(Dispatchers.Default) {
-        val bitmap = Bitmap.createBitmap(STORY_WIDTH, STORY_HEIGHT, Bitmap.Config.ARGB_8888)
-        val art = loadArtworkBitmap(context, track.artwork.orEmpty())
-        val readout = SourceReadout.from(quality)
-        val chips = when (qualityTier(quality)) {
-            QualityTier.MAX -> listOf(context.getString(R.string.badge_max), context.getString(R.string.badge_hifi))
-            QualityTier.HIFI -> listOf(context.getString(R.string.badge_hifi))
-            QualityTier.LOSSY -> listOf(readout.codec)
-            QualityTier.UNKNOWN -> emptyList()
+    /** A piece of a row, with a size and a way to draw itself at a position. */
+    private class Part(val width: Float, val height: Float, val draw: (x: Float, y: Float) -> Unit)
+    /** A piece of a vertical stack. [gapAfter] is the space below it, which the last block does not use. */
+    private class Block(val height: Float, val gapAfter: Float, val draw: (top: Float) -> Unit)
+
+    suspend fun generateStoryCard(context: Context, track: Track, quality: String, layout: StoryLayout = StoryLayout.CENTERED, details: StoryDetails = StoryDetails()): Bitmap =
+        withContext(Dispatchers.Default) {
+            val bitmap = Bitmap.createBitmap(STORY_WIDTH, STORY_HEIGHT, Bitmap.Config.ARGB_8888)
+            val art = loadArtworkBitmap(context, track.artwork.orEmpty())
+            val readout = SourceReadout.from(quality)
+            val chips = when (qualityTier(quality)) {
+                QualityTier.MAX -> listOf(context.getString(R.string.badge_max), context.getString(R.string.badge_hifi))
+                QualityTier.HIFI -> listOf(context.getString(R.string.badge_hifi))
+                QualityTier.LOSSY -> listOf(readout.codec)
+                QualityTier.UNKNOWN -> emptyList()
+            }
+            val base = ResourcesCompat.getFont(context, R.font.dm_sans) ?: Typeface.SANS_SERIF
+            val mono = ResourcesCompat.getFont(context, R.font.jetbrains_mono) ?: Typeface.MONOSPACE
+            val c = Ctx(context, Canvas(bitmap), art, track, art?.let(::dominant) ?: 0xFF3A3A3A.toInt(), chips, context.getString(R.string.badge_max), base, mono, details)
+            when (layout) {
+                StoryLayout.CENTERED -> centered(c); StoryLayout.AURA -> aura(c); StoryLayout.NOIR -> noir(c)
+                StoryLayout.MINI -> mini(c); StoryLayout.BACKDROP -> backdrop(c); StoryLayout.CARD -> card(c)
+                StoryLayout.GLOW -> glow(c); StoryLayout.SLATE -> slate(c); StoryLayout.SPLIT -> split(c)
+                StoryLayout.LINER -> liner(c); StoryLayout.SLEEVE -> sleeve(c); StoryLayout.POSTER -> poster(c)
+            }
+            bitmap
         }
-        val detail = listOfNotNull(readout.codec.ifBlank { null }, readout.bits?.let { "$it-bit" }, readout.sampleRate?.let { "$it kHz" }, readout.bitrate?.let { "$it kbps" }).joinToString(" · ")
-        val base = ResourcesCompat.getFont(context, R.font.dm_sans) ?: Typeface.SANS_SERIF
-        val mono = ResourcesCompat.getFont(context, R.font.jetbrains_mono) ?: Typeface.MONOSPACE
-        val ctx = Ctx(Canvas(bitmap), art, track, art?.let(::dominant) ?: 0xFF3A3A3A.toInt(), chips, context.getString(R.string.badge_max), detail, base, mono)
-        when (layout) {
-            StoryLayout.CENTERED -> centered(ctx); StoryLayout.AURA -> aura(ctx); StoryLayout.NOIR -> noir(ctx)
-            StoryLayout.MINI -> mini(ctx); StoryLayout.BACKDROP -> backdrop(ctx); StoryLayout.CARD -> card(ctx)
-            StoryLayout.GLOW -> glow(ctx); StoryLayout.SLATE -> slate(ctx); StoryLayout.SPLIT -> split(ctx)
-        }
-        bitmap
-    }
 
     // ---- Layouts ----
 
-    private fun centered(c: Ctx) = with(c) {
-        fill(canvas, 0xFF0B0B0C.toInt())
-        art?.let { backdrop(canvas, it, 0.5f, top = 0f, height = 1100f) }
-        gradient(canvas, 0f, 760f, 0f, 1300f, 0x000B0B0C, 0xFF0B0B0C.toInt())
-        cover(canvas, art, CX - 300f, 460f, 600f, 6f, tint)
-        titles(c, CX, 1260f, 1336f, 64f, 44f, Paint.Align.CENTER, 0xFFFFFFFF.toInt(), 0xFF9A9A9A.toInt())
-        chipRow(c, CX, 1470f, center = true)
-        logo(c, CX, 1700f)
+    private fun centered(c: Ctx) {
+        c.canvas.drawColor(0xFF0B0B0C.toInt())
+        c.art?.let { backdropImage(c.canvas, it, .5f, 0f, 1100f) }
+        gradient(c.canvas, 760f, 1300f, 0x000B0B0C, 0xFF0B0B0C.toInt())
+        val title = fit(c, c.track.title, 66f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 42f, 400, GRAY, CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val blocks = coverStack(TOP, BOTTOM, 380f, 760f) { size -> listOf(
+            coverBlock(c, size, 64f, center = true, radius = 6f, shadow = false),
+            textBlock(c, title, 16f), textBlock(c, artist, 52f),
+            rowBlock(c, listOf(chipsPart(c)), 20f, Align.CENTER, 60f), rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun aura(c: Ctx) = with(c) {
-        fill(canvas, shade(tint, .18f))
-        art?.let { backdrop(canvas, it, 0.95f, top = 0f, height = H) }
-        gradient(canvas, 0f, 0f, 0f, H, 0x66000000, 0x66000000)
-        gradient(canvas, 0f, 900f, 0f, H, 0x00000000, 0xF2000000.toInt())
-        if (chips.isNotEmpty()) text(canvas, chips.joinToString("  |  "), CX, 128f, 30f, 0xFFE8D9B0.toInt(), face, Paint.Align.CENTER, bold = true, spacing = .12f)
-        cover(canvas, art, 110f, 290f, 860f, 8f, tint, shadow = true)
-        titles(c, CX, 1330f, 1410f, 76f, 50f, Paint.Align.CENTER, 0xFFE6E6E6.toInt(), 0xFFA0A0A0.toInt())
-        logo(c, CX, 1700f)
+    private fun aura(c: Ctx) {
+        c.canvas.drawColor(shade(c.tint, .18f))
+        c.art?.let { backdropImage(c.canvas, it, .95f, 0f, H) }
+        gradient(c.canvas, 0f, H, 0x66000000, 0x66000000)
+        gradient(c.canvas, 900f, H, 0x00000000, 0xF2000000.toInt())
+        val line = fit(c, c.chips.joinToString("   |   "), 30f, 700, 0xFFE8D9B0.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1, spacing = .12f)
+        val title = fit(c, c.track.title, 72f, 700, 0xFFE6E6E6.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 44f, 400, 0xFFA0A0A0.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val blocks = coverStack(TOP, BOTTOM, 400f, 800f) { size ->
+            (if (c.chips.isNotEmpty()) listOf(textBlock(c, line, 56f)) else emptyList()) +
+                listOf(coverBlock(c, size, 60f, center = true, radius = 8f, shadow = true), textBlock(c, title, 14f), textBlock(c, artist, 56f),
+                    rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun noir(c: Ctx) = with(c) {
-        fill(canvas, 0xFF08040A.toInt())
-        gradient(canvas, 0f, 0f, 0f, 900f, shade(tint, .22f) and 0x00FFFFFF or 0x55000000, 0x00000000)
-        cover(canvas, art, CX - 300f, 460f, 600f, 6f, tint, shadow = true)
-        titles(c, CX, 1260f, 1336f, 64f, 44f, Paint.Align.CENTER, 0xFFD0D0D0.toInt(), 0xFF8C8C8C.toInt())
-        if (chips.isNotEmpty()) pill(canvas, chips.first(), CX, 1480f, face, if (chips.first() == maxLabel) GOLD else 0xFFC8C8C8.toInt())
-        logo(c, CX, 1700f)
+    private fun noir(c: Ctx) {
+        c.canvas.drawColor(0xFF08040A.toInt())
+        gradient(c.canvas, 0f, 900f, (shade(c.tint, .22f) and 0x00FFFFFF) or 0x55000000, 0x00000000)
+        val title = fit(c, c.track.title, 62f, 700, 0xFFD0D0D0.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 42f, 400, 0xFF8C8C8C.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val blocks = coverStack(TOP, BOTTOM, 380f, 760f) { size -> listOf(
+            coverBlock(c, size, 64f, center = true, radius = 6f, shadow = true), textBlock(c, title, 14f), textBlock(c, artist, 48f),
+            rowBlock(c, listOfNotNull(c.chips.firstOrNull()?.let { pillPart(c, it, toneOf(c, it)) }), 0f, Align.CENTER, 56f),
+            rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun mini(c: Ctx) = with(c) {
-        fill(canvas, 0xFF050B0C.toInt())
-        gradient(canvas, 0f, 0f, 0f, 1000f, 0x22000000 or (shade(tint, .5f) and 0x00FFFFFF), 0x00000000)
-        cover(canvas, art, CX - 200f, 600f, 400f, 4f, tint, shadow = true)
-        titles(c, CX, 1130f, 1196f, 52f, 36f, Paint.Align.CENTER, 0xFFCFCFCF.toInt(), 0xFF8A8A8A.toInt())
-        logo(c, 300f, 1700f)
-        if (chips.isNotEmpty()) chip(canvas, chips.first(), 820f, 1700f, face, if (chips.first() == maxLabel) GOLD else 0xFFC8C8C8.toInt(), align = Paint.Align.CENTER)
+    private fun mini(c: Ctx) {
+        c.canvas.drawColor(0xFF050B0C.toInt())
+        gradient(c.canvas, 0f, 1000f, 0x22000000 or (shade(c.tint, .5f) and 0x00FFFFFF), 0x00000000)
+        val title = fit(c, c.track.title, 56f, 700, 0xFFCFCFCF.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 38f, 400, 0xFF8A8A8A.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val bottom = rowBlock(c, listOfNotNull(logoPart(c), c.chips.firstOrNull()?.let { chipPart(c, it, toneOf(c, it), false) }), 56f, Align.CENTER, 0f)
+        val areaBottom = BOTTOM - bottom.height - 70f
+        val blocks = coverStack(TOP, areaBottom, 300f, 460f) { size -> listOf(coverBlock(c, size, 56f, center = true, radius = 4f, shadow = true), textBlock(c, title, 12f), textBlock(c, artist, 0f)) }
+        stack(blocks, TOP, areaBottom)
+        bottom.draw(BOTTOM - bottom.height)
     }
 
-    private fun backdrop(c: Ctx) = with(c) {
-        fill(canvas, 0xFF060606.toInt())
-        art?.let { backdrop(canvas, it, 1f, top = 0f, height = 1450f) }
-        gradient(canvas, 0f, 0f, 0f, 1450f, 0x33000000, 0x22000000)
-        gradient(canvas, 0f, 1000f, 0f, 1700f, 0x00060606, 0xFF060606.toInt())
-        if (chips.isNotEmpty()) chip(canvas, chips.last(), 480f, 150f, face, 0xFFFFFFFF.toInt(), align = Paint.Align.CENTER, filled = true)
-        diamondChip(canvas, 600f, 150f)
-        cover(canvas, art, CX - 400f, 330f, 800f, 6f, tint, shadow = true)
-        titles(c, CX, 1420f, 1500f, 96f, 54f, Paint.Align.CENTER, 0xFFFFFFFF.toInt(), 0xFF9A9A9A.toInt())
+    private fun backdrop(c: Ctx) {
+        c.canvas.drawColor(0xFF060606.toInt())
+        c.art?.let { backdropImage(c.canvas, it, 1f, 0f, 1450f) }
+        gradient(c.canvas, 0f, 1450f, 0x33000000, 0x22000000)
+        gradient(c.canvas, 1000f, 1700f, 0x00060606, 0xFF060606.toInt())
+        val title = fit(c, c.track.title, 88f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 52f, 400, GRAY, CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val badges = listOfNotNull(c.chips.lastOrNull()?.let { chipPart(c, it, Color.WHITE, true) }, diamondPart(c))
+        val blocks = coverStack(TOP, BOTTOM, 480f, 800f) { size -> listOf(
+            rowBlock(c, badges, 18f, Align.CENTER, 56f), coverBlock(c, size, 60f, center = true, radius = 6f, shadow = true), textBlock(c, title, 14f), textBlock(c, artist, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun card(c: Ctx) = with(c) {
-        gradient(canvas, 0f, 0f, 0f, H, 0xFF2B2B2D.toInt(), 0xFF19191B.toInt())
-        cover(canvas, art, 90f, 130f, 900f, 14f, tint, shadow = true)
-        titles(c, 90f, 1230f, 1310f, 76f, 50f, Paint.Align.LEFT, 0xFFDADADA.toInt(), 0xFF8E8E90.toInt(), maxWidth = 640f)
-        logoStacked(c, 905f, 1190f)
-        if (chips.isNotEmpty()) chip(canvas, chips.joinToString(" • "), 90f, 1690f, face, 0xFFBFBFC2.toInt(), align = Paint.Align.LEFT, filled = true, grey = true)
+    private fun card(c: Ctx) {
+        gradient(c.canvas, 0f, H, 0xFF2B2B2D.toInt(), 0xFF19191B.toInt())
+        val half = 600f
+        val title = fit(c, c.track.title, 76f, 700, 0xFFDADADA.toInt(), half, Layout.Alignment.ALIGN_NORMAL, 3)
+        val artist = fit(c, c.track.artist, 48f, 400, 0xFF8E8E90.toInt(), half, Layout.Alignment.ALIGN_NORMAL, 2)
+        val titleRow = Block(title.height.toFloat(), 14f) { y ->
+            c.canvas.save(); c.canvas.translate(SIDE, y); title.draw(c.canvas); c.canvas.restore()
+            val logo = logoStackedPart(c); logo.draw(W - SIDE - logo.width, y + 6f)
+        }
+        val blocks = coverStack(TOP, BOTTOM, 420f, CONTENT) { size -> listOf(
+            coverBlock(c, size, 56f, center = false, radius = 14f, shadow = true), titleRow, textBlock(c, artist, 48f, x = SIDE),
+            rowBlock(c, listOfNotNull(if (c.chips.isNotEmpty()) chipPart(c, c.chips.joinToString(" • "), 0xFFBFBFC2.toInt(), true, grey = true) else null), 0f, Align.LEFT, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun glow(c: Ctx) = with(c) {
-        fill(canvas, 0xFF0A0505.toInt())
-        art?.let { backdrop(canvas, it, 0.9f, top = 0f, height = H) }
-        gradient(canvas, 0f, 0f, 0f, H, 0x44000000, 0x99000000.toInt())
-        gradient(canvas, 0f, 1000f, 0f, H, 0x00000000, 0xEE000000.toInt())
-        cover(canvas, art, CX - 330f, 400f, 660f, 8f, tint, shadow = true)
-        titles(c, CX, 1230f, 1304f, 64f, 44f, Paint.Align.CENTER, 0xFFFFFFFF.toInt(), 0xFFA8A8A8.toInt())
-        logo(c, 420f, 1700f)
-        if (chips.isNotEmpty()) chip(canvas, chips.first(), 700f, 1700f, face, if (chips.first() == maxLabel) GOLD else 0xFFC8C8C8.toInt(), align = Paint.Align.LEFT)
+    private fun glow(c: Ctx) {
+        c.canvas.drawColor(0xFF0A0505.toInt())
+        c.art?.let { backdropImage(c.canvas, it, .9f, 0f, H) }
+        gradient(c.canvas, 0f, H, 0x44000000, 0x99000000.toInt())
+        gradient(c.canvas, 1000f, H, 0x00000000, 0xEE000000.toInt())
+        val title = fit(c, c.track.title, 66f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 44f, 400, 0xFFA8A8A8.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val blocks = coverStack(TOP, BOTTOM, 400f, 740f) { size -> listOf(
+            coverBlock(c, size, 64f, center = true, radius = 8f, shadow = true), textBlock(c, title, 14f), textBlock(c, artist, 56f),
+            rowBlock(c, listOfNotNull(logoPart(c), c.chips.firstOrNull()?.let { chipPart(c, it, toneOf(c, it), false) }), 48f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun slate(c: Ctx) = with(c) {
-        gradient(canvas, 0f, 0f, 0f, H, 0xFF273034.toInt(), 0xFF171C1F.toInt())
-        logo(c, CX, 190f)
-        cover(canvas, art, CX - 380f, 330f, 760f, 6f, tint, shadow = true)
-        titles(c, CX, 1290f, 1370f, 80f, 50f, Paint.Align.CENTER, 0xFFE8E8E8.toInt(), 0xFF9AA2A6.toInt())
-        if (chips.isNotEmpty()) chip(canvas, chips.last(), CX, 1470f, face, 0xFFE0E0E0.toInt(), align = Paint.Align.CENTER, filled = true, grey = true)
+    private fun slate(c: Ctx) {
+        gradient(c.canvas, 0f, H, 0xFF273034.toInt(), 0xFF171C1F.toInt())
+        val title = fit(c, c.track.title, 78f, 700, 0xFFE8E8E8.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 48f, 400, 0xFF9AA2A6.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val blocks = coverStack(TOP, BOTTOM, 420f, 780f) { size -> listOf(
+            rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 64f), coverBlock(c, size, 64f, center = true, radius = 6f, shadow = true),
+            textBlock(c, title, 14f), textBlock(c, artist, 52f),
+            rowBlock(c, listOfNotNull(c.chips.lastOrNull()?.let { chipPart(c, it, 0xFFE0E0E0.toInt(), true, grey = true) }), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun split(c: Ctx) = with(c) {
-        fill(canvas, shade(tint, .16f))
-        art?.let { backdrop(canvas, it, .8f, top = 0f, height = H) }
-        gradient(canvas, 0f, 0f, 0f, H, 0x66000000, 0xCC000000.toInt())
-        // The coloured panel on the left carries the cover and the title.
-        val panel = Paint().apply { color = shade(tint, .55f) and 0x00FFFFFF or 0xE6000000.toInt() }
-        c.canvas.drawRect(0f, 0f, 400f, H, panel)
-        cover(canvas, art, 160f, 330f, 800f, 6f, tint, shadow = true)
-        titles(c, 90f, 1330f, 1412f, 76f, 50f, Paint.Align.LEFT, 0xFFFFFFFF.toInt(), 0xFFB0B0B0.toInt(), maxWidth = 900f)
-        logo(c, 90f + 130f, 1700f, left = true)
-        chipRow(c, 990f, 1700f, center = false, rightAlign = true, joiner = "&")
+    private fun split(c: Ctx) {
+        c.canvas.drawColor(shade(c.tint, .16f))
+        c.art?.let { backdropImage(c.canvas, it, .8f, 0f, H) }
+        gradient(c.canvas, 0f, H, 0x66000000, 0xCC000000.toInt())
+        c.canvas.drawRect(0f, 0f, 380f, H, Paint().apply { color = (shade(c.tint, .55f) and 0x00FFFFFF) or 0xE6000000.toInt() })
+        val title = fit(c, c.track.title, 76f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_NORMAL, 2)
+        val artist = fit(c, c.track.artist, 50f, 400, 0xFFB0B0B0.toInt(), CONTENT, Layout.Alignment.ALIGN_NORMAL, 1)
+        val footer = Block(56f, 0f) { y ->
+            val logo = logoPart(c); logo.draw(SIDE, y)
+            val chips = chipsPart(c); chips.draw(W - SIDE - chips.width, y)
+        }
+        val blocks = coverStack(TOP, BOTTOM, 400f, 780f) { size -> listOf(
+            // The cover starts inside the coloured panel and reaches across its edge.
+            Block(size, 56f) { y -> drawCover(c, 170f, y, size, 6f, true) }, textBlock(c, title, 14f, x = SIDE), textBlock(c, artist, 56f, x = SIDE), footer) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    // ---- Parts ----
-
-    private fun fill(canvas: Canvas, color: Int) = canvas.drawColor(color)
-
-    private fun gradient(canvas: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, from: Int, to: Int) {
-        val paint = Paint().apply { shader = LinearGradient(x0, y0, x1, y1, from, to, Shader.TileMode.CLAMP) }
-        canvas.drawRect(0f, minOf(y0, y1), W, maxOf(y0, y1), paint)
+    /** Liner notes: the cover and the title at the top, then when it was released and who made it. */
+    private fun liner(c: Ctx) {
+        c.canvas.drawColor(0xFF0A0A0B.toInt())
+        c.art?.let { backdropImage(c.canvas, it, .42f, 0f, H) }
+        gradient(c.canvas, 0f, H, 0x99000000.toInt(), 0xF2000000.toInt())
+        val size = 300f
+        val gapAfterHeader = 64f
+        val textWidth = CONTENT - size - 48f
+        val title = fit(c, c.track.title, 56f, 700, Color.WHITE, textWidth, Layout.Alignment.ALIGN_NORMAL, 3)
+        val artist = fit(c, c.track.artist, 38f, 400, 0xFFB0B0B0.toInt(), textWidth, Layout.Alignment.ALIGN_NORMAL, 2)
+        val header = Block(maxOf(size, title.height + 14f + artist.height.toFloat()), gapAfterHeader) { y ->
+            drawCover(c, SIDE, y, size, 6f, true)
+            val textHeight = title.height + 14f + artist.height
+            val ty = y + (size - textHeight).coerceAtLeast(0f) / 2f
+            c.canvas.save(); c.canvas.translate(SIDE + size + 48f, ty); title.draw(c.canvas); c.canvas.restore()
+            c.canvas.save(); c.canvas.translate(SIDE + size + 48f, ty + title.height + 14f); artist.draw(c.canvas); c.canvas.restore()
+        }
+        val logo = rowBlock(c, listOf(logoPart(c)), 0f, Align.LEFT, 0f)
+        val room = BOTTOM - TOP - header.height - header.gapAfter - logo.height - 60f
+        val rest = dateBlocks(c, CONTENT, 24f, 46f, Layout.Alignment.ALIGN_NORMAL, SIDE) + creditBlocks(c, CONTENT, SIDE, Layout.Alignment.ALIGN_NORMAL, 22f, 38f, room - 150f, 2)
+        stack(listOf(header) + rest.withGap(34f) + listOf(Block(0f, 60f) {}) + logo, TOP, BOTTOM, alignTop = true)
     }
 
-    /** The cover scaled to fill the width, blurred by scaling down and up again, and faded at the bottom so that the card shows below it. */
-    private fun backdrop(canvas: Canvas, art: Bitmap, alpha: Float, top: Float, height: Float) {
-        val small = Bitmap.createScaledBitmap(art, 32, 32, true)
-        val mid = Bitmap.createScaledBitmap(small, 128, 128, true)
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply { this.alpha = (alpha * 255).toInt() }
-        // A square cover scaled to the card height is wider than the card, so its sides are cropped.
-        val side = maxOf(height, W)
-        val left = CX - side / 2f
-        canvas.save()
-        canvas.clipRect(0f, top, W, top + height)
-        canvas.drawBitmap(mid, null, RectF(left, top, left + side, top + side), paint)
-        canvas.restore()
-        small.recycle(); mid.recycle()
+    /** A record sleeve: a big cover, the release date in a line under the title, and the credits in two columns of label and names. */
+    private fun sleeve(c: Ctx) {
+        c.canvas.drawColor(shade(c.tint, .22f))
+        c.art?.let { backdropImage(c.canvas, it, .35f, 0f, H) }
+        gradient(c.canvas, 0f, H, 0x55000000, 0xEE000000.toInt())
+        val title = fit(c, c.track.title, 60f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 38f, 400, 0xFFB8B8B8.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val date = releaseDateText(c)
+        val dateBlock = date?.let { d -> textBlock(c, fit(c, d, 30f, 500, GOLD, CONTENT, Layout.Alignment.ALIGN_CENTER, 1, spacing = .16f, mono = true), 40f) }
+        val credits = rows(c).take(5)
+        val rowsBlock = Block(credits.sumOf { (60f).toDouble() }.toFloat(), 0f) { y ->
+            credits.forEachIndexed { i, (label, value) ->
+                val l = fit(c, label, 24f, 600, GRAY, CONTENT * .36f, Layout.Alignment.ALIGN_NORMAL, 1, spacing = .12f)
+                val v = fit(c, value, 34f, 500, Color.WHITE, CONTENT * .6f, Layout.Alignment.ALIGN_OPPOSITE, 1)
+                val top = y + i * 60f
+                c.canvas.save(); c.canvas.translate(SIDE, top + 8f); l.draw(c.canvas); c.canvas.restore()
+                c.canvas.save(); c.canvas.translate(W - SIDE - CONTENT * .6f, top); v.draw(c.canvas); c.canvas.restore()
+                c.canvas.drawRect(SIDE, top + 54f, W - SIDE, top + 55f, Paint().apply { color = 0x33FFFFFF })
+            }
+        }
+        val blocks = coverStack(TOP, BOTTOM, 360f, 620f) { size -> listOfNotNull(
+            coverBlock(c, size, 52f, center = true, radius = 4f, shadow = true), textBlock(c, title, 12f), textBlock(c, artist, 40f), dateBlock,
+            if (credits.isEmpty()) null else Block(rowsBlock.height, 52f, rowsBlock.draw), rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun cover(canvas: Canvas, art: Bitmap?, x: Float, y: Float, size: Float, radius: Float, tint: Int, shadow: Boolean = false) {
-        val rect = RectF(x, y, x + size, y + size)
-        if (shadow) canvas.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF000000.toInt(); setShadowLayer(size * .07f, 0f, size * .035f, 0x99000000.toInt()) })
-        if (art == null) { canvas.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = shade(tint, .3f) }); return }
-        val clip = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
-        canvas.save(); canvas.clipPath(clip)
-        canvas.drawBitmap(art, null, rect, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
-        canvas.restore()
+    /** A poster: the year of release set very large, then the cover, the title and the credits centred under it. */
+    private fun poster(c: Ctx) {
+        gradient(c.canvas, 0f, H, shade(c.tint, .38f), 0xFF050505.toInt())
+        val year = c.details.releaseDate?.take(4)?.takeIf { it.length == 4 }
+        val yearLayout = year?.let { fit(c, it, 250f, 800, 0x33FFFFFF, CONTENT, Layout.Alignment.ALIGN_CENTER, 1, spacing = -.02f) }
+        val title = fit(c, c.track.title, 64f, 700, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+        val artist = fit(c, c.track.artist, 40f, 400, 0xFFB8B8B8.toInt(), CONTENT, Layout.Alignment.ALIGN_CENTER, 1)
+        val date = releaseDateText(c)?.let { fit(c, it, 28f, 500, GOLD, CONTENT, Layout.Alignment.ALIGN_CENTER, 1, spacing = .16f, mono = true) }
+        val credits = rows(c).take(4)
+        val lines = credits.map { (label, value) ->
+            val l = fit(c, label, 22f, 600, GRAY, CONTENT, Layout.Alignment.ALIGN_CENTER, 1, spacing = .14f)
+            val v = fit(c, value, 36f, 500, Color.WHITE, CONTENT, Layout.Alignment.ALIGN_CENTER, 2)
+            Block(l.height + 4f + v.height, 26f) { y ->
+                c.canvas.save(); c.canvas.translate(SIDE, y); l.draw(c.canvas); c.canvas.restore()
+                c.canvas.save(); c.canvas.translate(SIDE, y + l.height + 4f); v.draw(c.canvas); c.canvas.restore()
+            }
+        }
+        val blocks = coverStack(TOP, BOTTOM, 300f, 460f) { size ->
+            (if (yearLayout != null) listOf(textBlock(c, yearLayout, 8f)) else emptyList()) +
+                listOf(coverBlock(c, size, 48f, center = true, radius = 4f, shadow = true), textBlock(c, title, 12f), textBlock(c, artist, 20f)) +
+                (if (date != null) listOf(textBlock(c, date, 44f)) else emptyList()) + lines +
+                listOf(Block(0f, 20f) {}, rowBlock(c, listOf(logoPart(c)), 0f, Align.CENTER, 0f)) }
+        stack(blocks, TOP, BOTTOM)
     }
 
-    private fun titles(c: Ctx, x: Float, titleY: Float, artistY: Float, titleSize: Float, artistSize: Float, align: Paint.Align, titleColor: Int, artistColor: Int, maxWidth: Float = 900f) {
-        val title = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = titleColor; textSize = titleSize; typeface = weight(c.face, 700); textAlign = align; letterSpacing = -.01f }
-        val artist = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = artistColor; textSize = artistSize; typeface = weight(c.face, 400); textAlign = align }
-        c.canvas.drawText(TextUtils.ellipsize(c.track.title, title, maxWidth, TextUtils.TruncateAt.END).toString(), x, titleY, title)
-        c.canvas.drawText(TextUtils.ellipsize(c.track.artist, artist, maxWidth, TextUtils.TruncateAt.END).toString(), x, artistY, artist)
+    // ---- Credits ----
+
+    /** The roles of the song that the cards tell, in this order, with the names of the people who have them. */
+    private fun rows(c: Ctx): List<Pair<String, String>> {
+        val credits = c.details.credits
+        fun names(vararg keys: String, exclude: List<String> = emptyList()): String {
+            val found = credits.filter { credit -> val role = credit.role.lowercase(); keys.any { it in role } && exclude.none { it in role } }
+                .flatMap { it.people }.map { it.name }.distinct()
+            return if (found.size > 4) found.take(4).joinToString(", ") + " +" + (found.size - 4) else found.joinToString(", ")
+        }
+        val result = mutableListOf<Pair<String, String>>()
+        fun add(label: Int, value: String) { if (value.isNotBlank()) result += c.context.getString(label).uppercase() to value }
+        add(R.string.credit_label_producer, names("producer", exclude = listOf("executive")))
+        add(R.string.credit_label_writer, names("writer", "composer", "lyricist"))
+        add(R.string.credit_label_mixing, names("mix"))
+        add(R.string.credit_label_mastering, names("master"))
+        add(R.string.credit_label_recording, names("record", "engineer", exclude = listOf("mix", "master")))
+        add(R.string.credit_label_executive, names("executive"))
+        return result
     }
 
-    private fun text(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, face: Typeface, align: Paint.Align, bold: Boolean = false, spacing: Float = 0f) {
-        canvas.drawText(value, x, y, TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = color; textSize = size; typeface = weight(face, if (bold) 700 else 400); textAlign = align; letterSpacing = spacing
+    private fun releaseDateText(c: Ctx): String? {
+        val raw = c.details.releaseDate ?: return null
+        val date = runCatching { LocalDate.parse(raw.take(10)) }.getOrNull() ?: return raw
+        return c.context.getString(R.string.story_released).uppercase() + "  " +
+            date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(Locale.getDefault())).uppercase()
+    }
+
+    /** The release date as a block, or nothing when it is not known. */
+    private fun dateBlocks(c: Ctx, width: Float, size: Float, valueSize: Float, align: Layout.Alignment, x: Float): List<Block> {
+        val raw = c.details.releaseDate ?: return emptyList()
+        val date = runCatching { LocalDate.parse(raw.take(10)) }.getOrNull()
+        val text = date?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(Locale.getDefault())) ?: raw
+        val label = fit(c, c.context.getString(R.string.story_released).uppercase(), size, 600, GRAY, width, align, 1, spacing = .14f)
+        val value = fit(c, text, valueSize, 600, GOLD, width, align, 1)
+        return listOf(Block(label.height + 6f + value.height, 30f) { y ->
+            c.canvas.save(); c.canvas.translate(x, y); label.draw(c.canvas); c.canvas.restore()
+            c.canvas.save(); c.canvas.translate(x, y + label.height + 6f); value.draw(c.canvas); c.canvas.restore()
         })
     }
 
-    /** A small rectangular label such as MAX or HiFi, set in the tracked capitals of the TIDAL badges. */
-    private fun chip(canvas: Canvas, label: String, x: Float, y: Float, face: Typeface, color: Int, align: Paint.Align, filled: Boolean = false, grey: Boolean = false) {
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; textSize = 30f; typeface = weight(face, 600); letterSpacing = .08f }
-        val width = paint.measureText(label)
-        val left = when (align) { Paint.Align.CENTER -> x - width / 2f; Paint.Align.RIGHT -> x - width; else -> x }
-        val rect = RectF(left - 18f, y - 34f, left + width + 18f, y + 14f)
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = if (grey) 0x40FFFFFF else if (filled) 0x33FFFFFF else (color and 0x00FFFFFF) or 0x26000000 }
-        canvas.drawRoundRect(rect, 6f, 6f, fill)
-        canvas.drawText(label, left, y, paint)
-    }
-
-    private fun pill(canvas: Canvas, label: String, cx: Float, y: Float, face: Typeface, color: Int) {
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; textSize = 30f; typeface = weight(face, 600); letterSpacing = .1f }
-        val width = paint.measureText(label)
-        val rect = RectF(cx - width / 2f - 30f, y - 36f, cx + width / 2f + 30f, y + 16f)
-        canvas.drawRoundRect(rect, 26f, 26f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = (color and 0x00FFFFFF) or 0xAA000000.toInt(); style = Paint.Style.STROKE; strokeWidth = 2f })
-        canvas.drawText(label, cx - width / 2f, y, paint)
-    }
-
-    private fun chipRow(c: Ctx, x: Float, y: Float, center: Boolean, rightAlign: Boolean = false, joiner: String? = null) {
-        if (c.chips.isEmpty()) return
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; typeface = weight(c.face, 600); letterSpacing = .08f }
-        val gap = 26f
-        val separator = joiner?.let { paint.measureText(it) + gap * 2 } ?: gap
-        val widths = c.chips.map { paint.measureText(it) + 36f }
-        val total = widths.sum() + separator * (c.chips.size - 1)
-        var left = when { center -> x - total / 2f; rightAlign -> x - total; else -> x }
-        c.chips.forEachIndexed { index, label ->
-            val tone = if (label == c.maxLabel) GOLD else 0xFFC8C8C8.toInt()
-            chip(c.canvas, label, left + 18f, y, c.face, tone, Paint.Align.LEFT, grey = tone != GOLD)
-            left += widths[index]
-            if (index < c.chips.lastIndex) {
-                joiner?.let { text(c.canvas, it, left + gap, y, 30f, 0xFF8A8A8A.toInt(), c.face, Paint.Align.LEFT) }
-                left += separator
+    /** The credit rows as blocks, as many as fit in [budget] pixels of height. */
+    private fun creditBlocks(c: Ctx, width: Float, x: Float, align: Layout.Alignment, labelSize: Float, valueSize: Float, budget: Float, maxLines: Int): List<Block> {
+        val blocks = ArrayList<Block>()
+        var used = 0f
+        for ((label, value) in rows(c)) {
+            val l = fit(c, label, labelSize, 600, GRAY, width, align, 1, spacing = .14f)
+            val v = fit(c, value, valueSize, 500, Color.WHITE, width, align, maxLines)
+            val height = l.height + 6f + v.height
+            if (used + height > budget) break
+            used += height + 30f
+            blocks += Block(height, 30f) { y ->
+                c.canvas.save(); c.canvas.translate(x, y); l.draw(c.canvas); c.canvas.restore()
+                c.canvas.save(); c.canvas.translate(x, y + l.height + 6f); v.draw(c.canvas); c.canvas.restore()
             }
         }
-        if (c.detail.isNotEmpty() && center) text(c.canvas, c.detail, x, y + 64f, 24f, 0xFF707070.toInt(), c.mono, Paint.Align.CENTER, spacing = .04f)
+        return blocks
     }
 
-    /** The TIDAL mark: four diamonds and the tracked name. [left] puts the mark at x instead of centring it. */
-    private fun logo(c: Ctx, x: Float, y: Float, left: Boolean = false) {
+    private fun List<Block>.withGap(gap: Float): List<Block> = mapIndexed { i, b -> if (i < lastIndex) Block(b.height, gap, b.draw) else Block(b.height, 0f, b.draw) }
+
+    // ---- Toolkit ----
+
+    private enum class Align { LEFT, CENTER }
+
+    /** The size of the cover is whatever height the other blocks leave, between [min] and [max]. */
+    private fun coverStack(top: Float, bottom: Float, min: Float, max: Float, build: (Float) -> List<Block>): List<Block> {
+        val used = total(build(0f))
+        return build((bottom - top - used).coerceIn(min, max))
+    }
+
+    private fun total(blocks: List<Block>): Float {
+        var sum = 0f
+        blocks.forEachIndexed { i, b -> sum += b.height + if (i < blocks.lastIndex) b.gapAfter else 0f }
+        return sum
+    }
+
+    /** Draws the blocks one under the other, centred in the zone between [top] and [bottom], or from the top with [alignTop]. */
+    private fun stack(blocks: List<Block>, top: Float, bottom: Float, alignTop: Boolean = false) {
+        var y = if (alignTop) top else top + ((bottom - top) - total(blocks)).coerceAtLeast(0f) / 2f
+        blocks.forEachIndexed { i, b -> b.draw(y); y += b.height + if (i < blocks.lastIndex) b.gapAfter else 0f }
+    }
+
+    private fun coverBlock(c: Ctx, size: Float, gapAfter: Float, center: Boolean, radius: Float, shadow: Boolean): Block =
+        Block(size, gapAfter) { y -> drawCover(c, if (center) SIDE + (CONTENT - size) / 2f else SIDE, y, size, radius, shadow) }
+
+    private fun textBlock(c: Ctx, layout: StaticLayout, gapAfter: Float, x: Float = SIDE): Block =
+        Block(layout.height.toFloat(), gapAfter) { y -> c.canvas.save(); c.canvas.translate(x, y); layout.draw(c.canvas); c.canvas.restore() }
+
+    /** A row of parts. A row without parts has no height. */
+    private fun rowBlock(c: Ctx, parts: List<Part>, gap: Float, align: Align, gapAfter: Float): Block {
+        val usable = parts
+        val height = usable.maxOfOrNull { it.height } ?: 0f
+        val width = usable.sumOf { it.width.toDouble() }.toFloat() + gap * (usable.size - 1).coerceAtLeast(0)
+        return Block(height, if (usable.isEmpty()) 0f else gapAfter) { y ->
+            var x = if (align == Align.CENTER) (W - width) / 2f else SIDE
+            usable.forEach { it.draw(x, y + (height - it.height) / 2f); x += it.width + gap }
+        }
+    }
+
+    /** Text that fits [width] in at most [maxLines] lines: it shrinks to 60 percent of [size], and only then is it cut with an ellipsis. */
+    private fun fit(c: Ctx, text: String, size: Float, weight: Int, color: Int, width: Float, align: Layout.Alignment, maxLines: Int, spacing: Float = 0f, mono: Boolean = false): StaticLayout {
+        var s = size
+        while (true) {
+            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = color; textSize = s; typeface = styled(if (mono) c.mono else c.face, weight); letterSpacing = spacing
+            }
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width.toInt()).setAlignment(align).setMaxLines(maxLines)
+                .setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
+            val clipped = (0 until layout.lineCount).any { layout.getEllipsisCount(it) > 0 }
+            if (!clipped || s <= size * .6f) return layout
+            s *= .94f
+        }
+    }
+
+    private fun measure(c: Ctx, text: String, size: Float, weight: Int, spacing: Float, mono: Boolean = false): Float =
+        TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = size; typeface = styled(if (mono) c.mono else c.face, weight); letterSpacing = spacing }.measureText(text)
+
+    /** A small rectangular label such as MAX or HiFi. */
+    private fun chipPart(c: Ctx, label: String, color: Int, filled: Boolean, grey: Boolean = false): Part {
+        val textWidth = measure(c, label, 30f, 600, .08f)
+        val width = textWidth + 40f
+        return Part(width, 56f) { x, y ->
+            val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = if (grey) 0x40FFFFFF else if (filled) 0x33FFFFFF else (color and 0x00FFFFFF) or 0x26000000 }
+            c.canvas.drawRoundRect(RectF(x, y, x + width, y + 56f), 6f, 6f, fill)
+            c.canvas.drawText(label, x + 20f, y + 38f, TextPaint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; textSize = 30f; typeface = styled(c.face, 600); letterSpacing = .08f })
+        }
+    }
+
+    /** MAX in gold and HiFi in grey, side by side. */
+    private fun chipsPart(c: Ctx): Part {
+        val parts = c.chips.map { chipPart(c, it, toneOf(c, it), false) }
+        val width = parts.sumOf { it.width.toDouble() }.toFloat() + 20f * (parts.size - 1).coerceAtLeast(0)
+        return Part(width, if (parts.isEmpty()) 0f else 56f) { x, y ->
+            var at = x
+            parts.forEach { it.draw(at, y); at += it.width + 20f }
+        }
+    }
+
+    private fun pillPart(c: Ctx, label: String, color: Int): Part {
+        val textWidth = measure(c, label, 30f, 600, .1f)
+        val width = textWidth + 64f
+        return Part(width, 56f) { x, y ->
+            c.canvas.drawRoundRect(RectF(x, y, x + width, y + 56f), 28f, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = (color and 0x00FFFFFF) or 0xAA000000.toInt(); style = Paint.Style.STROKE; strokeWidth = 2f })
+            c.canvas.drawText(label, x + 32f, y + 38f, TextPaint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; textSize = 30f; typeface = styled(c.face, 600); letterSpacing = .1f })
+        }
+    }
+
+    private fun toneOf(c: Ctx, label: String) = if (label == c.maxLabel) GOLD else 0xFFC8C8C8.toInt()
+
+    /** The TIDAL mark: four diamonds and the tracked name. */
+    private fun logoPart(c: Ctx): Part {
         val name = "T I D A L"
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 34f; typeface = weight(c.face, 700); letterSpacing = .12f }
-        val width = paint.measureText(name)
-        val total = 56f + 18f + width
-        val start = if (left) x - 130f else x - total / 2f
-        diamonds(c.canvas, start, y - 26f, 56f)
-        c.canvas.drawText(name, start + 56f + 18f, y, paint)
+        val width = 56f + 18f + measure(c, name, 34f, 700, .12f)
+        return Part(width, 56f) { x, y ->
+            diamonds(c.canvas, x, y + 4f, 56f)
+            c.canvas.drawText(name, x + 56f + 18f, y + 40f, TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 34f; typeface = styled(c.face, 700); letterSpacing = .12f })
+        }
     }
 
-    private fun logoStacked(c: Ctx, cx: Float, y: Float) {
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 30f; typeface = weight(c.face, 700); letterSpacing = .16f; textAlign = Paint.Align.CENTER }
-        diamonds(c.canvas, cx - 28f, y - 70f, 56f)
-        c.canvas.drawText("TIDAL", cx, y + 20f, paint)
+    private fun logoStackedPart(c: Ctx): Part {
+        val width = maxOf(56f, measure(c, "TIDAL", 30f, 700, .16f))
+        return Part(width, 56f + 14f + 30f) { x, y ->
+            diamonds(c.canvas, x + (width - 56f) / 2f, y, 56f)
+            c.canvas.drawText("TIDAL", x, y + 56f + 14f + 26f, TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 30f; typeface = styled(c.face, 700); letterSpacing = .16f })
+        }
     }
 
-    private fun diamondChip(canvas: Canvas, cx: Float, y: Float) {
-        canvas.drawRoundRect(RectF(cx - 40f, y - 34f, cx + 40f, y + 14f), 6f, 6f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF })
-        diamonds(canvas, cx - 24f, y - 24f, 48f)
+    private fun diamondPart(c: Ctx): Part = Part(96f, 56f) { x, y ->
+        c.canvas.drawRoundRect(RectF(x, y, x + 96f, y + 56f), 6f, 6f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33FFFFFF })
+        diamonds(c.canvas, x + 24f, y + 4f, 48f)
     }
 
     /** Four diamonds in the arrangement of the TIDAL mark. */
     private fun diamonds(canvas: Canvas, x: Float, y: Float, size: Float) {
-        val unit = size / 4f
+        // The mark is [size] wide and a little less than that tall.
+        val unit = size / 6f
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         fun diamond(cx: Float, cy: Float) = canvas.drawPath(Path().apply { moveTo(cx, cy - unit); lineTo(cx + unit, cy); lineTo(cx, cy + unit); lineTo(cx - unit, cy); close() }, paint)
-        diamond(x + unit, y + unit); diamond(x + unit * 3, y + unit); diamond(x + unit * 5, y + unit); diamond(x + unit * 3, y + unit * 3)
+        diamond(x + unit, y + unit * 2); diamond(x + unit * 3, y + unit * 2); diamond(x + unit * 5, y + unit * 2)
+        diamond(x + unit * 3, y + unit * 4)
     }
 
-    private fun weight(base: Typeface, value: Int): Typeface =
+    private fun drawCover(c: Ctx, x: Float, y: Float, size: Float, radius: Float, shadow: Boolean) {
+        val rect = RectF(x, y, x + size, y + size)
+        if (shadow) c.canvas.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF000000.toInt(); setShadowLayer(size * .07f, 0f, size * .035f, 0x99000000.toInt()) })
+        val art = c.art
+        if (art == null) { c.canvas.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = shade(c.tint, .3f) }); return }
+        val clip = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
+        c.canvas.save(); c.canvas.clipPath(clip)
+        c.canvas.drawBitmap(art, null, rect, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        c.canvas.restore()
+    }
+
+    private fun gradient(canvas: Canvas, from: Float, to: Float, start: Int, end: Int) {
+        canvas.drawRect(0f, from, W, to, Paint().apply { shader = LinearGradient(0f, from, 0f, to, start, end, Shader.TileMode.CLAMP) })
+    }
+
+    /** The cover scaled to fill the width, blurred by scaling down and up again, drawn between [top] and [top] + [height]. */
+    private fun backdropImage(canvas: Canvas, art: Bitmap, alpha: Float, top: Float, height: Float) {
+        val small = Bitmap.createScaledBitmap(art, 32, 32, true)
+        val mid = Bitmap.createScaledBitmap(small, 128, 128, true)
+        val side = maxOf(height, W)
+        val left = W / 2f - side / 2f
+        canvas.save()
+        canvas.clipRect(0f, top, W, top + height)
+        canvas.drawBitmap(mid, null, RectF(left, top, left + side, top + side), Paint(Paint.FILTER_BITMAP_FLAG).apply { this.alpha = (alpha * 255).toInt() })
+        canvas.restore()
+        small.recycle(); mid.recycle()
+    }
+
+    private fun styled(base: Typeface, value: Int): Typeface =
         if (Build.VERSION.SDK_INT >= 28) Typeface.create(base, value, false) else Typeface.create(base, if (value >= 600) Typeface.BOLD else Typeface.NORMAL)
 
     /** A dark version of a colour. [amount] is the brightness that it keeps. */
@@ -299,8 +527,8 @@ object TidalStoryRenderer {
         val hsv = FloatArray(3)
         for (y in 0 until 16) for (x in 0 until 16) {
             val pixel = small.getPixel(x, y); Color.colorToHSV(pixel, hsv)
-            val weight = 0.15 + hsv[1] * hsv[2]
-            r += Color.red(pixel) * weight; g += Color.green(pixel) * weight; b += Color.blue(pixel) * weight; total += weight
+            val w = 0.15 + hsv[1] * hsv[2]
+            r += Color.red(pixel) * w; g += Color.green(pixel) * w; b += Color.blue(pixel) * w; total += w
         }
         small.recycle()
         return Color.rgb((r / total).toInt(), (g / total).toInt(), (b / total).toInt())
@@ -329,14 +557,16 @@ object TidalStoryRenderer {
         return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
-    /** Opens the Instagram Stories composer with the card, or falls back to the system share sheet. */
+    /**
+     * Opens the Instagram Stories composer with the card as the background, or falls back to the system share sheet.
+     * The card is the whole background. It is not sent as a sticker too, because Instagram would then put a second copy on top of it.
+     */
     fun shareToInstagramStories(context: Context, imageUri: Uri, track: Track): Boolean {
         runCatching { context.grantUriPermission("com.instagram.android", imageUri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val intent = Intent("com.instagram.share.ADD_TO_STORY").apply {
             setDataAndType(imageUri, "image/png")
             setPackage("com.instagram.android")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra("interactive_asset_uri", imageUri)
             putExtra("source_application", context.packageName)
         }
         return try { context.startActivity(intent); true } catch (_: Throwable) { shareToGeneric(context, imageUri, track); false }
@@ -358,7 +588,7 @@ object TidalStoryRenderer {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/OpenTune")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MyTidal")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
             val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
@@ -367,7 +597,7 @@ object TidalStoryRenderer {
             context.contentResolver.update(uri, values, null, null)
         } else {
             @Suppress("DEPRECATION")
-            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "OpenTune").apply { mkdirs() }
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "MyTidal").apply { mkdirs() }
             val file = File(dir, filename)
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             @Suppress("DEPRECATION")

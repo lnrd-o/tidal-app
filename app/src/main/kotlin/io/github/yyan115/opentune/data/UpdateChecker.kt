@@ -9,7 +9,7 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /** Asks GitHub for the releases of the app and reports the newest one when it is later than the installed version. */
-class UpdateChecker(private val http: OkHttpClient, private val address: String = "https://api.github.com/repos/yyan115/tidal-app/releases?per_page=10") {
+class UpdateChecker(private val http: OkHttpClient, private val address: String = "https://api.github.com/repos/lnrd-o/tidal-app/releases?per_page=10") {
     /** The newer release, or null when the app is up to date or the answer could not be read. */
     suspend fun newer(current: String): ReleaseNotice? = withContext(Dispatchers.IO) {
         runCatching {

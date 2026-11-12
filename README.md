@@ -2,14 +2,14 @@
   <img src="docs/branding/opentune-mark.svg" width="96" alt="OpenTune icon">
 </p>
 
-<h1 align="center">OpenTune</h1>
+<h1 align="center">MyTidal</h1>
 
-<p align="center">An unofficial open source music player for TIDAL, with local playback.</p>
+<p align="center">An unofficial open source music player for TIDAL. By <a href="https://github.com/lnrd-o">@lnrd.o</a>.</p>
 
 <p align="center">
-  <a href="https://github.com/yyan115/tidal-app/actions/workflows/check.yml"><img src="https://github.com/yyan115/tidal-app/actions/workflows/check.yml/badge.svg" alt="Check"></a>
-  <a href="https://github.com/yyan115/tidal-app/releases"><img src="https://img.shields.io/github/v/release/yyan115/tidal-app?include_prereleases" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/yyan115/tidal-app" alt="License"></a>
+  <a href="https://github.com/lnrd-o/tidal-app/actions/workflows/check.yml"><img src="https://github.com/lnrd-o/tidal-app/actions/workflows/check.yml/badge.svg" alt="Check"></a>
+  <a href="https://github.com/lnrd-o/tidal-app/releases"><img src="https://img.shields.io/github/v/release/lnrd-o/tidal-app?include_prereleases" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/lnrd-o/tidal-app" alt="License"></a>
 </p>
 
 Stream your TIDAL library in lossless quality, with synced lyrics, offline listening, Android Auto and twelve themes. Add your own audio files and folders, and they play alongside TIDAL in the same player. OpenTune has no ads, analytics or tracking.
@@ -26,9 +26,9 @@ Stream your TIDAL library in lossless quality, with synced lyrics, offline liste
 
 ## Install
 
-Download the APK from the [newest release](https://github.com/yyan115/tidal-app/releases) and open it. Releases before 1.0.0 are marked as prereleases. If you installed the 1.0.0 build that was published briefly on 1 November 2026 and then withdrawn, uninstall it first, because Android does not install an older version over a newer one. OpenTune needs Android 8 or later. Android may ask you to allow installs from your browser or file manager.
+Download the APK from the [newest release](https://github.com/lnrd-o/tidal-app/releases) and open it. Releases before 1.0.0 are marked as prereleases. If you installed the 1.0.0 build that was published briefly on 1 November 2026 and then withdrawn, uninstall it first, because Android does not install an older version over a newer one. OpenTune needs Android 8 or later. Android may ask you to allow installs from your browser or file manager.
 
-To receive updates automatically, add `https://github.com/yyan115/tidal-app` to [Obtainium](https://obtainium.imranr.dev/) and turn on **Include prereleases**.
+To receive updates automatically, add `https://github.com/lnrd-o/tidal-app` to [Obtainium](https://obtainium.imranr.dev/) and turn on **Include prereleases**.
 
 Releases are signed with one certificate. Compare it with the fingerprint below before you install, for example with [AppVerifier](https://github.com/soupslurpr/AppVerifier).
 
@@ -39,7 +39,7 @@ SHA-256  4C:75:C0:15:05:B6:F2:A3:CF:88:57:6E:D4:A6:DA:93:AF:BD:13:D1:17:CF:7A:3A
 Each release also includes a `SHA256SUMS` file and a build provenance attestation. To check the attestation:
 
 ```sh
-gh attestation verify opentune-<version>.apk --repo yyan115/tidal-app
+gh attestation verify opentune-<version>.apk --repo lnrd-o/tidal-app
 ```
 
 ## Features
@@ -54,9 +54,7 @@ gh attestation verify opentune-<version>.apk --repo yyan115/tidal-app
 
 **Your own music**
 
-- Add audio files, or add a folder and OpenTune keeps it in sync. **On device** lists everything stored on the phone, from TIDAL downloads to your own files, which carry a **Local** mark.
-- Local files show their format, bit depth, sample rate, bitrate and location, and take their cover from the file or its folder.
-- Local music plays without an account. Playlists made on the device can hold local files and TIDAL tracks.
+- **Downloads** lists the TIDAL tracks stored on the phone, with the progress of running downloads.
 
 **Playback and system**
 
@@ -99,6 +97,10 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Debug and rel
 ## Contributing
 
 If you find a bug or have an idea for a feature, please open an issue with the form. Code contributions are not accepted at the moment. To report a security problem privately, use **Report a vulnerability** on the Security tab.
+
+## Credits
+
+Made by [@lnrd.o](https://github.com/lnrd-o). Based on OpenTune by yyan115, used under the Apache License 2.0.
 
 ## License
 

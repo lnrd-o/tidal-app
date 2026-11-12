@@ -33,6 +33,10 @@ import com.google.common.util.concurrent.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.yyan115.opentune.MainActivity
 import io.github.yyan115.opentune.OpenTuneApp
+import io.github.yyan115.opentune.playback.dj.DeckTapProcessor
+import io.github.yyan115.opentune.playback.dj.DjEngine
+import io.github.yyan115.opentune.playback.dj.DjHost
+import io.github.yyan115.opentune.playback.dj.DjMix
 import io.github.yyan115.opentune.data.DownloadRequests
 import io.github.yyan115.opentune.core.JsonCodec
 import io.github.yyan115.opentune.core.Normalization
@@ -92,59 +96,115 @@ class PlaybackService : MediaLibraryService() {
     private var listenedMs = 0L
     private var playingSince = 0L
 
-    override fun onCreate() {
-        super.onCreate()
-        app = application as OpenTuneApp
-        // The renderers pass the audio through a processor that lets the visualizer see it. The audio itself does not change.
+    private val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build()
+
+    /**
+     * Builds a player. The renderers pass the audio through the tap of the deck [slot] and the processor that lets the analyzer see it.
+     * Without D'JAI the audio itself does not change.
+     */
+    private fun buildPlayer(slot: Int, focus: Boolean): ExoPlayer {
         val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink {
                 AudioSpectrum.sinks++
                 return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(arrayOf(SpectrumProcessor())).build()
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(arrayOf(DeckTapProcessor(slot), SpectrumProcessor(slot))).build()
             }
         }
-        player = ExoPlayer.Builder(this, renderers)
+        val built = ExoPlayer.Builder(this, renderers)
             .setLoadControl(streamingLoadControl())
             .setMediaSourceFactory(OpenTuneSourceFactory(app))
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+            .setAudioAttributes(audioAttributes, focus)
             .setHandleAudioBecomingNoisy(true).setWakeMode(C.WAKE_MODE_NETWORK).build()
         // Shuffle reorders the queue itself, so that the queue shows what plays next and "play next" and reordering do what they say.
         // The player's own shuffle order stays the natural order.
-        player.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
-        player.addListener(object : Player.Listener {
-            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) shuffleUpcoming() else restoreOrder() }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                finishListening()
-                val track = mediaItem?.let(::trackOf)
-                if (track != null) {
-                    scope.launch(Dispatchers.IO) { runCatching { app.library.played(track) } }
-                    startListening(track)
-                }
-                applyNormalization()
-                applyBitPerfect()
-                updateWidget(reloadArtwork = true)
-            }
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) playingSince = SystemClock.elapsedRealtime()
-                else if (playingSince != 0L) { listenedMs += SystemClock.elapsedRealtime() - playingSince; playingSince = 0 }
-                updateWidget()
-            }
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) finishListening()
-                if (playbackState == Player.STATE_READY) retryJob?.cancel()
-            }
-            override fun onPlayerError(error: PlaybackException) {
-                val transient = isTransient(error)
-                android.util.Log.w("OpenTune", "Playback error ${error.errorCodeName}, transient=$transient, chain=${generateSequence<Throwable>(error) { it.cause }.joinToString(" > ") { it.javaClass.simpleName }}")
-                if (transient) scheduleRetry()
-            }
-            override fun onAudioSessionIdChanged(audioSessionId: Int) { applyBitPerfect() }
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtTrackEnd) clearSleepTimer()
-            }
-        })
+        built.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
+        return built
+    }
+
+    /** Makes [next] the player of the session, as when D'JAI has handed the music over to the second deck. */
+    private fun adopt(next: ExoPlayer) {
+        val old = player
+        old.removeListener(playerListener)
+        old.setAudioAttributes(audioAttributes, false)
+        next.setAudioAttributes(audioAttributes, true)
+        next.addListener(playerListener)
+        player = next
+        session?.player = next
+        onItemStarted(next.currentMediaItem)
+        applyNormalization()
+    }
+
+    private val djHost = object : DjHost {
+        override val player: ExoPlayer get() = this@PlaybackService.player
+        override fun buildDeck(slot: Int): ExoPlayer = buildPlayer(slot, false)
+        override fun adopt(next: ExoPlayer) = this@PlaybackService.adopt(next)
+        override fun gainFor(item: MediaItem?): Float = this@PlaybackService.gainFor(item)
+        override fun titleOf(item: MediaItem?): String? = item?.let(::trackOf)?.title
+        override val sleepAtTrackEnd: Boolean get() = this@PlaybackService.sleepAtTrackEnd
+        override fun albumQueue(): Boolean = this@PlaybackService.isAlbumQueue()
+    }
+    private var albumKey: String? = null
+    private var albumResult = false
+
+    /** True when the queue holds two or more tracks and all of them are from one album. The answer is kept until the queue changes. */
+    private fun isAlbumQueue(): Boolean {
+        val p = player
+        val count = p.mediaItemCount
+        if (count < 2) return false
+        val key = "$count:${p.getMediaItemAt(0).mediaId}:${p.getMediaItemAt(count / 2).mediaId}:${p.getMediaItemAt(count - 1).mediaId}"
+        if (key != albumKey) {
+            albumKey = key
+            val first = trackOf(p.getMediaItemAt(0))?.albumId
+            albumResult = !first.isNullOrBlank() && (0 until count).all { trackOf(p.getMediaItemAt(it))?.albumId == first }
+        }
+        return albumResult
+    }
+    private val engine by lazy { DjEngine(djHost, scope) }
+
+    /** What the player does when a new track starts: the history, the listening time and the widget. */
+    private fun onItemStarted(mediaItem: MediaItem?) {
+        finishListening()
+        val track = mediaItem?.let(::trackOf)
+        if (track != null) {
+            scope.launch(Dispatchers.IO) { runCatching { app.library.played(track) } }
+            startListening(track)
+        }
+        applyNormalization()
+        applyBitPerfect()
+        updateWidget(reloadArtwork = true)
+    }
+
+    private val playerListener = object : Player.Listener {
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) shuffleUpcoming() else restoreOrder() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { onItemStarted(mediaItem); engine.onTrackChanged() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) playingSince = SystemClock.elapsedRealtime()
+            else if (playingSince != 0L) { listenedMs += SystemClock.elapsedRealtime() - playingSince; playingSince = 0 }
+            updateWidget()
+        }
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) finishListening()
+            if (playbackState == Player.STATE_READY) retryJob?.cancel()
+        }
+        override fun onPlayerError(error: PlaybackException) {
+            val transient = isTransient(error)
+            android.util.Log.w("OpenTune", "Playback error ${error.errorCodeName}, transient=$transient, chain=${generateSequence<Throwable>(error) { it.cause }.joinToString(" > ") { it.javaClass.simpleName }}")
+            if (transient) scheduleRetry()
+        }
+        override fun onAudioSessionIdChanged(audioSessionId: Int) { applyBitPerfect() }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtTrackEnd) clearSleepTimer()
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        app = application as OpenTuneApp
+        player = buildPlayer(0, true)
+        player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
-        scope.launch { app.settings.state.collect { applyNormalization(); applyBitPerfect() } }
+        scope.launch { app.settings.state.collect { applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+            engine.configure(it.djai, it.crossfadeSeconds, it.elzar); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback, Handler(Looper.getMainLooper())) }
@@ -272,18 +332,26 @@ class PlaybackService : MediaLibraryService() {
         ?.let { runCatching { JsonCodec.decodeTrack(JSONObject(it)) }.getOrNull() }
 
     /** Turns loud tracks down by their ReplayGain value when the listener asked for it. */
-    private fun applyNormalization() {
+    /** The gain that volume normalization gives a track, or 1 when it is off. */
+    private fun gainFor(item: MediaItem?): Float {
         val mode = app.settings.state.value.normalization
-        val track = player.currentMediaItem?.let(::trackOf)
-        if (mode == Normalization.OFF || track == null) { player.volume = 1f; SignalPath.normalizationDb = 0f; return }
+        val track = item?.let(::trackOf)
+        if (mode == Normalization.OFF || track == null) return 1f
         val gains = app.sources.gains(track.id)
-        player.volume = Normalization.volume(mode, gains?.track ?: track.replayGain, gains?.album)
-        SignalPath.normalizationDb = if (player.volume in 0.0001f..0.9999f) (20 * kotlin.math.log10(player.volume)) else 0f
+        return Normalization.volume(mode, gains?.track ?: track.replayGain, gains?.album)
+    }
+
+    private fun applyNormalization() {
+        val volume = gainFor(player.currentMediaItem)
+        player.volume = volume
+        // While D'JAI plays, the mixer applies the gain, because the players only decode.
+        DjMix.mixer.setGain(DjMix.sessionSlot, volume)
+        SignalPath.normalizationDb = if (volume in 0.0001f..0.9999f) (20 * kotlin.math.log10(volume)) else 0f
     }
 
     /** Asks Android to send the stream to a USB DAC unchanged. This is experimental and needs Android 14 or later. */
     private fun applyBitPerfect() {
-        if (Build.VERSION.SDK_INT < 34) return
+        if (Build.VERSION.SDK_INT < 34 || DjMix.routing) return
         runCatching {
             val attributes = player.audioAttributes.audioAttributesV21.audioAttributes
             val usb = if (app.settings.state.value.bitPerfect) audioManager.getAudioDevicesForAttributes(attributes).firstOrNull {
@@ -300,6 +368,20 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** Turns the music down over [SLEEP_FADE_MS] and pauses it, so that the sleep timer does not cut the sound off. */
+    private suspend fun fadeOutAndPause() {
+        val base = gainFor(player.currentMediaItem)
+        val steps = 60
+        for (i in 1..steps) {
+            val gain = base * (1f - i / steps.toFloat())
+            player.volume = gain
+            DjMix.mixer.setGain(DjMix.sessionSlot, gain)
+            delay(SLEEP_FADE_MS / steps)
+        }
+        player.pause()
+        applyNormalization()
+    }
+
     private fun setSleepTimer(minutes: Int, endOfTrack: Boolean) {
         clearSleepTimer()
         val extras = Bundle()
@@ -307,7 +389,7 @@ class PlaybackService : MediaLibraryService() {
             minutes > 0 -> {
                 val endsAt = System.currentTimeMillis() + minutes * 60_000L
                 extras.putLong(PlaybackCommands.EXTRA_ENDS_AT, endsAt)
-                sleepJob = scope.launch { delay(minutes * 60_000L); player.pause(); clearSleepTimer() }
+                sleepJob = scope.launch { delay((minutes * 60_000L - SLEEP_FADE_MS).coerceAtLeast(0)); fadeOutAndPause(); clearSleepTimer() }
             }
             endOfTrack -> {
                 sleepAtTrackEnd = true; player.pauseAtEndOfMediaItems = true
@@ -344,6 +426,8 @@ class PlaybackService : MediaLibraryService() {
         scope.launch { runCatching { app.scrobbler.listened(track, startedAt) } }
     }
 
+    private companion object { const val SLEEP_FADE_MS = 12_000L }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
     override fun onTaskRemoved(rootIntent: Intent?) {
         val current = session?.player
@@ -355,6 +439,7 @@ class PlaybackService : MediaLibraryService() {
         runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
         app.sources.onGains = null
         WidgetState.write(this, null); NowPlayingWidget.refresh(this)
+        runCatching { engine.setEnabled(false) }
         scope.cancel(); session?.player?.release(); session?.release(); session = null; super.onDestroy()
     }
 
@@ -395,3 +480,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 }
+
+/** The settings of the tone module, in the form that the mixer takes. */
+private fun io.github.yyan115.opentune.data.Settings.toElZarConfig() = io.github.yyan115.opentune.core.dj.ElZarConfig(
+    on = elzar, glue = elzarGlue / 100f, tape = elzarTape / 100f, vinyl = elzarVinyl / 100f,
+    flavor = io.github.yyan115.opentune.core.dj.Flavor.entries.getOrElse(elzarFlavor) { io.github.yyan115.opentune.core.dj.Flavor.STUDIO },
+    tapeType = io.github.yyan115.opentune.core.dj.TapeType.entries.getOrElse(elzarTapeType) { io.github.yyan115.opentune.core.dj.TapeType.STUDIO },
+    vinylCondition = io.github.yyan115.opentune.core.dj.VinylCondition.entries.getOrElse(elzarVinylCondition) { io.github.yyan115.opentune.core.dj.VinylCondition.WORN },
+    vinylFast = elzarVinylFast, console = elzarConsole / 100f, tube = elzarTube / 100f, air = elzarAir / 100f, clip = elzarClip / 100f,
+    midSide = elzarMidSide, bypass = elzarBypass,
+)

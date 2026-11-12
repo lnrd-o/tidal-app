@@ -78,7 +78,15 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     val openTrackMenu: (Track) -> Unit = { trackMenu = it; playlistPosition = null }
     // A page opens over everything else, so the player, the settings and the lists behind it make way.
     val openRelease: (Release) -> Unit = { release -> closeSettings(); nowPlaying = false; queue = false; vm.open(release) }
-    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); vm.messageShown() } }
+    val undoLabel = stringResource(R.string.action_undo)
+    LaunchedEffect(state.message) {
+        state.message?.let { text ->
+            val undo = state.undo
+            val result = snackbar.showSnackbar(text, actionLabel = if (undo != null) undoLabel else null)
+            vm.messageShown()
+            if (result == SnackbarResult.ActionPerformed) undo?.invoke()
+        }
+    }
     LaunchedEffect(state.signedIn) { if (state.signedIn) vm.finishWelcome() }
     BackHandler(enabled = state.detail != null || settings || state.routes.isNotEmpty()) {
         if (settingsPageOpen != null) settingsPage = settingsPageOpen.parent?.name else if (settings) closeSettings() else vm.closeDetail()
@@ -174,7 +182,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
 
     // The sign-in finishes in the browser, so a bar shows while the app exchanges the answer.
     if (state.signingIn) LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding())
-    if (nowPlaying && state.playback.track != null) NowPlayingScreen(state, vm, onClose = { nowPlaying = false }, onQueue = { queue = true }, onMenu = openTrackMenu, onAlbum = { track -> openRelease(Release(track.albumId, track.album, track.artist, track.artwork)) },
+    if (nowPlaying && state.playback.track != null) NowPlayingScreen(state, vm, onClose = { nowPlaying = false }, onQueue = { queue = true }, onMenu = openTrackMenu, onCredits = { track -> vm.showCredits("track", track.id, "${track.title} · ${track.artist}") }, onAlbum = { track -> openRelease(Release(track.albumId, track.album, track.artist, track.artwork)) },
         onArtist = { track -> openRelease(Release(track.artistId, track.artist.substringBefore(","), "", type = ReleaseType.ARTIST)) }, initialLyrics = initialLyrics)
     if (queue) QueueSheet(state, vm) { queue = false }
     trackMenu?.let { track ->
@@ -231,7 +239,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         text = { Text(stringResource(R.string.update_text, found.version)) },
         confirmButton = { TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(found.url))) }; vm.dismissUpdate() }) { Text(stringResource(R.string.update_download)) } },
         dismissButton = { TextButton(onClick = vm::dismissUpdate) { Text(stringResource(R.string.update_later)) } }) }
-    storyTrack?.let { track -> StoryShareSheet(track, track.quality.orEmpty()) { storyTrack = null } }
+    storyTrack?.let { track -> StoryShareSheet(track, track.quality.orEmpty(), vm::storyDetails) { storyTrack = null } }
     state.video?.let { video -> VideoPlayerOverlay(video, state.settings.offline, vm::closeVideo) }
     state.credits?.let { credits -> CreditsSheet(credits, onClose = vm::dismissCredits, onPerson = { person ->
         vm.dismissCredits()

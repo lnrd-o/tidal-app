@@ -373,6 +373,8 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
     var mobile by remember { mutableStateOf(false) }
     var signOut by remember { mutableStateOf(false) }
     var normalization by remember { mutableStateOf(false) }
+    var crossfade by remember { mutableStateOf(false) }
+    var elzarOpen by remember { mutableStateOf(false) }
     var scrobbling by remember { mutableStateOf(false) }
     var clearHistory by remember { mutableStateOf(false) }
     var mobileDataWarning by remember { mutableStateOf(false) }
@@ -389,6 +391,11 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SectionTitle(stringResource(R.string.settings_playback)) }
         item { SettingRow(OpenTuneIcons.Shuffle, stringResource(R.string.settings_repeats), if (settings.avoidRepeatHours == 0) stringResource(R.string.settings_off) else repeatWindowText(settings.avoidRepeatHours),
             { onOpenPage(SettingsPage.Repeats) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
+        item { SettingRow(OpenTuneIcons.Timer, stringResource(R.string.settings_crossfade), if (settings.crossfadeSeconds == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_crossfade_value, settings.crossfadeSeconds),
+            { crossfade = true }) }
+        item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
+            if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_djai), settings.djai, { value -> vm.settings { it.copy(djai = value) } }, stringResource(R.string.settings_djai_text)) }
         // These settings change how TIDAL is streamed and downloaded, so they appear once an account is connected.
         if (state.signedIn) {
             item { SectionTitle(stringResource(R.string.settings_tidal)) }
@@ -421,11 +428,23 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SectionTitle(stringResource(R.string.settings_about)) }
         item { SwitchRow(OpenTuneIcons.Refresh, stringResource(R.string.settings_updates), settings.checkUpdates, { value -> vm.settings { it.copy(checkUpdates = value) } }, stringResource(R.string.settings_updates_text)) }
         item { SettingRow(OpenTuneIcons.Info, stringResource(R.string.settings_version), BuildConfig.VERSION_NAME) }
-        item { SettingRow(OpenTuneIcons.Code, stringResource(R.string.settings_source), "github.com/yyan115/tidal-app", {
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/yyan115/tidal-app"))) }
+        item { SettingRow(OpenTuneIcons.Code, stringResource(R.string.settings_source), stringResource(R.string.settings_author), {
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lnrd-o/tidal-app"))) }
         }) }
         item { SettingRow(OpenTuneIcons.PrivacyTip, stringResource(R.string.settings_privacy), stringResource(R.string.settings_privacy_text)) }
         item { SettingRow(OpenTuneIcons.Description, stringResource(R.string.settings_licenses), onClick = { onOpenPage(SettingsPage.Licenses) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
+    }
+    if (elzarOpen) ElZarDialog(settings, { change -> vm.settings(change) }) { elzarOpen = false }
+    if (crossfade) {
+        var seconds by remember { mutableFloatStateOf(settings.crossfadeSeconds.toFloat()) }
+        AlertDialog(onDismissRequest = { crossfade = false }, title = { Text(stringResource(R.string.settings_crossfade)) }, text = {
+            Column {
+                Text(if (seconds.toInt() == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_crossfade_value, seconds.toInt()), style = MaterialTheme.typography.titleMedium)
+                Slider(seconds, { seconds = it }, valueRange = 0f..12f, steps = 11)
+                Text(stringResource(R.string.settings_crossfade_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }, confirmButton = { TextButton(onClick = { vm.settings { it.copy(crossfadeSeconds = seconds.toInt()) }; crossfade = false }) { Text(stringResource(R.string.action_save)) } },
+            dismissButton = { TextButton(onClick = { crossfade = false }) { Text(stringResource(R.string.action_cancel)) } })
     }
     if (normalization) NormalizationDialog(settings.normalization, { value -> vm.settings { it.copy(normalization = value) } }) { normalization = false }
     if (scrobbling) ScrobbleDialog(settings, vm) { scrobbling = false }

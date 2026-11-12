@@ -13,6 +13,28 @@ data class Settings(
     /** Volume normalization from ReplayGain data: "off", "track" or "album". */
     val normalization: String = "off",
     val bitPerfect: Boolean = false,
+    /** D'JAI: mixes the queue as one continuous set. The players only decode and a mixer plays the result. */
+    val djai: Boolean = false,
+    /** Blends the end of a song into the next one for this many seconds. Zero is off. Albums stay gapless. */
+    val crossfadeSeconds: Int = 0,
+    /** Tone Lab: studio glue, tape and vinyl character, each from 0 to 100. It plays through the mixer, so bit-perfect output is off. */
+    val elzar: Boolean = false,
+    val elzarGlue: Int = 40,
+    val elzarTape: Int = 30,
+    val elzarVinyl: Int = 0,
+    /** The index of the glue flavor, in the order of the Flavor enum. */
+    val elzarFlavor: Int = 0,
+    val elzarTapeType: Int = 0,
+    val elzarVinylCondition: Int = 1,
+    /** True for a record at 45 rpm. */
+    val elzarVinylFast: Boolean = false,
+    val elzarConsole: Int = 0,
+    val elzarTube: Int = 0,
+    val elzarAir: Int = 0,
+    val elzarClip: Int = 0,
+    val elzarMidSide: Boolean = false,
+    /** Plays the original at the loudness of the processed sound. */
+    val elzarBypass: Boolean = false,
     /** Downloads a track when it is saved with the heart button. At most one of [downloadSaved] and [downloadPlayed] is on. */
     val downloadSaved: Boolean = false,
     /** Downloads each track that counts as played. At most one of [downloadSaved] and [downloadPlayed] is on. */
@@ -45,7 +67,13 @@ class AppSettings(context: Context) {
     private val mutable = MutableStateFlow(Settings(
         quality = quality("quality", AudioQuality.LOSSLESS), mobileQuality = quality("mobileQuality", AudioQuality.LOSSLESS),
         downloadOnWifi = preferences.getBoolean("downloadOnWifi", true), offline = preferences.getBoolean("offline", false),
-        normalization = preferences.getString("normalization", "off") ?: "off",        bitPerfect = preferences.getBoolean("bitPerfect", false),
+        normalization = preferences.getString("normalization", "off") ?: "off",        bitPerfect = preferences.getBoolean("bitPerfect", false), djai = preferences.getBoolean("djai", false), crossfadeSeconds = preferences.getInt("crossfadeSeconds", 0).coerceIn(0, 12), elzar = preferences.getBoolean("elzar", false),
+        elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6),
+        elzarTapeType = preferences.getInt("elzarTapeType", 0).coerceIn(0, 3), elzarVinylCondition = preferences.getInt("elzarVinylCondition", 1).coerceIn(0, 2),
+        elzarVinylFast = preferences.getBoolean("elzarVinylFast", false), elzarConsole = preferences.getInt("elzarConsole", 0).coerceIn(0, 100),
+        elzarTube = preferences.getInt("elzarTube", 0).coerceIn(0, 100), elzarAir = preferences.getInt("elzarAir", 0).coerceIn(0, 100),
+        elzarClip = preferences.getInt("elzarClip", 0).coerceIn(0, 100), elzarMidSide = preferences.getBoolean("elzarMidSide", false),
+        elzarBypass = preferences.getBoolean("elzarBypass", false),
         // The option that kept saved tracks offline became the download of saved tracks.
         downloadSaved = preferences.getBoolean("downloadSaved", preferences.getBoolean("keepFavoritesOffline", false)),
         downloadPlayed = preferences.getBoolean("downloadPlayed", false),
@@ -59,7 +87,11 @@ class AppSettings(context: Context) {
         preferences.edit().putString("quality", next.quality.name).putString("mobileQuality", next.mobileQuality.name)
             .putBoolean("downloadOnWifi", next.downloadOnWifi).putBoolean("offline", next.offline)
             .remove("theme").remove("colorTheme").remove("equalizer").remove("equalizerLevels").remove("equalizerCustom").remove("equalizerUsesCustom").remove("visualizer")
-            .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect)
+            .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
+            .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor)
+            .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)
+            .putInt("elzarConsole", next.elzarConsole).putInt("elzarTube", next.elzarTube).putInt("elzarAir", next.elzarAir).putInt("elzarClip", next.elzarClip)
+            .putBoolean("elzarMidSide", next.elzarMidSide).putBoolean("elzarBypass", next.elzarBypass)
             .putBoolean("downloadSaved", next.downloadSaved).putBoolean("downloadPlayed", next.downloadPlayed).remove("keepFavoritesOffline").putBoolean("scrobble", next.scrobble)
             .putString("scrobbleServer", next.scrobbleServer).putBoolean("welcomeDone", next.welcomeDone).putBoolean("autoplay", next.autoplay)
             .putInt("avoidRepeatHours", next.avoidRepeatHours).putBoolean("checkUpdates", next.checkUpdates).putBoolean("setupPending", next.setupPending).apply()

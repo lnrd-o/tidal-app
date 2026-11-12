@@ -6,7 +6,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -132,12 +134,9 @@ fun MiniPlayer(state: PlaybackState, position: State<Long>, onOpen: () -> Unit, 
     }
 }
 
-/** How long the text and the controls stay on screen while music plays before only the cover remains. */
-private const val CHROME_HIDE_MS = 4_000L
-
 /**
- * The full-screen player. The cover fills the screen and every control is a gesture:
- * tap shows or hides the details, double tap saves the track, swipe sideways changes track,
+ * The full-screen player. The text and the controls always stay on screen, and these gestures work on the cover:
+ * double tap saves the track, swipe sideways changes track,
  * swipe up opens the queue, swipe down closes the player, long press opens the track menu,
  * and a drag along the right edge changes the volume.
  */
@@ -152,6 +151,7 @@ fun NowPlayingScreen(
     onMenu: (Track) -> Unit,
     onAlbum: (Track) -> Unit = {},
     onArtist: (Track) -> Unit = {},
+    onCredits: (Track) -> Unit = {},
     initialLyrics: Boolean = false,
 ) {
     val track = state.playback.track ?: return
@@ -161,20 +161,16 @@ fun NowPlayingScreen(
     var timer by remember { mutableStateOf(false) }
     var path by remember { mutableStateOf(false) }
     var storyShare by remember { mutableStateOf(false) }
-    var chrome by remember { mutableStateOf(true) }
-    var touched by remember { mutableIntStateOf(0) }
+    var spectrum by remember { mutableStateOf(false) }
+    // The text and the controls always stay on screen.
+    val chrome = true
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val playing = state.playback.playing
     val saved = state.favorites.any { it.id == track.id }
 
-    // The details leave after a few quiet seconds while music plays. They stay while it is paused or the lyrics are open.
-    LaunchedEffect(touched, track.id, playing, lyrics, path, timer, storyShare) {
-        chrome = true
-        if (playing && !lyrics && !path && !timer && !storyShare) { delay(CHROME_HIDE_MS); chrome = false }
-    }
-    fun poke() { touched++ }
+    fun poke() {}
 
     val audio = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
@@ -207,96 +203,112 @@ fun NowPlayingScreen(
 
             BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                 val landscape = maxWidth > maxHeight && maxWidth >= 480.dp
-                val panelHeight = 330.dp
-                val coverSize = if (landscape) minOf(maxHeight - 32.dp, maxWidth * .42f).coerceAtLeast(160.dp)
-                    else minOf(maxWidth - 32.dp, maxHeight - panelHeight - 72.dp).coerceIn(160.dp, 520.dp)
-                // With the details gone the cover grows to fill the room that they left.
-                val grow = if (landscape) minOf(maxHeight - 8.dp, maxWidth * .6f) / coverSize else minOf(maxWidth - 8.dp, coverSize * 1.18f) / coverSize
-                val scale by animateFloatAsState(if (chrome) 1f else grow, spring(dampingRatio = .82f, stiffness = 380f), label = "cover-grow")
+                val scale = 1f
 
-                Box(Modifier.then(if (landscape) Modifier.align(Alignment.CenterStart).padding(start = 24.dp) else Modifier.align(Alignment.TopCenter).padding(top = 56.dp))
-                    .then(if (landscape) Modifier.size(coverSize) else Modifier.fillMaxWidth().height(maxHeight - panelHeight - 56.dp)), contentAlignment = Alignment.Center) {
-                    AnimatedContent(lyrics, Modifier.fillMaxSize(), transitionSpec = {
-                        (fadeIn(tween(260)) + slideInVertically(spring(dampingRatio = .85f, stiffness = 420f)) { if (targetState) it / 8 else -it / 10 } + scaleIn(tween(260), if (targetState) .96f else 1.04f)) togetherWith
-                            (fadeOut(tween(160)) + scaleOut(tween(200), if (targetState) 1.04f else .96f))
-                    }, label = "cover-lyrics") { showLyrics ->
-                        if (showLyrics) LyricsPanel(state, vm, Modifier.fillMaxSize().padding(horizontal = 24.dp).testTag("lyrics"))
-                        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            val pager = rememberPagerState(initialPage = currentIndex) { queue.size }
-                            LaunchedEffect(currentIndex) { if (pager.currentPage != currentIndex && currentIndex in queue.indices) pager.animateScrollToPage(currentIndex, animationSpec = spring(stiffness = 500f)) }
-                            LaunchedEffect(pager.settledPage) { if (pager.settledPage != currentIndex && pager.settledPage in queue.indices) vm.jumpTo(pager.settledPage) }
-                            HorizontalPager(pager, Modifier.size(coverSize + 24.dp).graphicsLayer { scaleX = scale; scaleY = scale }.testTag("cover-pager"), pageSpacing = 16.dp, beyondViewportPageCount = 1) { page ->
-                                val pageTrack = queue.getOrNull(page) ?: track
-                                val distance = ((pager.currentPage - page) + pager.currentPageOffsetFraction).absoluteValue
-                                var heart by remember { mutableIntStateOf(0) }
-                                Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - distance * .6f).coerceIn(.3f, 1f); val s = (1f - distance * .08f).coerceIn(.9f, 1f); scaleX = s; scaleY = s }
-                                    .pointerInput(pageTrack.id, chrome) {
-                                        detectTapGestures(
-                                            onTap = { if (chrome) chrome = false else poke() },
-                                            onDoubleTap = { vm.favorite(pageTrack); heart++; haptic.performHapticFeedback(HapticFeedbackType.LongPress); poke() },
-                                            onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onMenu(pageTrack) },
-                                        )
-                                    }, contentAlignment = Alignment.Center) {
-                                    TrackArtwork(pageTrack, stringResource(R.string.player_artwork, pageTrack.album), Modifier.size(coverSize))
-                                    HeartBurst(heart)
+                // The cover, or the lyrics in its place. The caller decides how much room there is.
+                val coverContent: @Composable (Dp) -> Unit = { coverSize ->
+                        AnimatedContent(lyrics, Modifier.fillMaxSize(), transitionSpec = {
+                            (fadeIn(tween(260)) + slideInVertically(spring(dampingRatio = .85f, stiffness = 420f)) { if (targetState) it / 8 else -it / 10 } + scaleIn(tween(260), if (targetState) .96f else 1.04f)) togetherWith
+                                (fadeOut(tween(160)) + scaleOut(tween(200), if (targetState) 1.04f else .96f))
+                        }, label = "cover-lyrics") { showLyrics ->
+                            if (showLyrics) LyricsPanel(state, vm, Modifier.fillMaxSize().padding(horizontal = 24.dp).testTag("lyrics"))
+                            else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                val pager = rememberPagerState(initialPage = currentIndex) { queue.size }
+                                LaunchedEffect(currentIndex) { if (pager.currentPage != currentIndex && currentIndex in queue.indices) pager.animateScrollToPage(currentIndex, animationSpec = spring(stiffness = 500f)) }
+                                LaunchedEffect(pager.settledPage) { if (pager.settledPage != currentIndex && pager.settledPage in queue.indices) vm.jumpTo(pager.settledPage) }
+                                HorizontalPager(pager, Modifier.size(coverSize + 24.dp).graphicsLayer { scaleX = scale; scaleY = scale }.testTag("cover-pager"), pageSpacing = 16.dp, beyondViewportPageCount = 1) { page ->
+                                    val pageTrack = queue.getOrNull(page) ?: track
+                                    val distance = ((pager.currentPage - page) + pager.currentPageOffsetFraction).absoluteValue
+                                    var heart by remember { mutableIntStateOf(0) }
+                                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - distance * .6f).coerceIn(.3f, 1f); val s = (1f - distance * .08f).coerceIn(.9f, 1f); scaleX = s; scaleY = s }
+                                        .pointerInput(pageTrack.id) {
+                                            detectTapGestures(
+                                                onDoubleTap = { vm.favorite(pageTrack); heart++; haptic.performHapticFeedback(HapticFeedbackType.LongPress); poke() },
+                                                onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onCredits(pageTrack) },
+                                            )
+                                        }, contentAlignment = Alignment.Center) {
+                                        TrackArtwork(pageTrack, stringResource(R.string.player_artwork, pageTrack.album), Modifier.size(coverSize))
+                                        HeartBurst(heart)
+                                    }
                                 }
                             }
                         }
+                }
+
+                // The panel under the cover. It is a part of the layout, so the cover takes exactly the room that it leaves,
+                // and when the D'JAI strip appears or goes away the cover follows its height frame by frame.
+                val panelContent: @Composable (Modifier) -> Unit = { panelModifier ->
+                        AnimatedVisibility(chrome, panelModifier,
+                        enter = fadeIn(tween(160)) + slideInVertically(spring(dampingRatio = .85f, stiffness = 420f)) { it / 3 }, exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 3 }) {
+                        Column(Modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = .9f, stiffness = 500f)).padding(horizontal = 24.dp).padding(bottom = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    AnimatedContent(track, contentKey = { it.id }, transitionSpec = { (slideInVertically(tween(220)) { it / 3 } + fadeIn(tween(200))) togetherWith (slideOutVertically(tween(160)) { -it / 3 } + fadeOut(tween(120))) }, label = "title") { shown ->
+                                        Column {
+                                            Text(shown.title, Modifier.testTag("player-title").then(if (shown.albumId.isNotBlank()) Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.track_go_album)) { onAlbum(shown) } else Modifier),
+                                                fontFamily = AppFonts.body, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(shown.artist, Modifier.testTag("player-artist").padding(top = 2.dp).then(if (shown.artistId.isNotBlank()) Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.track_go_artist)) { onArtist(shown) } else Modifier),
+                                                fontFamily = AppFonts.body, fontSize = 15.sp, color = Color.White.copy(alpha = .65f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                                val pop by animateFloatAsState(if (saved) 1f else .9f, spring(.45f, 600f), label = "heart")
+                                IconButton(onClick = { vm.favorite(track); poke() }, Modifier.graphicsLayer { scaleX = pop; scaleY = pop }) {
+                                    Icon(if (saved) OpenTuneIcons.Favorite else OpenTuneIcons.FavoriteBorder, stringResource(if (saved) R.string.track_unsave else R.string.track_save), Modifier.size(26.dp), tint = if (saved) Color.White else Color.White.copy(alpha = .7f))
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            SeekLine(vm, track.id, state.playback.duration) { poke() }
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                ToggleIcon(OpenTuneIcons.Shuffle, stringResource(R.string.player_shuffle), state.playback.shuffle) { vm.toggleShuffle(); poke() }
+                                IconButton(onClick = { vm.previous(); poke() }, Modifier.size(52.dp)) { Icon(OpenTuneIcons.FastRewind, stringResource(R.string.player_previous), Modifier.size(30.dp), tint = Color.White) }
+                                PlayControl(playing, state.playback.buffering, 60.dp) { vm.togglePlay(); poke() }
+                                IconButton(onClick = { vm.next(); poke() }, Modifier.size(52.dp), enabled = state.playback.nextIndex >= 0) {
+                                    Icon(OpenTuneIcons.FastForward, stringResource(R.string.player_next), Modifier.size(30.dp), tint = if (state.playback.nextIndex >= 0) Color.White else Color.White.copy(alpha = .3f))
+                                }
+                                ToggleIcon(if (state.playback.repeat == Player.REPEAT_MODE_ONE) OpenTuneIcons.RepeatOne else OpenTuneIcons.Repeat,
+                                    stringResource(when (state.playback.repeat) { Player.REPEAT_MODE_ONE -> R.string.player_repeat_one; Player.REPEAT_MODE_ALL -> R.string.player_repeat_all; else -> R.string.player_repeat_off }),
+                                    state.playback.repeat != Player.REPEAT_MODE_OFF) { vm.toggleRepeat(); poke() }
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                val timerOn = state.sleepEndsAt > 0 || state.sleepAtTrackEnd
+                                TextTool(OpenTuneIcons.Lyrics, stringResource(R.string.player_lyrics), lyrics) { lyrics = !lyrics; poke() }
+                                TextTool(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label), timerOn) { timer = true }
+                                TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title), false) { onQueue() }
+                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai) { vm.settings { it.copy(djai = !it.djai) }; poke() }
+                            }
+                            if (state.settings.djai) DjStrip(Modifier.padding(bottom = 8.dp))
+                            UpNext(state, vm, onQueue)
+                        }
                     }
+                }
+
+                if (landscape) {
+                    val coverSize = minOf(maxHeight - 32.dp, maxWidth * .42f).coerceAtLeast(160.dp)
+                    Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp).size(coverSize), contentAlignment = Alignment.Center) { coverContent(coverSize) }
+                    panelContent(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f))
+                } else Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(56.dp))
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        coverContent(minOf(maxWidth - 56.dp, maxHeight - 24.dp).coerceIn(96.dp, 720.dp))
+                    }
+                    panelContent(Modifier.fillMaxWidth())
                 }
 
                 // Top: the quality badge, which opens the signal path, with the share and menu actions.
                 AnimatedVisibility(chrome, Modifier.align(Alignment.TopCenter), enter = fadeIn(tween(140)) + slideInVertically(tween(180)) { -it / 2 }, exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { -it / 2 }) {
                     Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onClose) { Icon(OpenTuneIcons.KeyboardArrowDown, stringResource(R.string.player_close), Modifier.size(26.dp), tint = Color.White) }
+                        // Both sides are 144 dp wide, so the badge sits in the exact middle.
+                        Box(Modifier.width(144.dp)) { IconButton(onClick = onClose) { Icon(OpenTuneIcons.KeyboardArrowDown, stringResource(R.string.player_close), Modifier.size(26.dp), tint = Color.White) } }
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { QualityBadge(state.playback.quality, onClick = { path = true; poke() }) }
-                        IconButton(onClick = { storyShare = true }) { Icon(OpenTuneIcons.Share, stringResource(R.string.share_story_button), Modifier.size(21.dp), tint = Color.White) }
-                        IconButton(onClick = { onMenu(track) }) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.player_track_options), Modifier.size(21.dp), tint = Color.White) }
+                        Row(Modifier.width(144.dp), horizontalArrangement = Arrangement.End) {
+                            IconButton(onClick = { spectrum = true }) { Icon(OpenTuneIcons.GraphicEq, stringResource(R.string.path_fullscreen), Modifier.size(21.dp), tint = Color.White) }
+                            IconButton(onClick = { storyShare = true }) { Icon(OpenTuneIcons.Share, stringResource(R.string.share_story_button), Modifier.size(21.dp), tint = Color.White) }
+                            IconButton(onClick = { onMenu(track) }) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.player_track_options), Modifier.size(21.dp), tint = Color.White) }
+                        }
                     }
                 }
 
-                // Bottom: title, seek line, transport and the next track.
-                AnimatedVisibility(chrome, Modifier.align(if (landscape) Alignment.CenterEnd else Alignment.BottomCenter).then(if (landscape) Modifier.fillMaxWidth(.5f) else Modifier.fillMaxWidth()),
-                    enter = fadeIn(tween(160)) + slideInVertically(spring(dampingRatio = .85f, stiffness = 420f)) { it / 3 }, exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 3 }) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                AnimatedContent(track, contentKey = { it.id }, transitionSpec = { (slideInVertically(tween(220)) { it / 3 } + fadeIn(tween(200))) togetherWith (slideOutVertically(tween(160)) { -it / 3 } + fadeOut(tween(120))) }, label = "title") { shown ->
-                                    Column {
-                                        Text(shown.title, Modifier.testTag("player-title").then(if (shown.albumId.isNotBlank()) Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.track_go_album)) { onAlbum(shown) } else Modifier),
-                                            fontFamily = AppFonts.body, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(shown.artist, Modifier.testTag("player-artist").padding(top = 2.dp).then(if (shown.artistId.isNotBlank()) Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.track_go_artist)) { onArtist(shown) } else Modifier),
-                                            fontFamily = AppFonts.body, fontSize = 15.sp, color = Color.White.copy(alpha = .65f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                            val pop by animateFloatAsState(if (saved) 1f else .9f, spring(.45f, 600f), label = "heart")
-                            IconButton(onClick = { vm.favorite(track); poke() }, Modifier.graphicsLayer { scaleX = pop; scaleY = pop }) {
-                                Icon(if (saved) OpenTuneIcons.Favorite else OpenTuneIcons.FavoriteBorder, stringResource(if (saved) R.string.track_unsave else R.string.track_save), Modifier.size(26.dp), tint = if (saved) Color.White else Color.White.copy(alpha = .7f))
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        SeekLine(vm, track.id, state.playback.duration) { poke() }
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            ToggleIcon(OpenTuneIcons.Shuffle, stringResource(R.string.player_shuffle), state.playback.shuffle) { vm.toggleShuffle(); poke() }
-                            IconButton(onClick = { vm.previous(); poke() }, Modifier.size(52.dp)) { Icon(OpenTuneIcons.FastRewind, stringResource(R.string.player_previous), Modifier.size(30.dp), tint = Color.White) }
-                            PlayControl(playing, state.playback.buffering, 60.dp) { vm.togglePlay(); poke() }
-                            IconButton(onClick = { vm.next(); poke() }, Modifier.size(52.dp), enabled = state.playback.nextIndex >= 0) {
-                                Icon(OpenTuneIcons.FastForward, stringResource(R.string.player_next), Modifier.size(30.dp), tint = if (state.playback.nextIndex >= 0) Color.White else Color.White.copy(alpha = .3f))
-                            }
-                            ToggleIcon(if (state.playback.repeat == Player.REPEAT_MODE_ONE) OpenTuneIcons.RepeatOne else OpenTuneIcons.Repeat,
-                                stringResource(when (state.playback.repeat) { Player.REPEAT_MODE_ONE -> R.string.player_repeat_one; Player.REPEAT_MODE_ALL -> R.string.player_repeat_all; else -> R.string.player_repeat_off }),
-                                state.playback.repeat != Player.REPEAT_MODE_OFF) { vm.toggleRepeat(); poke() }
-                        }
-                        Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            val timerOn = state.sleepEndsAt > 0 || state.sleepAtTrackEnd
-                            TextTool(OpenTuneIcons.Lyrics, stringResource(R.string.player_lyrics), lyrics) { lyrics = !lyrics; poke() }
-                            TextTool(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label), timerOn) { timer = true }
-                            TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.player_queue_count, state.playback.queue.size), false) { onQueue() }
-                        }
-                        UpNext(state, vm, onQueue)
-                    }
-                }
 
                 // The right edge changes the volume: a drag up raises it, a drag down lowers it.
                 Box(Modifier.align(Alignment.CenterEnd).width(44.dp).fillMaxHeight(.7f).pointerInput(Unit) {
@@ -312,9 +324,11 @@ fun NowPlayingScreen(
         }
     }
 
-    if (path) SignalPathSheet(state.playback.quality, track, playing) { path = false }
+    if (path) SignalPathSheet(state.playback.quality, track, playing, onSpectrum = { path = false; spectrum = true },
+        elzar = state.settings.takeIf { it.elzar }?.let { Triple(it.elzarGlue, it.elzarTape, it.elzarVinyl) }) { path = false }
+    if (spectrum) SpectrumScreen(state) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
-    if (storyShare) StoryShareSheet(track, state.playback.quality) { storyShare = false }
+    if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }
 }
 
 /** A rectangular heart that jumps in at the double tap and fades. */
@@ -344,9 +358,9 @@ private fun ToggleIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, de
 /** A small tool with an icon and a label. */
 @Composable
 private fun TextTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
-    Row(Modifier.clickable(role = Role.Button, onClick = onClick).border(1.dp, if (on) Color.White else Color.White.copy(alpha = .2f), RectangleShape).background(if (on) Color.White.copy(alpha = .12f) else Color.Transparent).padding(horizontal = 12.dp, vertical = 8.dp),
+    Row(Modifier.clickable(role = Role.Button, onClick = onClick).border(1.dp, if (on) Color.White else Color.White.copy(alpha = .2f), RectangleShape).background(if (on) Color.White.copy(alpha = .12f) else Color.Transparent).padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(16.dp), tint = if (on) Color.White else Color.White.copy(alpha = .7f))
+        Icon(icon, null, Modifier.size(15.dp), tint = if (on) Color.White else Color.White.copy(alpha = .7f))
         Spacer(Modifier.width(6.dp))
         Text(label, fontFamily = AppFonts.body, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (on) Color.White else Color.White.copy(alpha = .7f), maxLines = 1)
     }

@@ -84,7 +84,7 @@ object SignalPath {
  * and a rate above 48 kHz is brought down by whole steps, so that the analysis covers the same span of time at every rate.
  */
 @UnstableApi
-class SpectrumProcessor : BaseAudioProcessor() {
+class SpectrumProcessor(private val slot: Int = 0) : BaseAudioProcessor() {
     private var encoding = C.ENCODING_INVALID
     private var channels = 2
     private var step = 1
@@ -96,7 +96,7 @@ class SpectrumProcessor : BaseAudioProcessor() {
         // A format that the tap cannot read, such as compressed audio sent on to a receiver, is left alone.
         if (inputAudioFormat.encoding !in SUPPORTED) return AudioFormat.NOT_SET
         AudioSpectrum.configuration = "encoding ${inputAudioFormat.encoding}, ${inputAudioFormat.channelCount} channels, ${inputAudioFormat.sampleRate} Hz"
-        SignalPath.decoded = SignalPath.Decoded(inputAudioFormat.sampleRate, when (inputAudioFormat.encoding) {
+        if (slot == io.github.yyan115.opentune.playback.dj.DjMix.sessionSlot) SignalPath.decoded = SignalPath.Decoded(inputAudioFormat.sampleRate, when (inputAudioFormat.encoding) {
             C.ENCODING_PCM_16BIT -> 16; C.ENCODING_PCM_24BIT -> 24; else -> 32
         }, inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT, inputAudioFormat.channelCount)
         encoding = inputAudioFormat.encoding; channels = inputAudioFormat.channelCount.coerceAtLeast(1)
@@ -108,7 +108,7 @@ class SpectrumProcessor : BaseAudioProcessor() {
     override fun queueInput(inputBuffer: ByteBuffer) {
         val size = inputBuffer.remaining()
         if (size == 0) return
-        if (AudioSpectrum.enabled) tap(inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN))
+        if (AudioSpectrum.enabled && !io.github.yyan115.opentune.playback.dj.DjMix.routing) tap(inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN))
         replaceOutputBuffer(size).put(inputBuffer).flip()
     }
 

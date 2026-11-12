@@ -36,14 +36,19 @@ import kotlinx.coroutines.launch
 /** Previews the story card in each of the nine layouts and shares it. A swipe on the preview or a tap on a layout changes it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StoryShareSheet(track: Track, quality: String, onClose: () -> Unit) {
+fun StoryShareSheet(track: Track, quality: String, loadDetails: suspend (Track) -> StoryDetails = { StoryDetails() }, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var layout by remember { mutableStateOf(StoryLayout.CENTERED) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     val strip = rememberLazyListState()
-    LaunchedEffect(track.id, quality, layout) {
-        bitmap = runCatching { TidalStoryRenderer.generateStoryCard(context, track, quality, layout) }.onFailure { android.util.Log.w("OpenTune", "Story card failed", it) }.getOrNull() ?: bitmap
+    // The credit layouts need the release date and the credits of the song, which come from TIDAL.
+    var details by remember(track.id) { mutableStateOf<StoryDetails?>(null) }
+    LaunchedEffect(track.id) { details = runCatching { loadDetails(track) }.getOrDefault(StoryDetails()) }
+    LaunchedEffect(track.id, quality, layout, details) {
+        if (layout.credits && details == null) { bitmap = null; return@LaunchedEffect }
+        bitmap = runCatching { TidalStoryRenderer.generateStoryCard(context, track, quality, layout, details ?: StoryDetails()) }
+            .onFailure { android.util.Log.w("OpenTune", "Story card failed", it) }.getOrNull() ?: bitmap
     }
     LaunchedEffect(layout) { strip.animateScrollToItem(layout.ordinal.coerceAtMost(StoryLayout.entries.size - 1)) }
     val ready = bitmap != null
@@ -71,6 +76,7 @@ fun StoryShareSheet(track: Track, quality: String, onClose: () -> Unit) {
                 }
                 if (!ready) CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 1.5.dp)
             }
+            if (layout.credits && details?.isEmpty == true) Text(stringResource(R.string.story_no_credits), Modifier.padding(top = 10.dp), fontFamily = AppFonts.body, fontSize = 12.sp, color = Color.White.copy(alpha = .6f))
             Spacer(Modifier.height(16.dp))
             Button({ share { c, uri -> TidalStoryRenderer.shareToInstagramStories(c, uri, track) } }, Modifier.fillMaxWidth().height(50.dp), enabled = ready, shape = RectangleShape,
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {

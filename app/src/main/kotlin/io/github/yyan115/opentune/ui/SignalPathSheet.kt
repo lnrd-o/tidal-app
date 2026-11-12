@@ -43,6 +43,7 @@ import io.github.yyan115.opentune.core.Spectrum
 import io.github.yyan115.opentune.core.Track
 import io.github.yyan115.opentune.playback.AudioSpectrum
 import io.github.yyan115.opentune.playback.SignalPath
+import io.github.yyan115.opentune.playback.dj.DjMix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -87,9 +88,11 @@ fun qualityTier(label: String, decoded: SignalPath.Decoded? = null): QualityTier
 
 /** The small rectangular span that names the quality of the stream. A tap opens the signal path. */
 @Composable
-fun QualityBadge(label: String, modifier: Modifier = Modifier, color: Color = Color.White, onClick: () -> Unit) {
+fun QualityBadge(label: String, modifier: Modifier = Modifier, color: Color? = null, onClick: () -> Unit) {
     val source = SourceReadout.from(label)
     val tier = qualityTier(label)
+    // Gold for MAX, cyan for HiFi, white for everything else.
+    val tint = color ?: when (tier) { QualityTier.MAX -> Color(0xFFE3B341); QualityTier.HIFI -> Color(0xFF22D3EE); else -> Color.White }
     val name = when (tier) {
         QualityTier.MAX -> stringResource(R.string.badge_max)
         QualityTier.HIFI -> stringResource(R.string.badge_hifi)
@@ -97,13 +100,13 @@ fun QualityBadge(label: String, modifier: Modifier = Modifier, color: Color = Co
         QualityTier.UNKNOWN -> stringResource(R.string.path_badge_unknown)
     }
     val detail = listOfNotNull(source.bits, source.sampleRate).joinToString("/").ifBlank { null }
-    Row(modifier.testTag("quality-badge").border(1.dp, color.copy(alpha = .45f), RectangleShape)
+    Row(modifier.testTag("quality-badge").border(1.dp, tint.copy(alpha = .7f), RectangleShape).background(tint.copy(alpha = .12f))
         .clickable(role = Role.Button, onClickLabel = stringResource(R.string.path_open), onClick = onClick)
         .padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(name, fontFamily = AppFonts.body, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = color)
+        Text(name, fontFamily = AppFonts.body, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = tint)
         if (detail != null) {
-            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(9.dp).background(color.copy(alpha = .35f)))
-            Text(detail, fontFamily = AppFonts.mono, fontSize = 9.sp, lineHeight = 12.sp, color = color.copy(alpha = .7f))
+            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(9.dp).background(tint.copy(alpha = .4f)))
+            Text(detail, fontFamily = AppFonts.mono, fontSize = 9.sp, lineHeight = 12.sp, color = tint.copy(alpha = .85f))
         }
     }
 }
@@ -153,11 +156,11 @@ private fun rememberOutput(): State<Output> {
 }
 
 /** The decoded format, the bit-perfect device and the normalization gain, read twice a second while the panel is open. */
-private data class Live(val decoded: SignalPath.Decoded?, val bitPerfect: String?, val normalizationDb: Float)
+private data class Live(val decoded: SignalPath.Decoded?, val bitPerfect: String?, val normalizationDb: Float, val routing: Boolean = false, val mixing: Boolean = false)
 
 @Composable
 private fun rememberLive(): State<Live> = produceState(Live(SignalPath.decoded, SignalPath.bitPerfectDevice, SignalPath.normalizationDb)) {
-    while (isActive) { value = Live(SignalPath.decoded, SignalPath.bitPerfectDevice, SignalPath.normalizationDb); delay(500) }
+    while (isActive) { value = Live(SignalPath.decoded, SignalPath.bitPerfectDevice, SignalPath.normalizationDb, DjMix.routing, DjMix.mixer.mixing); delay(500) }
 }
 
 private fun khz(hz: Int): String = (hz / 1000.0).let { if (abs(it - it.roundToInt()) < .01) it.roundToInt().toString() else "%.1f".format(it) }
@@ -169,7 +172,7 @@ private fun khz(hz: Int): String = (hz / 1000.0).let { if (abs(it - it.roundToIn
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
-fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onClose: () -> Unit) {
+fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onSpectrum: () -> Unit = {}, elzar: Triple<Int, Int, Int>? = null, onClose: () -> Unit) {
     val live by rememberLive()
     val output by rememberOutput()
     val source = SourceReadout.from(label)
@@ -197,6 +200,14 @@ fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onClose: () 
                 if (truncated) Fidelity.ENHANCED else if (tier == QualityTier.MAX) Fidelity.HIRES else if (source.lossless) Fidelity.LOSSLESS else Fidelity.LOSSY,
                 stringResource(if (truncated) R.string.path_decoder_truncated else R.string.path_decoder_exact)))
         }
+
+        // D'JAI plays through its own mixer, which resamples to 48 kHz and, while two tracks blend, changes their EQ.
+        if (live.routing) add(Stage(OpenTuneIcons.Tune, null, stringResource(R.string.path_mixer),
+            stringResource(if (live.mixing) R.string.path_mixer_mixing else R.string.path_mixer_idle, "48"), Fidelity.ENHANCED, stringResource(R.string.path_mixer_explain)))
+
+        // Tone Lab colours the sound on purpose.
+        if (live.routing && elzar != null) add(Stage(OpenTuneIcons.Tune, null, stringResource(R.string.path_elzar),
+            stringResource(R.string.path_elzar_detail, elzar.first, elzar.second, elzar.third), Fidelity.ENHANCED, stringResource(R.string.path_elzar_explain)))
 
         // Volume normalization changes the samples, with high precision.
         if (live.normalizationDb != 0f) add(Stage(OpenTuneIcons.VolumeDown, null, stringResource(R.string.path_normalization),
@@ -238,7 +249,9 @@ fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onClose: () 
             Text(stringResource(R.string.path_hint), Modifier.padding(top = 4.dp, bottom = 18.dp), fontFamily = AppFonts.body, fontSize = 12.sp, color = Color.White.copy(alpha = .55f))
             stages.forEachIndexed { index, stage -> StageRow(stage, first = index == 0, last = index == stages.lastIndex) }
             Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.path_spectrum).uppercase(), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = .55f))
+                Text(stringResource(R.string.path_spectrum).uppercase(), Modifier.weight(1f), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = .55f))
+                Text(stringResource(R.string.path_fullscreen).uppercase(), Modifier.border(1.dp, Color.White.copy(alpha = .35f), RectangleShape).clickable(role = Role.Button) { onSpectrum() }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    fontFamily = AppFonts.body, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Medium, color = Color.White)
             }
             SpectrumAnalyzer(playing, Modifier.fillMaxWidth())
         }
@@ -273,89 +286,6 @@ private fun StageRow(stage: Stage, first: Boolean, last: Boolean) {
             AnimatedVisibility(open, enter = fadeIn(tween(160)) + expandVertically(tween(180)), exit = fadeOut(tween(120)) + shrinkVertically(tween(160))) {
                 Text(stage.explanation, Modifier.padding(top = 6.dp), fontFamily = AppFonts.body, fontSize = 12.sp, lineHeight = 17.sp, color = Color.White.copy(alpha = .55f))
             }
-        }
-    }
-}
-
-private const val COLUMNS = 40
-private const val ROWS = 16
-private const val LOW_HZ = 25f
-
-/**
- * A spectrum analyzer of square cells in one colour. The FFT runs off the main thread about sixty times a second and writes into
- * arrays that the drawing reads, so the screen redraws without recomposing. Each column rises at once and falls slowly, with a held peak.
- * The highest frequency that carries signal is measured too: a lossy stream stops near 16 to 20 kHz, while lossless keeps going.
- */
-@Composable
-fun SpectrumAnalyzer(playing: Boolean, modifier: Modifier = Modifier, color: Color = Color.White) {
-    val shown = remember { FloatArray(COLUMNS) }
-    val target = remember { FloatArray(COLUMNS) }
-    val peaks = remember { FloatArray(COLUMNS) }
-    var frame by remember { mutableIntStateOf(0) }
-    var nyquist by remember { mutableIntStateOf(22_050) }
-    var content by remember { mutableIntStateOf(0) }
-    DisposableEffect(Unit) { AudioSpectrum.watch(); onDispose { AudioSpectrum.release() } }
-    LaunchedEffect(playing) {
-        withContext(Dispatchers.Default) {
-            val samples = FloatArray(Spectrum.SIZE); val re = FloatArray(Spectrum.SIZE / 2); val im = FloatArray(Spectrum.SIZE / 2)
-            val power = FloatArray(Spectrum.SIZE / 2); val fresh = FloatArray(COLUMNS)
-            var highest = 0f
-            while (isActive) {
-                if (playing && AudioSpectrum.latest(samples)) {
-                    val rate = AudioSpectrum.sampleRate
-                    Spectrum.bands(samples, rate, fresh, COLUMNS, LOW_HZ, rate / 2f, re, im, power)
-                    System.arraycopy(fresh, 0, target, 0, COLUMNS)
-                    // The highest bin clearly above the noise floor, held for a moment so that the readout does not flicker.
-                    var top = 0
-                    for (bin in power.size - 1 downTo 1) if (Spectrum.level(power[bin]) > .1f) { top = bin; break }
-                    val hz = top * rate.toFloat() / Spectrum.SIZE
-                    highest = if (hz >= highest) hz else highest * .985f + hz * .015f
-                    nyquist = rate / 2
-                    content = highest.toInt()
-                } else for (i in 0 until COLUMNS) target[i] = 0f
-                delay(16)
-            }
-        }
-    }
-    LaunchedEffect(Unit) {
-        while (isActive) withFrameNanos {
-            for (i in 0 until COLUMNS) {
-                val t = target[i]
-                shown[i] = if (t > shown[i]) shown[i] + (t - shown[i]) * .6f else shown[i] - minOf(shown[i] - t, .018f)
-                peaks[i] = if (shown[i] >= peaks[i]) shown[i] else (peaks[i] - .006f).coerceAtLeast(0f)
-            }
-            frame++
-        }
-    }
-    Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(COLUMNS / ROWS.toFloat()).testTag("spectrum")) {
-            frame // Reading the frame here redraws the canvas on each frame without recomposing anything.
-            val pitch = size.width / COLUMNS
-            val gap = (pitch * .16f).coerceAtLeast(1f)
-            val cell = pitch - gap
-            val rowPitch = size.height / ROWS
-            val dim = color.copy(alpha = .07f)
-            for (column in 0 until COLUMNS) {
-                val lit = (shown[column] * ROWS).roundToInt()
-                val peak = (peaks[column] * ROWS).roundToInt().coerceAtMost(ROWS) - 1
-                val x = column * pitch + gap / 2
-                for (row in 0 until ROWS) {
-                    val y = size.height - (row + 1) * rowPitch + gap / 2
-                    drawRect(when { row < lit -> color; row == peak && peak >= lit -> color.copy(alpha = .55f); else -> dim }, Offset(x, y), Size(cell, rowPitch - gap))
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            listOf(50f, 200f, 1000f, 5000f, 20000f).filter { it < nyquist }.forEach { hz ->
-                val fraction = (ln(hz / LOW_HZ) / ln(nyquist / LOW_HZ)).coerceIn(0f, 1f)
-                Text(if (hz >= 1000) "${(hz / 1000).toInt()}k" else hz.toInt().toString(), Modifier.weight(1f), fontFamily = AppFonts.mono, fontSize = 9.sp,
-                    color = color.copy(alpha = .45f + fraction * 0f))
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.path_content_label), Modifier.weight(1f), fontFamily = AppFonts.body, fontSize = 12.sp, color = color.copy(alpha = .6f))
-            Text(if (content > 0) stringResource(R.string.path_content_value, "%.1f".format(content / 1000f)) else stringResource(R.string.path_content_none),
-                fontFamily = AppFonts.mono, fontSize = 12.sp, color = color)
         }
     }
 }

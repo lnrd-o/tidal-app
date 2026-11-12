@@ -1,4 +1,4 @@
-# OpenTune / tidal-app: handoff
+# MyTidal (OpenTune code base): handoff
 
 > For engineers and AI agents continuing work. Last updated November 2026.
 > Android, Kotlin 2, Jetpack Compose (Material 3), Media3 ExoPlayer, Coil 3. Min SDK 26, JDK 21.
@@ -18,11 +18,10 @@ A TIDAL player. Local file import and folder scanning were removed. Offline TIDA
 
 ## Now Playing (`ui/GalleryPlayer.kt`)
 
-The cover fills the screen and everything is a gesture:
+The cover is large and the text and controls are always visible. These gestures work on the cover:
 
 | Gesture | Action |
 | --- | --- |
-| Tap | show or hide the details |
 | Double tap | save the track (heart burst) |
 | Swipe left / right | next / previous track (pager) |
 | Swipe up | queue |
@@ -30,7 +29,6 @@ The cover fills the screen and everything is a gesture:
 | Long press | track menu |
 | Drag along the right edge | volume (square HUD) |
 
-The text and controls hide after 4 s of no touch **while music plays** (they stay while paused or while lyrics, signal path, timer or share are open) and the cover grows into the room they leave.
 The **Up next** strip slides in a new track when the next track changes. Lyrics swap with the cover through an animated transition, and lines spring and fade by their distance from the active line (`LyricsPanel.kt`).
 
 ## Signal path and spectrum (`ui/SignalPathSheet.kt`)
@@ -86,3 +84,19 @@ python scripts/check_strings.py
 
 The instrumented tests in `app/src/androidTest` were edited to compile after the removals but have not been run; the UI-driven ones
 (`ScreenTourTest`, `PlayerLayoutTest`, `PseudoLocaleTest`, `LocalPlaybackTest`) still describe the old player and settings and need updating on a device.
+
+## D'JAI (automix)
+
+Design notes are in `docs/DJAI.md`. The code is in `core/.../dj/` (pure Kotlin, tested) and `app/.../playback/dj/` and `ui/DjStrip.kt`.
+
+- **Output path:** with D'JAI on (and not while an album plays), the players only decode. `DeckTapProcessor` copies their audio into rings and outputs silence, and `DjMixer` plays the result through its own `AudioTrack` (48 kHz float). A queue that is one album turns D'JAI off and the mixer stops.
+- **Matching:** `MixPlanner.decide` scores tempo (40%), key (30%, Camelot) and energy (30%). From 70% the strip is cyan, from 90% gold, below that white. While a song plays, D'JAI listens to the next six songs on the idle deck (15 s each, `DjEngine.scouting`); shortly before the last minute, `MixPlanner.choose` moves the best match into the next place if the next song is below 70%.
+- **Transition:** the swap lands on a 32-beat phrase boundary of the outgoing track (counted from its first drum hit, `PhraseOrigin`). The incoming track enters 32 beats (or 16, when the energies differ) before it, at its own first drum hit. After the swap the outgoing track leaves over 16 beats. The kicks are locked by measuring each track's kick against its grid (`KickAligner`). A low-pass opens on the incoming track and a high-pass closes in on the outgoing one (`SweepFilter`, `MixCurves.lowpassHz/highpassHz`).
+- **Limits:** the incoming tempo is matched by varispeed, so pitch moves by up to 6%. Half and double time are not matched. A seek, skip or queue change during a prepared mix cancels it.
+
+## Stories, credits and spectrum
+
+- `TidalStoryRenderer` has 12 layouts built from stacks inside a safe zone (Instagram covers the top and bottom of a story). Text measures and shrinks to fit. The last three (Liner, Sleeve, Poster) show the release date and the credits, which `MainViewModel.storyDetails` loads from TIDAL.
+- Instagram gets the card as the background only. Sending it as a sticker too put a second copy on top of it.
+- A long press on the cover shows the credits. `SpectrumScreen` is the full-screen analyzer, in portrait and landscape.
+- Debug builds have a preview page that renders every story layout: `adb shell am start -n <debug package>/io.github.yyan115.opentune.preview.ThemePreviewActivity --es page stories`, then read `files/story-preview` with `run-as`.

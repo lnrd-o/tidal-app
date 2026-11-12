@@ -248,6 +248,10 @@ class TidalClient(
         LyricsParser.parse(request("tracks/$id/lyrics", pageParameters)).takeIf { !it.isEmpty }
     } catch (error: ServiceException) { if (error.status == 404) null else throw error }
 
+    /** The date an album was released, as TIDAL writes it (for example 2017-11-17), or null when it is not given. */
+    suspend fun albumReleaseDate(id: String): String? =
+        request("albums/$id").optString("releaseDate").takeIf { it.isNotBlank() && it != "null" }
+
     suspend fun credits(kind: String, id: String): List<Credit> =
         CreditsParser.parse(request("${if (kind == "album") "albums" else "tracks"}/$id/credits"))
 

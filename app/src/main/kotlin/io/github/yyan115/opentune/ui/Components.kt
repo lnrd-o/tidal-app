@@ -5,6 +5,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.BorderStroke
@@ -147,29 +148,62 @@ fun ErrorCard(message: String, onRetry: (() -> Unit)? = null) {
     }
 }
 
+/** What a swipe on a song does. The activity provides them, because they act on the queue of the player. */
+class TrackActions(val playNext: (Track) -> Unit, val addToQueue: (Track) -> Unit)
+
+val LocalTrackActions = staticCompositionLocalOf<TrackActions?> { null }
+
+/**
+ * A song in a list. A tap plays it and a long press opens its menu. A swipe to the right plays it next, and a swipe to the left adds it
+ * to the end of the queue. The row springs back after the swipe, and the message of the player says what happened.
+ */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu: () -> Unit, index: Int? = null) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(start = 24.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        if (index != null) Text("%02d".format(index + 1), Modifier.width(32.dp), fontFamily = AppFonts.mono, fontSize = 10.sp,
-            color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        else TrackArtwork(track, null, Modifier.size(48.dp))
-        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (playing) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (track.explicit) {
-                    Text("E", Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 3.dp),
-                        style = MaterialTheme.typography.labelSmall)
-                }
-                if (track.isFile) LocalBadge(Modifier.padding(end = 6.dp))
-                else if (track.onDevice) Icon(OpenTuneIcons.DownloadDone, stringResource(R.string.track_available_offline), Modifier.padding(end = 4.dp).size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(track.artist, fontFamily = AppFonts.body, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val actions = LocalTrackActions.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+        when (value) {
+            SwipeToDismissBoxValue.StartToEnd -> { actions?.playNext?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            SwipeToDismissBoxValue.EndToStart -> { actions?.addToQueue?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            SwipeToDismissBoxValue.Settled -> Unit
+        }
+        // The row never leaves: it springs back, so that the list stays as it is.
+        false
+    })
+    SwipeToDismissBox(state, enableDismissFromStartToEnd = actions != null, enableDismissFromEndToStart = actions != null, backgroundContent = {
+        val toEnd = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+        val shown = state.dismissDirection != SwipeToDismissBoxValue.Settled
+        Row(Modifier.fillMaxSize().background(if (shown) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent).padding(horizontal = 24.dp),
+            horizontalArrangement = if (toEnd) Arrangement.Start else Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            if (shown) {
+                if (toEnd) { Icon(OpenTuneIcons.PlaylistPlay, null, Modifier.size(22.dp)); Spacer(Modifier.width(12.dp)); Text(stringResource(R.string.track_play_next), style = MaterialTheme.typography.labelLarge) }
+                else { Text(stringResource(R.string.track_add_queue), style = MaterialTheme.typography.labelLarge); Spacer(Modifier.width(12.dp)); Icon(OpenTuneIcons.QueueMusic, null, Modifier.size(22.dp)) }
             }
         }
-        IconButton(onClick = onMenu) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.track_options, track.title), Modifier.size(20.dp)) }
+    }) {
+        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).combinedClickable(onClick = onPlay, onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onMenu() })
+            .padding(start = 24.dp, end = 8.dp, top = 11.dp, bottom = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (index != null) Text("%02d".format(index + 1), Modifier.width(32.dp), fontFamily = AppFonts.mono, fontSize = 10.sp,
+                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            else TrackArtwork(track, null, Modifier.size(48.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (playing) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (track.explicit) {
+                        Text("E", Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 3.dp),
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (track.isFile) LocalBadge(Modifier.padding(end = 6.dp))
+                    else if (track.onDevice) Icon(OpenTuneIcons.DownloadDone, stringResource(R.string.track_available_offline), Modifier.padding(end = 4.dp).size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(track.artist, fontFamily = AppFonts.body, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            IconButton(onClick = onMenu) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.track_options, track.title), Modifier.size(20.dp)) }
+        }
     }
 }
 

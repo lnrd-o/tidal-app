@@ -50,7 +50,7 @@ class PseudoLocaleTest {
     private lateinit var activity: Activity
     private lateinit var track: Track
     private val offenders = mutableListOf<String>()
-    private val data = setOf("Night Walk", "Playback test", "Local audio checks", "Evening", "Night", "FLAC", "AAC", "github.com/yyan115/tidal-app", io.github.yyan115.opentune.data.DownloadFiles.FOLDER) + ThemePreviewActivity.SAMPLE_TEXT
+    private val data = setOf("Night Walk", "Playback test", "Local audio checks", "Evening", "Night", "FLAC", "AAC", "@lnrd.o", io.github.yyan115.opentune.data.DownloadFiles.FOLDER) + ThemePreviewActivity.SAMPLE_TEXT
     private val context get() = ApplicationProvider.getApplicationContext<Context>()
     private val app get() = context as OpenTuneApp
 

@@ -32,8 +32,11 @@ class OpenTuneApp : Application() {
     /** Counts the times that the device regained a network, so that screens can request again what failed while it was away. */
     val networkEpoch = kotlinx.coroutines.flow.MutableStateFlow(0)
 
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(LocaleFix.wrap(base)) }
+
     override fun onCreate() {
         super.onCreate()
+        CrashReporter.install(this)
         applyPlaceholders()
         runCatching {
             getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {

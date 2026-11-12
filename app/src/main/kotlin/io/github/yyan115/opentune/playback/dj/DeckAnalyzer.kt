@@ -1,5 +1,6 @@
 package io.github.yyan115.opentune.playback.dj
 
+import io.github.yyan115.opentune.core.dj.BarFinder
 import io.github.yyan115.opentune.core.dj.BeatAnalysis
 import io.github.yyan115.opentune.core.dj.BeatTracker
 import io.github.yyan115.opentune.core.dj.Energy
@@ -40,6 +41,8 @@ class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope) {
     @Volatile var rate = 0
         private set
     @Volatile private var restartAt = -1L
+    /** The ring frame of the first strong drum hit of the track, as the tracker found it. */
+    private var firstHit: Double? = null
 
     private var job: Job? = null
 
@@ -53,7 +56,7 @@ class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope) {
     /** Starts the analysis again from [frame] of the ring, for a new track that began without a flush. */
     fun restart(frame: Long) { restartAt = frame }
 
-    private fun clearResults() { beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
+    private fun clearResults() { firstHit = null; beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
 
     private suspend fun loop() {
         var attached: PcmRing? = null
@@ -102,11 +105,16 @@ class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope) {
     private fun estimate(ring: PcmRing, e: OnsetEnvelope, keys: KeyDetector, read: Long) {
         val fps = ring.rate.toDouble() / OnsetEnvelope.HOP
         val (tail, first) = e.tail((fps * 20).toInt())
-        BeatTracker.analyze(tail, e.timeOf(first), ring.rate)?.let { found ->
+        BeatTracker.analyze(tail, e.timeOf(first), ring.rate)?.let { tracked ->
+            // The first drum hit is found once. The grid is then moved onto the kick, and the bar is read from the kick and the snare, so that
+            // the phrase starts on bar one and not on whatever drum came first.
+            if (firstHit == null) e.head((fps * 24).toInt())?.let { head -> firstHit = PhraseOrigin.detect(head, e.timeOf(0), tracked, ring.rate) }
+            val hit = firstHit
+            val found = BarFinder.refine(ring, tracked, hit ?: ring.oldest().toDouble(), hit)
             beat = found
-            // The first phrase begins at the first drum hit. It is found once, and kept on the newest grid so that the 32-beat blocks stay true.
+            // The origin is kept on the newest grid, so that the blocks of 32 beats stay true. It waits for the bar to be known, but not for long.
             val existing = origin
-            if (existing == null) e.head((fps * 24).toInt())?.let { head -> origin = PhraseOrigin.detect(head, e.timeOf(0), found, ring.rate) }
+            if (existing == null) { if (hit != null && (found.barKnown || seconds >= 24f)) origin = BarFinder.origin(found, hit) }
             else origin = found.anchorSample + Math.round((existing - found.anchorSample) / found.periodSamples) * found.periodSamples
         }
         keys.result()?.let { key = it }

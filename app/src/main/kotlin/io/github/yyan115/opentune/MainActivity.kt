@@ -30,11 +30,19 @@ class MainActivity : ComponentActivity() {
     private var incomingCallback by mutableStateOf<String?>(null)
     private var incomingSearch by mutableStateOf<String?>(null)
 
+    override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(LocaleFix.wrap(newBase)) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acceptIntent(intent)
         enableEdgeToEdge()
         setContent {
+            var crash by androidx.compose.runtime.remember { mutableStateOf(CrashReporter.pending(application)) }
+            if (crash != null) io.github.yyan115.opentune.ui.OpenTuneTheme {
+                io.github.yyan115.opentune.ui.CrashDialog(crash.orEmpty(), onShare = { report ->
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, report), null))
+                }) { CrashReporter.clear(application); crash = null }
+            }
             val model: MainViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             val networkEpoch by (application as OpenTuneApp).networkEpoch.collectAsStateWithLifecycle()

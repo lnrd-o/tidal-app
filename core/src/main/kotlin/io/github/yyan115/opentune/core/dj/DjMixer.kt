@@ -25,6 +25,8 @@ class DjMixer(val outRate: Int = 48_000) {
         var gain = 1f
         var level = 0f
         var starving = true
+        /** How much of the deck is heard through the equalizer, from 0 (as it is) to 1. It moves slowly, so that no step is heard at the edges of a mix. */
+        var eqBlend = 0f
     }
 
     private val decks = arrayOf(Deck(), Deck())
@@ -109,6 +111,8 @@ class DjMixer(val outRate: Int = 48_000) {
         refresh(b)
         b.pos = p.startIncoming
         b.starving = false
+        // The incoming deck starts silent, so it can go through the equalizer at once. The outgoing deck moves into it over a few milliseconds.
+        b.eqBlend = 1f
     }
 
     /** Keeps the deck attached to the current ring of its source and moves its position past flushes and overwritten frames. */
@@ -181,7 +185,9 @@ class DjMixer(val outRate: Int = 48_000) {
         val plain = running && p!!.kind == MixKind.CROSSFADE
         if (plain) { MixCurves.crossfade(u0, g0); MixCurves.crossfade(u1, g1) }
         else if (running) {
-            MixCurves.gains(u0, p!!.swap, g0); MixCurves.gains(u1, p.swap, g1)
+            // The bass changes hands over a quarter of a beat: quick enough to stay tight, slow enough not to click.
+            val width = 0.25 / max(1, p!!.beats)
+            MixCurves.gains(u0, p.swap, g0, width); MixCurves.gains(u1, p.swap, g1, width)
             val middle = (u0 + u1) / 2
             if (filters) { sweepOut.setCutoff(MixCurves.highpassHz(middle, p.swap)); sweepIn.setCutoff(MixCurves.lowpassHz(middle, p.swap)) }
             else { sweepOut.setCutoff(0.0); sweepIn.setCutoff(1e9) }
@@ -200,9 +206,20 @@ class DjMixer(val outRate: Int = 48_000) {
                     val f = (i + 1).toDouble() / n
                     if (plain) { val ga = lerp(g0[0], g1[0], f).toFloat(); l += xl * ga; r += xr * ga }
                     else {
-                        l += sweepOut.process(0, eqA.processLeft(xl, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
-                        r += sweepOut.process(1, eqA.processRight(xr, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
+                        // The equalizer is a set of filters that sum to a flat response but turn the phase. Moving into it over a few
+                        // milliseconds, instead of at once, keeps the start of a mix free of a click.
+                        first.eqBlend = min(1f, first.eqBlend + EQ_FADE)
+                        val mix = first.eqBlend
+                        val pl = sweepOut.process(0, eqA.processLeft(xl, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
+                        val pr = sweepOut.process(1, eqA.processRight(xr, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
+                        l += pl * mix + xl * (1 - mix); r += pr * mix + xr * (1 - mix)
                     }
+                } else if (first.eqBlend > 0f) {
+                    // The mix has ended: the deck leaves the equalizer the same way, with its gains at one.
+                    first.eqBlend = max(0f, first.eqBlend - EQ_FADE)
+                    val mix = first.eqBlend
+                    l += eqA.processLeft(xl, 1.0, 1.0, 1.0) * mix + xl * (1 - mix)
+                    r += eqA.processRight(xr, 1.0, 1.0, 1.0) * mix + xr * (1 - mix)
                 } else {
                     if (warm) { eqA.processLeft(xl, 1.0, 1.0, 1.0); eqA.processRight(xr, 1.0, 1.0, 1.0) }
                     l += xl; r += xr
@@ -234,8 +251,8 @@ class DjMixer(val outRate: Int = 48_000) {
             progress = (mixFrame.toDouble() / p!!.lengthOut).toFloat().coerceIn(0f, 1f)
             if (mixFrame >= p.lengthOut) {
                 primary = p.incoming; plan = null; mixFrame = -1; mixing = false; progress = 1f
-                decks[p.outgoing].level = 0f
-                eq[p.outgoing].reset(); eq[p.incoming].reset(); sweepOut.reset(); sweepIn.reset()
+                decks[p.outgoing].level = 0f; decks[p.outgoing].eqBlend = 0f
+                eq[p.outgoing].reset(); sweepOut.reset(); sweepIn.reset()
                 finishedSeq++
             }
         }
@@ -257,6 +274,8 @@ class DjMixer(val outRate: Int = 48_000) {
         const val CUSHION_SECONDS = 0.12
         const val WARM_SECONDS = 4.0
         private const val SMOOTH = 0.004f
+        /** The equalizer is moved into or out of in about 20 ms at 48 kHz. */
+        private const val EQ_FADE = 1f / 1024f
         private const val KNEE = 0.98f
     }
 }

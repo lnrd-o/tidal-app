@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -375,6 +376,8 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
     var normalization by remember { mutableStateOf(false) }
     var crossfade by remember { mutableStateOf(false) }
     var elzarOpen by remember { mutableStateOf(false) }
+    var cacheOpen by remember { mutableStateOf(false) }
+    var onlineOpen by remember { mutableStateOf(false) }
     var scrobbling by remember { mutableStateOf(false) }
     var clearHistory by remember { mutableStateOf(false) }
     var mobileDataWarning by remember { mutableStateOf(false) }
@@ -393,6 +396,9 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             { onOpenPage(SettingsPage.Repeats) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.Timer, stringResource(R.string.settings_crossfade), if (settings.crossfadeSeconds == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_crossfade_value, settings.crossfadeSeconds),
             { crossfade = true }) }
+        item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.settings_online), stringResource(ONLINE_MODES[settings.onlineData.coerceIn(0, 2)]), { onlineOpen = true }) }
+        item { SettingRow(OpenTuneIcons.Download, stringResource(R.string.settings_cache),
+            if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }
         item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
             if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_djai), settings.djai, { value -> vm.settings { it.copy(djai = value) } }, stringResource(R.string.settings_djai_text)) }
@@ -434,6 +440,19 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.PrivacyTip, stringResource(R.string.settings_privacy), stringResource(R.string.settings_privacy_text)) }
         item { SettingRow(OpenTuneIcons.Description, stringResource(R.string.settings_licenses), onClick = { onOpenPage(SettingsPage.Licenses) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
     }
+    if (onlineOpen) AlertDialog(onDismissRequest = { onlineOpen = false }, title = { Text(stringResource(R.string.settings_online)) }, text = {
+        Column {
+            Text(stringResource(R.string.settings_online_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            for (mode in ONLINE_MODES.indices) Row(Modifier.fillMaxWidth().clickable { vm.settings { it.copy(onlineData = mode) } }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(settings.onlineData == mode, { vm.settings { it.copy(onlineData = mode) } })
+                Column(Modifier.padding(start = 8.dp)) {
+                    Text(stringResource(ONLINE_MODES[mode]), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(ONLINE_HINTS[mode]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { onlineOpen = false }) { Text(stringResource(R.string.action_close)) } })
+    if (cacheOpen) CacheDialog(settings.cacheMb, vm, { value -> vm.settings { it.copy(cacheMb = value) } }) { cacheOpen = false }
     if (elzarOpen) ElZarDialog(settings, { change -> vm.settings(change) }) { elzarOpen = false }
     if (crossfade) {
         var seconds by remember { mutableFloatStateOf(settings.crossfadeSeconds.toFloat()) }
@@ -470,4 +489,37 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         } } } }, confirmButton = {})
     if (signOut) AlertDialog(onDismissRequest = { signOut = false }, title = { Text(stringResource(R.string.signout_title)) }, text = { Text(stringResource(R.string.signout_text)) },
         confirmButton = { TextButton(onClick = { vm.signOut(); signOut = false }) { Text(stringResource(R.string.signout_confirm)) } }, dismissButton = { TextButton(onClick = { signOut = false }) { Text(stringResource(R.string.action_cancel)) } })
+}
+
+private val ONLINE_MODES = intArrayOf(R.string.settings_online_off, R.string.settings_online_tidal, R.string.settings_online_deezer)
+private val ONLINE_HINTS = intArrayOf(R.string.settings_online_off_text, R.string.settings_online_tidal_text, R.string.settings_online_deezer_text)
+
+private val CACHE_SIZES = intArrayOf(0, 128, 256, 512, 1024, 2048, 4096, 8192)
+
+@Composable
+private fun formatSize(bytes: Long): String {
+    val context = LocalContext.current
+    // The system formatter fails on phones without a locale: the number alone is the fallback.
+    return runCatching { android.text.format.Formatter.formatShortFileSize(context, bytes) }.getOrElse { (bytes / (1024 * 1024)).toString() }
+}
+
+/** The size of the cache of listened songs, how much of it is used, and a button that empties it. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+private fun CacheDialog(megabytes: Int, vm: MainViewModel, onSave: (Int) -> Unit, onClose: () -> Unit) {
+    var index by remember { mutableFloatStateOf(CACHE_SIZES.indexOfFirst { it >= megabytes }.coerceAtLeast(0).toFloat()) }
+    var used by remember { mutableLongStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { used = vm.cacheBytes() }
+    val chosen = CACHE_SIZES[index.toInt().coerceIn(0, CACHE_SIZES.lastIndex)]
+    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(R.string.settings_cache)) }, text = {
+        Column {
+            Text(if (chosen == 0) stringResource(R.string.settings_off) else formatSize(chosen.toLong() * 1024 * 1024), style = MaterialTheme.typography.titleMedium)
+            Slider(index, { index = it }, valueRange = 0f..CACHE_SIZES.lastIndex.toFloat(), steps = CACHE_SIZES.size - 2)
+            Text(stringResource(R.string.settings_cache_used, formatSize(used)), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.settings_cache_text), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { scope.launch { vm.clearCache(); used = vm.cacheBytes() } }) { Text(stringResource(R.string.settings_cache_clear)) }
+        }
+    }, confirmButton = { TextButton(onClick = { onSave(chosen); onClose() }) { Text(stringResource(R.string.action_save)) } },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_cancel)) } })
 }

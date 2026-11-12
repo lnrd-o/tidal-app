@@ -19,8 +19,15 @@ import io.github.yyan115.opentune.core.dj.TrackSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+/** The file in which what the listening ahead learned about songs is kept between sessions, in the files folder. */
+const val DJAI_PROFILE_FILE = "djai_profiles.tsv"
+
+/** The tempo and the key of a song that an online catalogue gave, so that it can be scored before it is listened to. */
+class OnlineHint(val bpm: Double?, val camelot: String?)
 
 /** What the engine needs from the playback service. */
 @UnstableApi
@@ -35,6 +42,10 @@ interface DjHost {
     val sleepAtTrackEnd: Boolean
     /** True while the queue is one album, which plays as released. */
     fun albumQueue(): Boolean
+    /** The file in which what the listening ahead found out about songs is kept between sessions. */
+    fun profileFile(): java.io.File
+    /** The tempo and key of [item] from an online catalogue, or null. It may take a network request. */
+    suspend fun onlineHint(item: MediaItem): OnlineHint?
 }
 
 /**
@@ -67,7 +78,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private var nextTitle: String? = null
     /** What the listening ahead found out about a track that is not playing yet. */
     private class Profile(val summary: TrackSummary, val rate: Int)
-    private val profiles = LinkedHashMap<String, Profile>()
+    private val profiles = LinkedHashMap<String, Profile>().also { loadProfiles(it) }
+    /** What online catalogues said about the songs ahead, and the songs that were already asked about. */
+    private val online = HashMap<String, OnlineHint>()
+    private val asked = HashSet<String>()
     private var scout: ExoPlayer? = null
     private var scoutId: String? = null
     private var scoutSince = 0L
@@ -234,6 +248,13 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
 
     /** Listens to the first seconds of the next songs on the idle deck, one at a time, and remembers their tempo, key and energy. */
     private fun scouting(a: ExoPlayer, id: String) {
+        // The tempo and key of the songs ahead are asked from the catalogue at once: they give a first score before any song is listened to.
+        for (i in upcoming(a)) {
+            val item = a.getMediaItemAt(i)
+            val key = item.mediaId
+            if (key in profiles || !asked.add(key)) continue
+            scope.launch { host.onlineHint(item)?.let { online[key] = it } }
+        }
         val slot = DjMix.sessionSlot
         if (analyzers[slot].beat == null) return
         val scoutSlot = 1 - slot
@@ -279,9 +300,54 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         DjMix.streams[slot].clear()
     }
 
+    /**
+     * Reads what was learned about songs in earlier sessions. Only what scoring needs is kept: the tempo, the key, the energy and the bar.
+     * A song that is known is not listened to again, so it is ready the moment the queue shows it.
+     */
+    private fun loadProfiles(into: MutableMap<String, Profile>) {
+        runCatching {
+            val file = host.profileFile()
+            if (!file.exists()) return
+            val lines = file.readLines()
+            if (lines.firstOrNull() != PROFILE_VERSION) return
+            for (line in lines.drop(1)) {
+                val f = line.split('\t')
+                if (f.size < 8) continue
+                val bpm = f[1].toDoubleOrNull()
+                val beat = if (bpm == null) null else BeatAnalysis(bpm, f[2].toDouble(), 0.0, 0, f[3].toFloat(), f[4].toInt(), false)
+                into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null), f[7].toInt())
+            }
+        }
+    }
+
+    private fun saveProfiles() {
+        val lines = ArrayList<String>(profiles.size + 1)
+        lines.add(PROFILE_VERSION)
+        for ((id, p) in profiles) {
+            val b = p.summary.beat
+            lines.add(listOf(id.replace('\t', '_').replace('\n', '_'), b?.bpm?.toString() ?: "-", b?.periodSamples?.toString() ?: "0", b?.confidence?.toString() ?: "0",
+                b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString()).joinToString("\t"))
+        }
+        val file = host.profileFile()
+        scope.launch(Dispatchers.IO) { runCatching { synchronized(this@DjEngine) { file.writeText(lines.joinToString("\n")) } } }
+    }
+
+    /** Forgets what was learned about songs. */
+    fun forgetProfiles() { profiles.clear(); runCatching { host.profileFile().delete() } }
+
+    /** A profile from the catalogue: the tempo and the key are known, the energy and the grid are not. */
+    private fun provisional(hint: OnlineHint): Profile? {
+        val bpm = hint.bpm
+        if (bpm == null && hint.camelot == null) return null
+        val beat = bpm?.let { BeatAnalysis(it, 60.0 / it * PROVISIONAL_RATE, 0.0, 0, 0.6f) }
+        return Profile(TrackSummary(beat, hint.camelot, null, null), PROVISIONAL_RATE)
+    }
+
     private fun remember(id: String, profile: Profile) {
+        profiles.remove(id)
         profiles[id] = profile
         while (profiles.size > MAX_PROFILES) profiles.remove(profiles.keys.first())
+        saveProfiles()
     }
 
     /**
@@ -295,7 +361,11 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val outgoing = TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin)
         val next = a.nextMediaItemIndex
         if (next == C.INDEX_UNSET) return
-        val candidates = upcoming(a).mapNotNull { i -> profiles[a.getMediaItemAt(i).mediaId]?.let { Candidate(i, it.summary, it.rate) } }
+        // A song that was listened to is scored from what was heard, and one that was not from what the catalogue says.
+        val candidates = upcoming(a).mapNotNull { i ->
+            val key = a.getMediaItemAt(i).mediaId
+            (profiles[key] ?: online[key]?.let(::provisional))?.let { Candidate(i, it.summary, it.rate) }
+        }
         android.util.Log.i("OpenTune", "D'JAI scores: " + candidates.joinToString { c ->
             "%s%s %.0f%%".format(if (c.index == next) "*" else "", host.titleOf(a.getMediaItemAt(c.index)), MixPlanner.decide(outgoing, c.summary, rate, c.rate).match * 100)
         })
@@ -498,7 +568,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         const val SCOUT_SECONDS = 15f
         const val SCOUT_TIMEOUT_MS = 45_000L
         const val CHOOSE_MS = 6_000L
-        const val MAX_PROFILES = 64
+        const val MAX_PROFILES = 1500
+        private const val PROVISIONAL_RATE = 44_100
+        private const val PROFILE_VERSION = "v1"
         const val MAX_KICK_SHIFT = 0.03
     }
 }

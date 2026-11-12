@@ -90,6 +90,15 @@ data class AppState(
 @UnstableApi
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val app = application as OpenTuneApp
+
+    /** The bytes held by the cache of listened songs. */
+    suspend fun cacheBytes(): Long = withContext(Dispatchers.IO) { app.sources.cacheBytes() }
+
+    /** Empties the cache of listened songs, and what D'JAI learned about them. */
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
+        app.sources.clearStreamingCache()
+        runCatching { java.io.File(app.filesDir, io.github.yyan115.opentune.playback.dj.DJAI_PROFILE_FILE).delete() }
+    }
     private val ui = MutableStateFlow(AppState(signedIn = app.tidal.signedIn, settings = app.settings.state.value,
         pkceLogin = app.sessions.pendingPkce(),
         recentSearches = application.getSharedPreferences("search", Application.MODE_PRIVATE).getString("recent", null)

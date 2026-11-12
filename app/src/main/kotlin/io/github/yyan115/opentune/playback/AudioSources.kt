@@ -15,7 +15,6 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import io.github.yyan115.opentune.OpenTuneApp
@@ -39,7 +38,16 @@ class AudioSources(private val app: OpenTuneApp) {
     /** ReplayGain values in decibels and linear peak amplitudes, as returned by TIDAL for a track and its album. */
     data class Gains(val track: Double?, val trackPeak: Double?, val album: Double?, val albumPeak: Double?)
     val cache by lazy { SimpleCache(File(app.filesDir, "offline_audio"), NoOpCacheEvictor(), StandaloneDatabaseProvider(app)) }
-    private val streamingCache by lazy { SimpleCache(File(app.cacheDir, "streaming_audio"), LeastRecentlyUsedCacheEvictor(256L * 1024 * 1024), StandaloneDatabaseProvider(app)) }
+    private val evictor by lazy { AdjustableEvictor(app.settings.state.value.cacheMb * MEGABYTE) }
+    private val streamingCache by lazy { SimpleCache(File(app.cacheDir, "streaming_audio"), evictor, StandaloneDatabaseProvider(app)) }
+    /** Sets the size of the cache of listened songs, in megabytes, and removes the oldest songs at once if it is now too big. */
+    fun setCacheLimit(megabytes: Int) {
+        val limit = megabytes * MEGABYTE
+        if (evictor.maxBytes == limit) return
+        evictor.maxBytes = limit; evictor.trim(streamingCache)
+    }
+    /** The bytes that the cache of listened songs holds now. */
+    fun cacheBytes(): Long = streamingCache.cacheSpace
     /** A silent connection fails after twelve seconds, so the player retries before its buffer runs dry. */
     private val streamingHttp by lazy { app.http.newBuilder().connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS).readTimeout(12, java.util.concurrent.TimeUnit.SECONDS).build() }
     private val upstream: DataSource.Factory by lazy { DefaultDataSource.Factory(app, OkHttpDataSource.Factory(streamingHttp)) }
@@ -121,6 +129,7 @@ class AudioSources(private val app: OpenTuneApp) {
     }
 
     companion object {
+        private const val MEGABYTE = 1024L * 1024L
         fun safeId(id: String): String = MessageDigest.getInstance("SHA-256").digest(id.toByteArray())
             .joinToString("") { "%02x".format(it) }.take(32)
     }

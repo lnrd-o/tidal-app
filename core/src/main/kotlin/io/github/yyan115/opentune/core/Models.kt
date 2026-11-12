@@ -17,6 +17,10 @@ data class Track(
     val replayGain: Double? = null,
     val peak: Double? = null,
     val tags: List<String> = emptyList(),
+    /** The tempo in beats per minute, and the key as a Camelot code, when the catalogue knows them. */
+    val bpm: Double? = null,
+    val key: String? = null,
+    val isrc: String? = null,
 ) {
     /** A file that the listener added from the device. It has no TIDAL page, lyrics or radio. */
     val isFile get() = isDeviceId(id)

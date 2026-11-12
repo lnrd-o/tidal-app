@@ -29,6 +29,9 @@ object JsonCodec {
             replayGain = number(value, "replayGain"),
             peak = number(value, "peak"),
             tags = tags(value),
+            bpm = number(value, "bpm")?.takeIf { it in 40.0..250.0 },
+            key = io.github.yyan115.opentune.core.dj.Camelot.fromName(text(value, "key"), text(value, "keyScale")),
+            isrc = text(value, "isrc").takeIf { it.isNotBlank() },
         )
     }
 
@@ -128,6 +131,9 @@ object JsonCodec {
         put("artistId", track.artistId); put("trackNumber", track.trackNumber)
         track.replayGain?.let { put("replayGain", it) }
         track.peak?.let { put("peak", it) }
+        track.bpm?.let { put("bpm", it) }
+        track.key?.let { put("camelot", it) }
+        track.isrc?.let { put("isrc", it) }
         if (track.tags.isNotEmpty()) put("tags", JSONArray(track.tags))
     }
 
@@ -142,6 +148,8 @@ object JsonCodec {
         artistId = value.optString("artistId").takeIf { it != "null" }.orEmpty(),
         trackNumber = value.optInt("trackNumber"),
         replayGain = number(value, "replayGain"), peak = number(value, "peak"),
+        bpm = number(value, "bpm"), key = value.optString("camelot").takeIf { it.isNotBlank() && it != "null" },
+        isrc = value.optString("isrc").takeIf { it.isNotBlank() && it != "null" },
         tags = value.optJSONArray("tags")?.let { array -> (0 until array.length()).map(array::getString) }.orEmpty(),
     )
 

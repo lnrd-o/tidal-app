@@ -142,6 +142,28 @@ class PlaybackService : MediaLibraryService() {
         override fun titleOf(item: MediaItem?): String? = item?.let(::trackOf)?.title
         override val sleepAtTrackEnd: Boolean get() = this@PlaybackService.sleepAtTrackEnd
         override fun albumQueue(): Boolean = this@PlaybackService.isAlbumQueue()
+        override suspend fun onlineHint(item: MediaItem): io.github.yyan115.opentune.playback.dj.OnlineHint? {
+            val mode = app.settings.state.value.onlineData
+            if (mode == 0) return null
+            val track = item.mediaMetadata.extras?.getString("track")
+                ?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(org.json.JSONObject(it)) }.getOrNull() } ?: return null
+            var bpm = track.bpm
+            if (bpm == null && mode >= 2 && !track.isFile) track.isrc?.let { bpm = fetchDeezerBpm(it) }
+            return if (bpm == null && track.key == null) null else io.github.yyan115.opentune.playback.dj.OnlineHint(bpm, track.key)
+        }
+
+        /** The tempo that Deezer lists for a recording, found by its ISRC. Only the ISRC is sent. Returns null when there is none. */
+        private suspend fun fetchDeezerBpm(isrc: String): Double? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val request = okhttp3.Request.Builder().url("https://api.deezer.com/track/isrc:" + android.net.Uri.encode(isrc)).build()
+                app.http.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@runCatching null
+                    org.json.JSONObject(response.body?.string().orEmpty()).optDouble("bpm", 0.0).takeIf { it in 40.0..250.0 }
+                }
+            }.getOrNull()
+        }
+
+        override fun profileFile(): java.io.File = java.io.File(filesDir, io.github.yyan115.opentune.playback.dj.DJAI_PROFILE_FILE)
     }
     private var albumKey: String? = null
     private var albumResult = false
@@ -197,13 +219,15 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(io.github.yyan115.opentune.LocaleFix.wrap(base)) }
+
     override fun onCreate() {
         super.onCreate()
         app = application as OpenTuneApp
         player = buildPlayer(0, true)
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
-        scope.launch { app.settings.state.collect { applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+        scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))

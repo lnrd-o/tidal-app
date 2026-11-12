@@ -12,6 +12,20 @@ object Camelot {
     private val major = arrayOf("8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B")
     private val minor = arrayOf("5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A")
 
+    /**
+     * The Camelot code of a key given by name, as an online catalogue gives it: a note such as "F", "Bb", "FSharp" or "EFlat" and a scale such as
+     * "MAJOR" or "MINOR". Returns null when the note is not understood.
+     */
+    fun fromName(key: String?, scale: String?): String? {
+        val text = key?.trim().orEmpty()
+        if (text.isEmpty()) return null
+        val base = when (text[0].uppercaseChar()) { 'C' -> 0; 'D' -> 2; 'E' -> 4; 'F' -> 5; 'G' -> 7; 'A' -> 9; 'B' -> 11; else -> return null }
+        val rest = text.drop(1).lowercase()
+        val shift = when { rest.startsWith("#") || rest.startsWith("sharp") -> 1; rest.startsWith("b") || rest.startsWith("flat") -> -1; else -> 0 }
+        val minor = scale?.trim()?.lowercase()?.startsWith("min") == true
+        return code(base + shift, minor)
+    }
+
     fun code(pitchClass: Int, isMinor: Boolean): String = (if (isMinor) minor else major)[((pitchClass % 12) + 12) % 12]
 
     private fun number(code: String) = code.dropLast(1).toIntOrNull()

@@ -71,7 +71,7 @@ class ThreeBandEq(rate: Int, lowHz: Double = 250.0, highHz: Double = 2500.0) {
  * It is a zero-delay state-variable filter, which stays stable and smooth when its cutoff changes at every block.
  * It passes the signal unchanged, and keeps no state, while the cutoff is out of the audible sweep range.
  */
-class SweepFilter(private val rate: Int, private val highpass: Boolean, private val resonance: Double = 1.1) {
+class SweepFilter(private val rate: Int, private val highpass: Boolean, private val resonance: Double = 0.9) {
     private val ic1 = DoubleArray(2)
     private val ic2 = DoubleArray(2)
     private var a1 = 0.0

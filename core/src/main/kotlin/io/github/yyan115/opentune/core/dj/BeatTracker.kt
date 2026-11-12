@@ -103,13 +103,19 @@ class OnsetEnvelope(val rate: Int) {
 }
 
 /** The tempo and the grid of beats of a piece. Beats fall at [anchorSample] plus whole multiples of [periodSamples], in ring frames. */
-class BeatAnalysis(val bpm: Double, val periodSamples: Double, val anchorSample: Double, val beatsSinceDownbeat: Int, val confidence: Float) {
+class BeatAnalysis(
+    val bpm: Double, val periodSamples: Double, val anchorSample: Double, val beatsSinceDownbeat: Int, val confidence: Float,
+    /** Three or four. The bar is counted in this many beats. */
+    val beatsPerBar: Int = 4,
+    /** True when the drums told which beat starts the bar (see [BarFinder]); false when it is only a guess. */
+    val barKnown: Boolean = false,
+) {
     /** The first downbeat at or after [sample], as a ring frame. */
     fun nextDownbeat(sample: Double): Double {
         var j = floor((sample - anchorSample) / periodSamples).toLong() - 1
         while (true) {
             val at = anchorSample + j * periodSamples
-            if (at >= sample && Math.floorMod(j + beatsSinceDownbeat, 4L) == 0L) return at
+            if (at >= sample && Math.floorMod(j + beatsSinceDownbeat, beatsPerBar.toLong()) == 0L) return at
             j++
         }
     }

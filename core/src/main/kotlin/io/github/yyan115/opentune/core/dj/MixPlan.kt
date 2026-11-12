@@ -54,10 +54,10 @@ object MixCurves {
     }
 
     /** Fills [g] with six gains: outgoing low, mid, high, then incoming low, mid, high. */
-    fun gains(u: Double, swap: Double, g: DoubleArray) {
+    fun gains(u: Double, swap: Double, g: DoubleArray, swapWidth: Double = SWAP_WIDTH) {
         val s = swap.coerceIn(0.2, 0.8)
         val progress = u.coerceIn(0.0, 1.0)
-        val inLow = smooth((progress - s) / SWAP_WIDTH + 0.5)
+        val inLow = smooth((progress - s) / swapWidth + 0.5)
         val rise = if (progress < s) sin(PI / 2 * progress / s) else 1.0
         val riseHigh = if (progress < s) sin(PI / 2 * ((progress - 0.15 * s) / (0.85 * s)).coerceIn(0.0, 1.0)) else 1.0
         val fall = if (progress < s) 0.0 else ((progress - s) / (1 - s)).coerceIn(0.0, 1.0)
@@ -160,7 +160,7 @@ object MixPlanner {
         val eo = outgoing.energy; val ei = incoming.energy
         val gap = if (eo != null && ei != null) abs(eo - ei) else null
         val energyScore = if (gap == null) 0.5 else (1.0 - gap / 6.0).coerceIn(0.0, 1.0)
-        if (a != null && b != null && a.confidence >= MIN_CONFIDENCE && b.confidence >= MIN_CONFIDENCE) {
+        if (a != null && b != null && a.confidence >= MIN_CONFIDENCE && b.confidence >= MIN_CONFIDENCE && a.beatsPerBar == b.beatsPerBar) {
             // The incoming track plays this much faster to bring its beats onto the grid of the outgoing one.
             val speed = (b.periodSamples / rateIncoming) / (a.periodSamples / rateOutgoing)
             val tempoScore = (1.0 - abs(speed - 1.0) / MAX_TEMPO_CHANGE).coerceIn(0.0, 1.0)
@@ -207,9 +207,12 @@ object MixScheduler {
         if (decision.kind == MixKind.BEAT && gridA != null && gridB != null) {
             val period = gridA.periodSamples
             val beatOut = period * outRate / rateOutgoing
-            val blends = if (decision.blendBeats >= 32) listOf(32, 16) else listOf(16)
+            // A bar of three beats takes three quarters of the beats of a bar of four: the blocks are counted in bars.
+            val perBar = gridA.beatsPerBar
+            val tail = TAIL_BEATS * perBar / 4
+            val blends = (if (decision.blendBeats >= 32) listOf(32, 16) else listOf(16)).map { it * perBar / 4 }
             for (blend in blends) {
-                val total = blend + TAIL_BEATS
+                val total = blend + tail
                 val lengthOut = (total * beatOut).roundToInt()
                 // The first boundary that leaves room for the blend before it and the tail after it.
                 val boundary = nextBoundary(gridA, a.origin, earliest + blend * period)
@@ -222,7 +225,7 @@ object MixScheduler {
                 }
                 val enter = b.origin ?: gridB.nextDownbeat(firstIncoming)
                 if (enter < firstIncoming) continue
-                return MixPlan(outgoing, incoming, start, enter, lengthOut, decision.speedIncoming, MixKind.BEAT, blend, TAIL_BEATS, blend.toDouble() / total)
+                return MixPlan(outgoing, incoming, start, enter, lengthOut, decision.speedIncoming, MixKind.BEAT, blend, tail, blend.toDouble() / total)
             }
             return null
         }
@@ -237,7 +240,7 @@ object MixScheduler {
     fun nextBoundary(grid: BeatAnalysis, origin: Double?, sample: Double): Double {
         if (origin == null) return grid.nextDownbeat(sample)
         val period = grid.periodSamples
-        val block = PHRASE_BEATS * period
+        val block = PHRASE_BEATS / 4 * grid.beatsPerBar * period
         val k = ceil((sample - origin) / block - 1e-9)
         return origin + k * block
     }

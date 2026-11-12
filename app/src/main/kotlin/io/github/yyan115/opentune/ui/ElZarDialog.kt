@@ -126,3 +126,15 @@ private fun ReductionMeter() {
         }
     }
 }
+
+/** Shown after a crash: the report that the app kept, which the listener can share. */
+@Composable
+fun CrashDialog(report: String, onShare: (String) -> Unit, onClose: () -> Unit) {
+    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(R.string.crash_title)) }, text = {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.crash_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(report.take(1500), Modifier.padding(top = 10.dp), fontFamily = AppFonts.mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }, confirmButton = { TextButton(onClick = { onShare(report); onClose() }) { Text(stringResource(R.string.crash_share)) } },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.action_close)) } })
+}

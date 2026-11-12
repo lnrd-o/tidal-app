@@ -25,6 +25,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -284,9 +286,15 @@ fun NowPlayingScreen(
                 }
 
                 if (landscape) {
-                    val coverSize = minOf(maxHeight - 32.dp, maxWidth * .42f).coerceAtLeast(160.dp)
-                    Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp).size(coverSize), contentAlignment = Alignment.Center) { coverContent(coverSize) }
-                    panelContent(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f))
+                    // Both halves sit under the top bar, so that nothing reaches into it. The panel scrolls when it is taller than the room it has,
+                    // as it is with the D'JAI strip on a phone that lies on its side.
+                    val coverSize = minOf(maxHeight - 56.dp - 16.dp, maxWidth * .42f).coerceAtLeast(120.dp)
+                    Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().padding(start = 24.dp, top = 56.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(coverSize), contentAlignment = Alignment.Center) { coverContent(coverSize) }
+                    }
+                    Box(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f).fillMaxHeight().padding(top = 56.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.verticalScroll(rememberScrollState())) { panelContent(Modifier.fillMaxWidth()) }
+                    }
                 } else Column(Modifier.fillMaxSize()) {
                     Spacer(Modifier.height(56.dp))
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

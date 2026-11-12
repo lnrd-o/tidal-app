@@ -61,7 +61,9 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val largeText = LocalDensity.current.fontScale > 1.3f
-    val rail = landscape && !largeText
+    // A screen at least 600 dp wide is a tablet, or an unfolded phone: it gets the rail in any orientation, and the content a limit to its width.
+    val tablet = configuration.screenWidthDp >= 600
+    val rail = (landscape || tablet) && !largeText
     val destinations = listOf(Destination.Home, Destination.Search, Destination.Library, Destination.Device)
     val destination = Destination.entries.firstOrNull { it.name == destinationName }?.takeIf { it in destinations } ?: destinations.first()
     val settingsPageOpen = SettingsPage.entries.firstOrNull { it.name == settingsPage }
@@ -132,10 +134,11 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                         IconButton(onClick = { settings = true }) { Icon(OpenTuneIcons.Settings, stringResource(R.string.nav_settings), Modifier.size(22.dp)) }
                     }
                 }
-                if (!inDetail || settings) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = if (settingsPageOpen == SettingsPage.Statistics) 8.dp else 24.dp, top = if (largeText) 2.dp else 6.dp, bottom = 14.dp),
+                // On its side the screen has little height, and the rail already says which page it is: the big title is left out.
+                if ((!inDetail || settings) && !(landscape && !settings)) Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = if (settingsPageOpen == SettingsPage.Statistics) 8.dp else 24.dp, top = if (largeText || landscape) 2.dp else 6.dp, bottom = if (landscape) 6.dp else 14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(title, Modifier.weight(1f),
-                        style = if (largeText || settingsPageOpen != null) AppFonts.title(30, 38) else if (destination == Destination.Home && !settings) AppFonts.title(52, 58) else AppFonts.title(44, 50))
+                        style = if (largeText || landscape || settingsPageOpen != null) AppFonts.title(30, 38) else if (destination == Destination.Home && !settings) AppFonts.title(52, 58) else AppFonts.title(44, 50))
                     // The explanation of the statistics sits on the line of the title.
                     if (settingsPageOpen == SettingsPage.Statistics) IconButton(onClick = { statsInfo = true }) { Icon(OpenTuneIcons.Info, stringResource(R.string.stats_info_label)) }
                 }
@@ -144,13 +147,13 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         bottomBar = {
             Column {
                 if (state.playback.track != null) MiniPlayer(state.playback, position, onOpen = { nowPlaying = true }, onPlay = vm::togglePlay, onNext = vm::next, onDismiss = vm::stopPlayback)
-                if (!settings && !landscape && !largeText && navigation) OpenTuneNavigation(destinations, destination, select)
+                if (!settings && !landscape && !tablet && !largeText && navigation) OpenTuneNavigation(destinations, destination, select)
                 else Spacer(Modifier.navigationBarsPadding())
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) { Box(Modifier.fillMaxSize().widthIn(max = 960.dp)) {
             when {
                 settings -> when (settingsPageOpen) {
                     SettingsPage.Repeats -> AvoidRepeatsPage(state, vm)
@@ -168,7 +171,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                     libraryFilter, { libraryFilter = it })
                 else -> DownloadsScreen(state, vm, openLogin, openTrackMenu)
             }
-        }
+        } }
     }
     }
 

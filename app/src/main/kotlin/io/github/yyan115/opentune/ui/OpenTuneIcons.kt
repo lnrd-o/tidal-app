@@ -83,4 +83,20 @@ object OpenTuneIcons {
     val SaveAlt by lazy { glyph("Export", "M12 16V3 M7.5 7.5L12 3L16.5 7.5 M4 14V21H20V14") }
     val Share by lazy { glyph("Share", "M8 10L16 5 M8 14L16 19 M8 12A3 3 0 1 1 2 12A3 3 0 0 1 8 12Z M22 4A3 3 0 1 1 16 4A3 3 0 0 1 22 4Z M22 20A3 3 0 1 1 16 20A3 3 0 0 1 22 20Z") }
     val SearchOff by lazy { glyph("NoResults", "M17 16L21 20 M16.5 7A7.2 7.2 0 0 1 7 16.5 M4 4L20 20 M4 7A7.2 7.2 0 0 0 7 16.5") }
+    val VolumeUp by lazy { glyph("VolumeUp", "M3 9V15H7L12 20V4L7 9H3Z M16.5 12A4.5 4.5 0 0 0 14 7.97V16.03A4.5 4.5 0 0 0 16.5 12Z M14 3.23V5.29A7 7 0 0 1 19 12A7 7 0 0 1 14 18.71V20.77A9 9 0 0 0 21 12A9 9 0 0 0 14 3.23Z") }
+    val VolumeDown by lazy { glyph("VolumeDown", "M3 9V15H7L12 20V4L7 9H3Z M16.5 12A4.5 4.5 0 0 0 14 7.97V16.03A4.5 4.5 0 0 0 16.5 12Z") }
+    val VolumeOff by lazy { glyph("VolumeOff", "M3 9V15H7L12 20V4L7 9H3Z M16 9L22 15 M22 9L16 15") }
+    val AutoAwesome by lazy { glyph("AutoAwesome", "M12 2L14.2 7.8L20 10L14.2 12.2L12 18L9.8 12.2L4 10L9.8 7.8Z M19 15L17.9 17.9L15 19L17.9 20.1L19 23L20.1 20.1L23 19L20.1 17.9Z") }
+    val Instagram by lazy { glyph("Instagram", "M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z") }
+    val TidalDiamond by lazy { glyph("TidalDiamond", "M4 8L7 5L10 8L7 11Z M10 8L13 5L16 8L13 11Z M16 8L19 5L22 8L19 11Z M10 14L13 11L16 14L13 17Z") }
+    val Bluetooth by lazy { glyph("Bluetooth", "M7 7L17 17L12 22V2L17 7L7 17") }
+    val Usb by lazy { glyph("Usb", "M12 3V17 M12 17A2.5 2.5 0 1 0 12 22A2.5 2.5 0 0 0 12 17Z M12 14L7 11V8 M12 12L17 9V6.5 M5.5 5.5H8.5V8.5H5.5Z M17 3.5L19 6.5H15Z M10 3H14L12 1Z") }
+    val Speaker by lazy { glyph("Speaker", "M6 2H18V22H6Z M15.5 15A3.5 3.5 0 1 1 8.5 15A3.5 3.5 0 0 1 15.5 15Z M12 6.5V7") }
+    val Tune by lazy { glyph("Tune", "M4 7H13 M17 7H20 M4 17H7 M11 17H20 M15 4V10 M9 14V20") }
+    val FastRewind by lazy { glyph("FastRewind", "M11.5 5.5V18.5L3 12Z M21.5 5.5V18.5L13 12Z", solid = true, mirror = true) }
+    val FastForward by lazy { glyph("FastForward", "M12.5 5.5V18.5L21 12Z M2.5 5.5V18.5L11 12Z", solid = true, mirror = true) }
+    val PlaySolid by lazy { glyph("PlaySolid", "M6.5 3.5V20.5L20.5 12Z", solid = true, mirror = true) }
+    val PauseSolid by lazy { glyph("PauseSolid", "M5.5 3.5H10V20.5H5.5Z M14 3.5H18.5V20.5H14Z", solid = true) }
+    val SkipNextSolid by lazy { glyph("SkipNextSolid", "M5 5V19L15 12Z M16.5 5H19V19H16.5Z", solid = true, mirror = true) }
+    val ContentCopy by lazy { glyph("ContentCopy", "M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z") }
 }

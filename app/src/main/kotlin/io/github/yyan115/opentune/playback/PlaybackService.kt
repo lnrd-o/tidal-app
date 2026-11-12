@@ -6,7 +6,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioMixerAttributes
-import android.media.audiofx.Equalizer
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
@@ -67,8 +66,6 @@ class PlaybackService : MediaLibraryService() {
     private val tree by lazy { BrowseTree(app) }
     private lateinit var app: OpenTuneApp
     private lateinit var player: ExoPlayer
-    private var equalizer: Equalizer? = null
-    private var equalizerSession = C.AUDIO_SESSION_ID_UNSET
     private var sleepJob: Job? = null
     private var sleepAtTrackEnd = false
     private var bitPerfectDevice: AudioDeviceInfo? = null
@@ -141,13 +138,13 @@ class PlaybackService : MediaLibraryService() {
                 android.util.Log.w("OpenTune", "Playback error ${error.errorCodeName}, transient=$transient, chain=${generateSequence<Throwable>(error) { it.cause }.joinToString(" > ") { it.javaClass.simpleName }}")
                 if (transient) scheduleRetry()
             }
-            override fun onAudioSessionIdChanged(audioSessionId: Int) { applyEqualizer(); applyBitPerfect() }
+            override fun onAudioSessionIdChanged(audioSessionId: Int) { applyBitPerfect() }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtTrackEnd) clearSleepTimer()
             }
         })
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
-        scope.launch { app.settings.state.collect { AudioSpectrum.enabled = it.visualizer; applyNormalization(); applyEqualizer(); applyBitPerfect() } }
+        scope.launch { app.settings.state.collect { applyNormalization(); applyBitPerfect() } }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback, Handler(Looper.getMainLooper())) }
@@ -278,30 +275,10 @@ class PlaybackService : MediaLibraryService() {
     private fun applyNormalization() {
         val mode = app.settings.state.value.normalization
         val track = player.currentMediaItem?.let(::trackOf)
-        if (mode == Normalization.OFF || track == null) { player.volume = 1f; return }
+        if (mode == Normalization.OFF || track == null) { player.volume = 1f; SignalPath.normalizationDb = 0f; return }
         val gains = app.sources.gains(track.id)
         player.volume = Normalization.volume(mode, gains?.track ?: track.replayGain, gains?.album)
-    }
-
-    private fun applyEqualizer() {
-        val settings = app.settings.state.value
-        val sessionId = player.audioSessionId
-        if (!settings.equalizer || sessionId == C.AUDIO_SESSION_ID_UNSET) {
-            runCatching { equalizer?.release() }; equalizer = null; equalizerSession = C.AUDIO_SESSION_ID_UNSET; return
-        }
-        runCatching {
-            if (equalizer == null || equalizerSession != sessionId) {
-                equalizer?.release()
-                equalizer = Equalizer(0, sessionId); equalizerSession = sessionId
-            }
-            val effect = requireNotNull(equalizer)
-            val range = effect.bandLevelRange
-            for (band in 0 until effect.numberOfBands) {
-                val level = settings.equalizerLevels.getOrNull(band) ?: 0
-                effect.setBandLevel(band.toShort(), level.coerceIn(range[0].toInt(), range[1].toInt()).toShort())
-            }
-            effect.enabled = true
-        }.onFailure { equalizer = null }
+        SignalPath.normalizationDb = if (player.volume in 0.0001f..0.9999f) (20 * kotlin.math.log10(player.volume)) else 0f
     }
 
     /** Asks Android to send the stream to a USB DAC unchanged. This is experimental and needs Android 14 or later. */
@@ -312,13 +289,14 @@ class PlaybackService : MediaLibraryService() {
             val usb = if (app.settings.state.value.bitPerfect) audioManager.getAudioDevicesForAttributes(attributes).firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET
             } else null
-            bitPerfectDevice?.let { previous -> if (previous.id != usb?.id) { audioManager.clearPreferredMixerAttributes(attributes, previous); bitPerfectDevice = null } }
+            bitPerfectDevice?.let { previous -> if (previous.id != usb?.id) { audioManager.clearPreferredMixerAttributes(attributes, previous); bitPerfectDevice = null; SignalPath.bitPerfectDevice = null } }
             if (usb == null) return
             val supported = audioManager.getSupportedMixerAttributes(usb).filter { it.mixerBehavior == AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT }
             val rate = player.audioFormat?.sampleRate
             val choice = supported.firstOrNull { it.format.sampleRate == rate } ?: supported.maxByOrNull { it.format.sampleRate } ?: return
             audioManager.setPreferredMixerAttributes(attributes, usb, choice)
             bitPerfectDevice = usb
+            SignalPath.bitPerfectDevice = usb.productName?.toString()?.ifBlank { null } ?: "USB"
         }
     }
 
@@ -377,7 +355,6 @@ class PlaybackService : MediaLibraryService() {
         runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
         app.sources.onGains = null
         WidgetState.write(this, null); NowPlayingWidget.refresh(this)
-        runCatching { equalizer?.release() }
         scope.cancel(); session?.player?.release(); session?.release(); session = null; super.onDestroy()
     }
 

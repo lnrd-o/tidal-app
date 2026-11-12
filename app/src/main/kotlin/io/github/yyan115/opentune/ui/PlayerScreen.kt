@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
@@ -93,7 +94,7 @@ fun QueueSheet(state: AppState, vm: MainViewModel, onClose: () -> Unit) {
         if (dragStart >= 0 && end >= 0 && end != dragStart) vm.moveQueue(dragStart, end)
         dragged = null; dragStart = -1; dragOffset = 0f
     }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding().testTag("queue-list"), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "title") { SectionTitle(stringResource(R.string.queue_title), if (queue.isNotEmpty()) stringResource(R.string.action_clear) else null, { confirmClear = true }) }
             if (queue.isNotEmpty()) item(key = "tools") {
@@ -116,6 +117,7 @@ fun QueueSheet(state: AppState, vm: MainViewModel, onClose: () -> Unit) {
                 val moveUp = stringResource(R.string.queue_move_up, track.title)
                 val moveDown = stringResource(R.string.queue_move_down, track.title)
                 val remove = stringResource(R.string.queue_remove, track.title)
+                val nowPlayingLabel = stringResource(R.string.queue_now_playing)
                 val dismiss = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
                     if (value != SwipeToDismissBoxValue.Settled && dragged == null) { entries.removeAll { it.uid == entry.uid }; vm.removeQueue(index); true } else false
                 })
@@ -133,7 +135,7 @@ fun QueueSheet(state: AppState, vm: MainViewModel, onClose: () -> Unit) {
                             Box(contentAlignment = Alignment.Center) {
                                 TrackArtwork(track, null, Modifier.size(44.dp).graphicsLayer { alpha = if (index < current) .5f else 1f })
                                 if (playing) Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.scrim.copy(alpha = .55f), MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
-                                    Icon(OpenTuneIcons.GraphicEq, stringResource(R.string.queue_now_playing), Modifier.size(22.dp), tint = Color.White)
+                                    PlayingBars(state.playback.playing, Modifier.semantics { contentDescription = nowPlayingLabel })
                                 }
                             }
                             Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {

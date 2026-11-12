@@ -23,25 +23,24 @@ class BackupTest {
         val playlist = app.library.createPlaylist(title)
         app.library.addToPlaylist(playlist.id, tidalTrack); app.library.addToPlaylist(playlist.id, localTrack)
         app.library.recordPlay(tidalTrack, 90_000, 1_700_000_000_000)
-        app.settings.update { it.copy(normalization = "album", theme = "ember") }
+        app.settings.update { it.copy(normalization = "album") }
 
         val backup = BackupManager(app).toJson()
         assertFalse("The backup must not contain tokens", backup.toString().contains("access", ignoreCase = true) || backup.toString().contains("refresh", ignoreCase = true))
         val text = backup.toString()
 
         app.library.deletePlaylist(playlist.id)
-        app.settings.update { it.copy(normalization = "off", theme = "gold") }
+        app.settings.update { it.copy(normalization = "off") }
         val summary = BackupManager(app).restore(JSONObject(text))
 
         assertTrue(summary.playlists >= 1)
         val restored = app.library.playlists().single { it.title == title }
         assertEquals(listOf("424242"), restored.trackIds)
         assertEquals("album", app.settings.state.value.normalization)
-        assertEquals("ember", app.settings.state.value.theme)
         assertEquals(0, BackupManager(app).restore(JSONObject(text)).plays)
         assertEquals(1, app.library.playlists().count { it.title == title })
         app.library.deletePlaylist(restored.id)
-        app.settings.update { it.copy(normalization = "off", theme = "gold") }
+        app.settings.update { it.copy(normalization = "off") }
     }
 
     @Test fun otherFilesAreRefused() {

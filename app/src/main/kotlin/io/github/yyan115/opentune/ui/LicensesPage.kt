@@ -25,13 +25,13 @@ import kotlinx.coroutines.withContext
 /** The pages that hold a licence text, with the asset file of each. */
 val LicenceDocuments: Map<SettingsPage, String> = linkedMapOf(
     SettingsPage.Apache to "Apache-2.0.txt",
-    SettingsPage.Inter to "Inter-OFL.txt", SettingsPage.Serif to "Instrument-Serif-OFL.txt", SettingsPage.Space to "Space-Grotesk-OFL.txt", SettingsPage.Mono to "JetBrains-Mono-OFL.txt",
+    SettingsPage.DmSans to "DM-Sans-OFL.txt", SettingsPage.Mono to "JetBrains-Mono-OFL.txt",
 )
 
 /** A component of the list. [project] is empty for OpenTune itself. */
 class LicenceEntry(val name: String, val project: String, val licence: Int, val page: SettingsPage)
 
-private val FontPages = mapOf("Inter" to SettingsPage.Inter, "Instrument Serif" to SettingsPage.Serif, "Space Grotesk" to SettingsPage.Space, "JetBrains Mono" to SettingsPage.Mono)
+private val FontPages = mapOf("DM Sans" to SettingsPage.DmSans, "JetBrains Mono" to SettingsPage.Mono)
 
 /**
  * Reads the components from the table of `THIRD_PARTY_NOTICES.txt`: the component, a link to its project and its licence.

@@ -39,7 +39,7 @@ class ScreenTourTest {
     }
 
     @Test fun tour() {
-        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(theme = "dark", offline = false, welcomeDone = true) } }
+        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(offline = false, welcomeDone = true) } }
         val file = File(app.filesDir, "tour.flac")
         InstrumentationRegistry.getInstrumentation().context.assets.open("night-walk.flac").use { input -> file.outputStream().use(input::copyTo) }
         val tracks = listOf("Night Walk" to "Local audio checks", "Glass Rooms" to "Local audio checks", "Slow Tide" to "Salt and Glass").mapIndexed { index, (title, album) ->
@@ -75,18 +75,13 @@ class ScreenTourTest {
         picture("8-settings")
         compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Experimental"))
         picture("9-experimental")
-        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Theme"))
-        compose.onNodeWithText("Theme").performClick()
-        picture("10-appearance")
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-        compose.waitForIdle()
         compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Licenses"))
         compose.onNode(hasText("Licenses") and hasClickAction()).performClick()
         picture("11-licences")
     }
 
     @Test fun settingsAndFirstScreen() {
-        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(theme = "dark", offline = false, welcomeDone = false, avoidRepeatHours = 0) } }
+        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(offline = false, welcomeDone = false, avoidRepeatHours = 0) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("welcome").fetchSemanticsNodes().isNotEmpty() }
         picture("20-first-screen")
         compose.runOnIdle { model.settings { it.copy(welcomeDone = true) } }
@@ -112,24 +107,10 @@ class ScreenTourTest {
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("licences-list").fetchSemanticsNodes().isNotEmpty() }
         picture("26-licences")
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Theme"))
-        compose.onNodeWithText("Theme").performClick()
-        compose.onNodeWithTag("theme-pager").performTouchInput { swipeLeft() }
-        compose.waitForIdle()
-        picture("27-theme-preview")
-        compose.onNodeWithText("Done").performClick()
-        compose.runOnIdle { model.settings { it.copy(equalizer = true) } }
-        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Equalizer"))
-        compose.onNode(hasText("Equalizer") and hasClickAction()).performClick()
-        if (compose.onAllNodesWithText("Preset").fetchSemanticsNodes().isNotEmpty()) {
-            picture("28-equalizer")
-            compose.onNodeWithText("Preset").performClick()
-            picture("29-equalizer-presets")
-        }
     }
 
     @Test fun emptyDeviceList() {
-        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(theme = "dark", welcomeDone = true) } }
+        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(welcomeDone = true) } }
         app.library.localTracks().forEach { app.library.removeLocal(it.id) }
         app.library.playlists().forEach { app.library.deletePlaylist(it.id) }
         compose.waitUntil(10_000) { model.state.value.local.isEmpty() && model.state.value.localPlaylists.isEmpty() }
@@ -138,7 +119,7 @@ class ScreenTourTest {
 
     @Test fun permissionsPage() {
         assumeTrue("A permission of this version of Android is still missing", io.github.yyan115.opentune.ui.Permissions.missing(app).isNotEmpty())
-        compose.runOnIdle { model.settings { it.copy(theme = "dark", welcomeDone = true, setupPending = true) } }
+        compose.runOnIdle { model.settings { it.copy(welcomeDone = true, setupPending = true) } }
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("setup").fetchSemanticsNodes().isNotEmpty() }
         picture("31-permissions")
         compose.runOnIdle { model.settings { it.copy(setupPending = false) } }

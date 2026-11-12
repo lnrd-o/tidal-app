@@ -5,7 +5,6 @@ import io.github.yyan115.opentune.core.Placeholders
 import io.github.yyan115.opentune.core.TidalClient
 import io.github.yyan115.opentune.data.AppSettings
 import io.github.yyan115.opentune.data.LibraryStore
-import io.github.yyan115.opentune.data.LocalImporter
 import io.github.yyan115.opentune.data.OfflineExporter
 import io.github.yyan115.opentune.data.SecureSessionStore
 import okhttp3.OkHttpClient
@@ -24,12 +23,11 @@ class OpenTuneApp : Application() {
             chain.proceed(chain.request())
         }.build() }
     val tidal by lazy { TidalClient(sessions::identity, sessions, http, locale = ::tidalLocale) }
-    val importer by lazy { LocalImporter(this, library) }
     val scrobbler by lazy { io.github.yyan115.opentune.data.Scrobbler(this) }
     val exporter by lazy { OfflineExporter(this) }
     val downloadFiles by lazy { io.github.yyan115.opentune.data.DownloadFiles(this) }
-    val folders by lazy { io.github.yyan115.opentune.data.LocalFolders(this) }
     val sources by lazy { AudioSources(this) }
+    val aiEngine by lazy { io.github.yyan115.opentune.data.AiRecommendationEngine(this, library, tidal) }
 
     /** Counts the times that the device regained a network, so that screens can request again what failed while it was away. */
     val networkEpoch = kotlinx.coroutines.flow.MutableStateFlow(0)

@@ -11,10 +11,10 @@ import androidx.compose.ui.text.font.FontWeight
 /** The theme that is active, for the parts of the interface that depend on whether it is dark. */
 val LocalAppTheme = staticCompositionLocalOf { appThemes.first { it.id == "dark" } }
 
-/** Applies the theme with the given id, or the one that matches the device when the id is [SYSTEM_THEME]. */
+/** Applies the one theme of the app. */
 @Composable
-fun OpenTuneTheme(themeId: String, content: @Composable () -> Unit) {
-    val theme = themeFor(themeId, isSystemInDarkTheme())
+fun OpenTuneTheme(content: @Composable () -> Unit) {
+    val theme = appThemes.first()
     CompositionLocalProvider(LocalAppTheme provides theme, LocalThemeFonts provides theme.fonts) {
         MaterialTheme(colorScheme = theme.scheme, typography = themeTypography(theme.fonts), shapes = theme.shapes, content = content)
     }

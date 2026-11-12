@@ -2,6 +2,7 @@ package io.github.yyan115.opentune.ui
 
 import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,7 +31,7 @@ import io.github.yyan115.opentune.core.Track
 
 @UnstableApi
 @Composable
-fun ListenScreen(state: AppState, vm: MainViewModel, onImport: () -> Unit, onLogin: () -> Unit,
+fun ListenScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit,
     onLibrary: (Int) -> Unit, onDevice: () -> Unit, onMenu: (Track) -> Unit, onPlayer: () -> Unit) {
     fun available(track: Track) = track.onDevice || state.local.any { it.id == track.id }
     val recent = if (state.settings.offline) state.recent.filter(::available) else state.recent
@@ -54,6 +55,49 @@ fun ListenScreen(state: AppState, vm: MainViewModel, onImport: () -> Unit, onLog
     PullToRefreshBox(isRefreshing = (forYou?.loading == true || home?.loading == true) && forYou?.page != null,
         onRefresh = { if (online) { pages.load(PageRoute.ForYou, true); pages.load(PageRoute.Home, true); vm.sync() } }, modifier = Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
+        // AI Smart Flow Recommendation Stream
+        item {
+            Card(
+                onClick = { vm.startAiFlow(); onPlayer() },
+                shape = androidx.compose.ui.graphics.RectangleShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = androidx.compose.ui.graphics.RectangleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(46.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(OpenTuneIcons.AutoAwesome, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.ai_flow_title), style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.badge_lossless),
+                                modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 5.dp, vertical = 1.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Text(
+                            stringResource(R.string.ai_flow_subtitle),
+                            Modifier.padding(top = 3.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(OpenTuneIcons.PlayArrow, stringResource(R.string.ai_flow_start), Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
         if (hero != null) {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -77,13 +121,8 @@ fun ListenScreen(state: AppState, vm: MainViewModel, onImport: () -> Unit, onLog
                 }
             }
         } else {
-            if (!state.signedIn && !state.settings.offline) item {
-                ConnectCard(onLogin)
-                TextButton(onClick = onImport, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Icon(OpenTuneIcons.Add, null, Modifier.size(17.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.home_import_files))
-                }
-            }
-            else if (!(state.signedIn && !state.settings.offline)) item { EmptyState(OpenTuneIcons.Album, stringResource(R.string.home_empty_title), stringResource(R.string.home_empty_text), stringResource(R.string.action_import_audio), onImport) }
+            if (!state.signedIn && !state.settings.offline) item { ConnectCard(onLogin) }
+            else if (!(state.signedIn && !state.settings.offline)) item { EmptyState(OpenTuneIcons.Album, stringResource(R.string.home_empty_title), stringResource(R.string.home_empty_text)) }
         }
         forYou?.page?.let { pageContent(it.tidied(mixesTitle), forYou, PageRoute.ForYou.key, context, viewAll = false) }
         if (state.albums.isNotEmpty()) {
@@ -138,7 +177,7 @@ private fun ListeningArtwork(track: Track, quality: String, modifier: Modifier, 
     Box(modifier.clickable(onClick = onClick)) {
         TrackArtwork(track, stringResource(R.string.player_artwork, track.album.ifBlank { track.title }), Modifier.fillMaxWidth().aspectRatio(ratio))
         if (quality.isNotBlank()) Surface(Modifier.align(Alignment.TopStart).padding(12.dp),
-            color = androidx.compose.ui.graphics.Color(0xE0121213), shape = RoundedCornerShape(3.dp)) {
+            color = androidx.compose.ui.graphics.Color(0xE0121213), shape = androidx.compose.ui.graphics.RectangleShape) {
             val readout = SourceReadout.from(quality)
             Text(listOfNotNull(readout.codec.ifBlank { null }, readout.bitsText(), readout.rateText()).joinToString(" · "), Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 fontFamily = AppFonts.body, fontSize = 9.sp, lineHeight = 14.sp, color = androidx.compose.ui.graphics.Color(0xFFF1EBDD))

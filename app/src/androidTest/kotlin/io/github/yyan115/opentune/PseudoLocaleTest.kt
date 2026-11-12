@@ -91,12 +91,12 @@ class PseudoLocaleTest {
     }
 
     private fun launchPreview(page: String, vararg extras: Pair<String, Any>) = launch(Intent().setClassName(context.packageName, "io.github.yyan115.opentune.preview.ThemePreviewActivity")
-        .putExtra("page", page).putExtra("theme", "light").apply { extras.forEach { (key, value) -> if (value is Boolean) putExtra(key, value) } })
+        .putExtra("page", page).apply { extras.forEach { (key, value) -> if (value is Boolean) putExtra(key, value) } })
 
     private fun s(@StringRes id: Int, vararg args: Any): String = activity.getString(id, *args)
 
     @Test fun everyScreenOfTheLocalModeComesFromResources() {
-        app.settings.update { it.copy(welcomeDone = false, theme = "light", offline = false) }
+        app.settings.update { it.copy(welcomeDone = false, offline = false) }
         val model = launchApp()
         compose.runOnIdle { model.clearQueue() }
         await("the track in the library") { model.state.value.local.any { it.id == track.id } }
@@ -209,7 +209,7 @@ class PseudoLocaleTest {
     }
 
     private fun settingsDialogs() = listOf(
-        R.string.eq_title to "Equalizer", R.string.settings_theme to "Theme", R.string.scrobble_title to "Scrobbling",
+        R.string.scrobble_title to "Scrobbling",
         R.string.settings_clear_history to "Clear history",
     )
 
@@ -314,7 +314,6 @@ class PseudoLocaleTest {
     private fun systemTexts(): Set<String> = buildSet {
         val devices = activity.getSystemService(android.media.AudioManager::class.java).getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
         devices.forEach { it.productName?.toString()?.let(::add) }
-        io.github.yyan115.opentune.playback.EqualizerInfo.read()?.presets?.forEach { add(it.name) }
         add(activity.packageName)
     }
 }

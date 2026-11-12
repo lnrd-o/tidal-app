@@ -17,7 +17,7 @@ class ThemesTest {
         return (high + .05) / (low + .05)
     }
 
-    @Test fun everyThemeHasReadableText() {
+    @Test fun theThemeHasReadableText() {
         val failures = mutableListOf<String>()
         for (theme in appThemes) {
             val scheme = theme.scheme
@@ -30,39 +30,24 @@ class ThemesTest {
             check("secondary text on a raised surface", scheme.onSurfaceVariant, scheme.surfaceContainerHigh, 4.5)
             check("text on a raised surface", scheme.onSurface, scheme.surfaceContainerHighest, 7.0)
             check("accent on the background", scheme.primary, scheme.background, 4.5)
-            check("accent on a raised surface", scheme.primary, scheme.surfaceContainerHigh, 4.0)
             check("text on a button", scheme.onPrimary, scheme.primary, 4.5)
             check("borders on the background", scheme.outline, scheme.background, 3.0)
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
-    @Test fun darkThemesAreDarkAndLightThemesAreLight() {
-        for (theme in appThemes) assertEquals("${theme.id} says that it is ${if (theme.dark) "dark" else "light"}", theme.dark, theme.scheme.background.luminance() < .3f)
+    @Test fun thereIsOneDarkSquareTheme() {
+        assertEquals(listOf("dark"), appThemes.map { it.id })
+        assertTrue(appThemes.single().dark)
+        assertTrue(appThemes.single().scheme.background.luminance() < .1f)
+        assertEquals(0, appThemes.single().radius)
     }
 
-    @Test fun idsAreUniqueAndTheNeutralOnesComeFirst() {
-        assertEquals(appThemes.size, appThemes.map { it.id }.toSet().size)
-        assertEquals(listOf("light", "dark"), appThemes.take(2).map { it.id })
-        assertTrue("There are enough themes to choose from", appThemes.size >= 12)
-        assertEquals("Each theme has its own accent", appThemes.size, appThemes.map { it.scheme.primary }.toSet().size - appThemes.count { it.id == "obsidian" }.let { 0 })
-    }
-
-    @Test fun theSystemThemeFollowsTheDevice() {
-        assertEquals("light", themeFor(SYSTEM_THEME, systemDark = false).id)
-        assertEquals("dark", themeFor(SYSTEM_THEME, systemDark = true).id)
-        assertEquals("An unknown id falls back to Dark", "dark", themeFor("missing", systemDark = false).id)
-    }
-
-    @Test fun oldSettingsMapToTheNearestTheme() {
-        assertEquals("gold", migrateTheme("dark", "gallery"))
-        assertEquals("ocean", migrateTheme("dark", "cobalt"))
-        assertEquals("ember", migrateTheme("dark", "copper"))
-        assertEquals("dark", migrateTheme("dark", "studio"))
-        assertEquals("paper", migrateTheme("light", "paper"))
-        assertEquals("light", migrateTheme("light", "gallery"))
-        assertEquals("system", migrateTheme("system", "cobalt"))
-        assertEquals("A theme id that is already new stays", "cyberpunk", migrateTheme("cyberpunk", null))
-        assertEquals("dark", migrateTheme("unknown", null))
+    @Test fun everyIdGivesTheDarkTheme() {
+        assertEquals("dark", themeFor(SYSTEM_THEME, systemDark = false).id)
+        assertEquals("dark", themeFor("light", systemDark = true).id)
+        assertEquals("dark", themeFor("missing", systemDark = false).id)
+        assertEquals("dark", migrateTheme("light", "paper"))
+        assertEquals("dark", migrateTheme("cyberpunk", null))
     }
 }

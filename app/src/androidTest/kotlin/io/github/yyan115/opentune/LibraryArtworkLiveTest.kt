@@ -33,7 +33,7 @@ class LibraryArtworkLiveTest {
     }
 
     @Test fun coversLoadByThemselvesWhenTheNetworkReturns() {
-        compose.runOnIdle { model.settings { it.copy(offline = false, theme = "dark") } }
+        compose.runOnIdle { model.settings { it.copy(offline = false) } }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         SingletonImageLoader.get(context).let { loader -> loader.diskCache?.clear(); loader.memoryCache?.clear() }
         try {

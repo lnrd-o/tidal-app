@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,6 +50,9 @@ fun OpenTuneNavigation(destinations: List<Destination>, selected: Destination, o
                 .selectable(active, role = Role.Tab, onClick = { onSelect(destination) }),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                val indicator by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f, androidx.compose.animation.core.tween(160), label = "nav-indicator")
+                Box(Modifier.fillMaxWidth(.5f).height(2.dp).graphicsLayer { scaleX = indicator }.background(MaterialTheme.colorScheme.primary))
+                Spacer(Modifier.height(8.dp))
                 Icon(destination.icon, null, Modifier.size(22.dp), tint = color)
                 Text(stringResource(destination.title), Modifier.padding(top = 6.dp), fontFamily = AppFonts.body, fontSize = 9.sp, lineHeight = 13.sp, maxLines = 1,
                     fontWeight = if (active) FontWeight.Medium else FontWeight.Normal, color = color)

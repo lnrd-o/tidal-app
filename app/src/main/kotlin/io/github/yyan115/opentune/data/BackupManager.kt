@@ -25,8 +25,7 @@ class BackupManager(private val app: OpenTuneApp) {
             put("format", "opentune-backup"); put("version", 1); put("createdAt", System.currentTimeMillis())
             put("settings", JSONObject().apply {
                 put("quality", settings.quality.name); put("mobileQuality", settings.mobileQuality.name); put("downloadOnWifi", settings.downloadOnWifi)
-                put("theme", settings.theme); put("normalization", settings.normalization)
-                put("equalizer", settings.equalizer); put("equalizerLevels", JSONArray(settings.equalizerLevels)); put("bitPerfect", settings.bitPerfect)
+                put("normalization", settings.normalization); put("bitPerfect", settings.bitPerfect)
                 put("downloadSaved", settings.downloadSaved); put("downloadPlayed", settings.downloadPlayed); put("scrobble", settings.scrobble); put("scrobbleServer", settings.scrobbleServer)
             })
             put("playlists", JSONArray().apply {
@@ -54,9 +53,7 @@ class BackupManager(private val app: OpenTuneApp) {
                 current.copy(
                     quality = quality("quality", current.quality), mobileQuality = quality("mobileQuality", current.mobileQuality),
                     downloadOnWifi = values.optBoolean("downloadOnWifi", current.downloadOnWifi),
-                    theme = io.github.yyan115.opentune.ui.migrateTheme(values.optString("theme", current.theme), values.optString("colorTheme").ifBlank { null }),
-                    normalization = values.optString("normalization", current.normalization), equalizer = values.optBoolean("equalizer", current.equalizer),
-                    equalizerLevels = values.optJSONArray("equalizerLevels")?.let { array -> (0 until array.length()).map(array::getInt) } ?: current.equalizerLevels,
+                    normalization = values.optString("normalization", current.normalization),
                     bitPerfect = values.optBoolean("bitPerfect", current.bitPerfect), downloadSaved = values.optBoolean("downloadSaved", values.optBoolean("keepFavoritesOffline", current.downloadSaved)),
                     downloadPlayed = values.optBoolean("downloadPlayed", current.downloadPlayed),
                     scrobble = values.optBoolean("scrobble", current.scrobble), scrobbleServer = values.optString("scrobbleServer", current.scrobbleServer),

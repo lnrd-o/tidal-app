@@ -2,7 +2,6 @@ package io.github.yyan115.opentune.ui
 
 import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -56,30 +55,25 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     var editPlaylist by remember { mutableStateOf(false) }
     var deletePlaylist by remember { mutableStateOf(false) }
     var removeTrack by remember { mutableStateOf<Track?>(null) }
-    var detailsTrack by remember { mutableStateOf<Track?>(null) }
+    var storyTrack by remember { mutableStateOf<Track?>(null) }
     var navigationMenu by rememberSaveable { mutableStateOf(false) }
     var statsInfo by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val largeText = LocalDensity.current.fontScale > 1.3f
     val rail = landscape && !largeText
-    // Without an account the app offers the music on the device, which has its own filter, so there is one place and no navigation.
-    val destinations = if (state.signedIn) listOf(Destination.Home, Destination.Search, Destination.Library, Destination.Device) else listOf(Destination.Device)
+    val destinations = listOf(Destination.Home, Destination.Search, Destination.Library, Destination.Device)
     val destination = Destination.entries.firstOrNull { it.name == destinationName }?.takeIf { it in destinations } ?: destinations.first()
     val settingsPageOpen = SettingsPage.entries.firstOrNull { it.name == settingsPage }
     val closeSettings = { settings = false; settingsPage = null }
     val select: (Destination) -> Unit = { destinationName = it.name; closeSettings(); vm.closeAll() }
     val navigation = destinations.size > 1
-    val welcome = !state.settings.welcomeDone && !state.signedIn
+    val welcome = !state.signedIn
     val snackbar = remember { SnackbarHostState() }
     val inDetail = state.detail != null || state.routes.isNotEmpty()
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.import(uris) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     // A download needs the permissions that apply to this version of Android. They are asked for when they are missing.
     val askPermissions = { val missing = Permissions.missing(context); if (missing.isNotEmpty()) permissions.launch(missing) }
-    val importAudio = { importer.launch(arrayOf("audio/*")) }
-    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.addDeviceFolder(uri) }
-    val addFolder = { folderPicker.launch(null) }
     val openLogin = { startLogin(context, vm) }
     val openTrackMenu: (Track) -> Unit = { trackMenu = it; playlistPosition = null }
     // A page opens over everything else, so the player, the settings and the lists behind it make way.
@@ -94,7 +88,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     val setupPending = state.settings.setupPending
     val setup by rememberSaveable(setupPending) { mutableStateOf(setupPending && Permissions.missing(context).isNotEmpty()) }
     LaunchedEffect(setupPending, setup) { if (setupPending && !setup) vm.finishSetup() }
-    if (welcome) WelcomeScreen(onSignIn = openLogin, onLocalOnly = vm::finishWelcome)
+    if (welcome) WelcomeScreen(onSignIn = openLogin)
     else if (setup) SetupScreen(onContinue = vm::finishSetup)
     else Row(Modifier.fillMaxSize().then(if (landscape) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start)) else Modifier)) {
     if (rail && navigation) OpenTuneRail(destinations, destination, select)
@@ -154,23 +148,23 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                     SettingsPage.Repeats -> AvoidRepeatsPage(state, vm)
                     SettingsPage.Statistics -> StatisticsPage(vm)
                     SettingsPage.Licenses -> LicencesPage { settingsPage = it.name }
-                    SettingsPage.Apache, SettingsPage.Inter, SettingsPage.Serif, SettingsPage.Space, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)
+                    SettingsPage.Apache, SettingsPage.DmSans, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)
                     null -> SettingsScreen(state, vm, openLogin) { settingsPage = it.name }
                 }
                 state.routes.isNotEmpty() -> PageScreen(state.routes.last(), state, vm, pagesVm, openTrackMenu)
                 state.detail != null -> DetailScreen(state, vm, { track, index -> trackMenu = track; playlistPosition = index }, onAddSongs = { addSongs = true })
-                destination == Destination.Home -> ListenScreen(state, vm, importAudio, openLogin, { filter -> libraryFilter = filter; destinationName = Destination.Library.name },
+                destination == Destination.Home -> ListenScreen(state, vm, openLogin, { filter -> libraryFilter = filter; destinationName = Destination.Library.name },
                     { destinationName = Destination.Device.name }, openTrackMenu, { nowPlaying = true })
                 destination == Destination.Search -> SearchScreen(state, vm, openLogin, openTrackMenu)
                 destination == Destination.Library -> LibraryScreen(state, vm, openLogin, { newPlaylistTrack = null; playlistTitle = ""; newPlaylist = true }, openTrackMenu,
                     libraryFilter, { libraryFilter = it })
-                else -> OnDeviceScreen(state, vm, importAudio, addFolder, openLogin, { newPlaylistTrack = null; playlistTitle = ""; newPlaylist = true }, openTrackMenu)
+                else -> DownloadsScreen(state, vm, openLogin, openTrackMenu)
             }
         }
     }
     }
 
-    if (navigationMenu) ModalBottomSheet(onDismissRequest = { navigationMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (navigationMenu) ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = { navigationMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             destinations.forEach { item -> NavigationDrawerItem(selected = destination == item, label = { Text(stringResource(item.title)) },
                 icon = { Icon(item.icon, null) }, modifier = Modifier.padding(horizontal = 12.dp),
@@ -180,14 +174,11 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
 
     // The sign-in finishes in the browser, so a bar shows while the app exchanges the answer.
     if (state.signingIn) LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding())
-    if (nowPlaying && state.playback.track != null) NowPlayingScreen(state, vm, onClose = { nowPlaying = false }, onQueue = { queue = true }, onMenu = openTrackMenu, onDownload = { track ->
-        askPermissions()
-        vm.download(track)
-    }, onAlbum = { track -> openRelease(Release(track.albumId, track.album, track.artist, track.artwork)) },
+    if (nowPlaying && state.playback.track != null) NowPlayingScreen(state, vm, onClose = { nowPlaying = false }, onQueue = { queue = true }, onMenu = openTrackMenu, onAlbum = { track -> openRelease(Release(track.albumId, track.album, track.artist, track.artwork)) },
         onArtist = { track -> openRelease(Release(track.artistId, track.artist.substringBefore(","), "", type = ReleaseType.ARTIST)) }, initialLyrics = initialLyrics)
     if (queue) QueueSheet(state, vm) { queue = false }
     trackMenu?.let { track ->
-        ModalBottomSheet(onDismissRequest = { trackMenu = null; playlistPosition = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = { trackMenu = null; playlistPosition = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     TrackArtwork(track, null, Modifier.size(52.dp))
@@ -226,15 +217,11 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                     SettingRow(OpenTuneIcons.Radio, stringResource(R.string.track_radio), onClick = { vm.playTrackRadio(track); trackMenu = null })
                     SettingRow(OpenTuneIcons.Info, stringResource(R.string.album_credits), onClick = { vm.showCredits("track", track.id, "${track.title} · ${track.artist}"); trackMenu = null })
                 }
-                if (!track.isFile) SettingRow(OpenTuneIcons.Share, stringResource(R.string.track_share), onClick = {
-                    context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, "https://tidal.com/browse/track/${track.id}"), resources.getString(R.string.track_share_title))); trackMenu = null
+                if (!track.isFile) SettingRow(OpenTuneIcons.Share, stringResource(R.string.share_story_button), onClick = {
+                    storyTrack = track; trackMenu = null
                 })
                 val stored = state.local.firstOrNull { it.id == track.id } ?: track.takeIf(Track::onDevice)
-                if (stored != null) SettingRow(OpenTuneIcons.Info, stringResource(R.string.track_details), onClick = { detailsTrack = stored; trackMenu = null })
-                // A file that came with a folder returns at the next scan, so it leaves with its folder. A download or a file that was added by hand can be removed.
-                if (stored != null && (!stored.isFile || stored.id !in state.folderFiles)) SettingRow(OpenTuneIcons.RemoveCircleOutline,
-                    stringResource(if (stored.isFile) R.string.track_remove_file else R.string.track_remove_local), onClick = { removeTrack = stored; trackMenu = null })
+                if (stored != null) SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.track_remove_local), onClick = { removeTrack = stored; trackMenu = null })
             }
         }
     }
@@ -244,7 +231,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         text = { Text(stringResource(R.string.update_text, found.version)) },
         confirmButton = { TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(found.url))) }; vm.dismissUpdate() }) { Text(stringResource(R.string.update_download)) } },
         dismissButton = { TextButton(onClick = vm::dismissUpdate) { Text(stringResource(R.string.update_later)) } }) }
-    detailsTrack?.let { track -> SourceDetailsSheet(track.quality.orEmpty(), track, vm) { detailsTrack = null } }
+    storyTrack?.let { track -> StoryShareSheet(track, track.quality.orEmpty()) { storyTrack = null } }
     state.video?.let { video -> VideoPlayerOverlay(video, state.settings.offline, vm::closeVideo) }
     state.credits?.let { credits -> CreditsSheet(credits, onClose = vm::dismissCredits, onPerson = { person ->
         vm.dismissCredits()
@@ -269,7 +256,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         confirmButton = { TextButton(onClick = { vm.deletePlaylist(release); deletePlaylist = false }) { Text(stringResource(R.string.action_delete)) } },
         dismissButton = { TextButton(onClick = { deletePlaylist = false }) { Text(stringResource(R.string.action_cancel)) } }) }
     removeTrack?.let { track -> AlertDialog(onDismissRequest = { removeTrack = null }, title = { Text(stringResource(R.string.track_remove_title)) },
-        text = { Text(if (track.isFile) stringResource(R.string.track_remove_local_text) else stringResource(R.string.track_remove_download_text)) },
+        text = { Text(stringResource(R.string.track_remove_download_text)) },
         confirmButton = { TextButton(onClick = { vm.removeLocal(track); removeTrack = null }) { Text(stringResource(R.string.action_remove)) } },
         dismissButton = { TextButton(onClick = { removeTrack = null }) { Text(stringResource(R.string.action_cancel)) } }) }
 }

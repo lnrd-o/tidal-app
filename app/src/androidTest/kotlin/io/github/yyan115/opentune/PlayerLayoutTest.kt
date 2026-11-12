@@ -36,7 +36,7 @@ class PlayerLayoutTest {
     @Before fun playOneTrack() {
         val app = compose.activity.application as OpenTuneApp
         model = ViewModelProvider(compose.activity)[MainViewModel::class.java]
-        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(offline = false, welcomeDone = true, visualizer = false) } }
+        compose.runOnIdle { model.clearQueue(); model.settings { it.copy(offline = false, welcomeDone = true) } }
         val file = File(app.filesDir, "layout-test.flac")
         InstrumentationRegistry.getInstrumentation().context.assets.open("night-walk.flac").use { input -> file.outputStream().use(input::copyTo) }
         track = Track("local:layout-test", "Layout Check", "Test Artist", "Layout Album", durationMs = 30_000, localUri = Uri.fromFile(file).toString(), quality = "FLAC · 24-bit · 96 kHz")

@@ -84,7 +84,7 @@ fun NewPlaylistDialog(accountAvailable: Boolean, onCreate: (String, PlaylistHome
 @Composable
 fun AddToPlaylistSheet(track: Track, state: AppState, vm: MainViewModel, onNew: () -> Unit, onClose: () -> Unit) {
     val playlists = playlistReleases(state, vm).filter { !track.isFile || it.isDevicePlaylist }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp)) {
             item { Text(stringResource(R.string.playlist_add), Modifier.padding(horizontal = 24.dp, vertical = 4.dp), style = MaterialTheme.typography.titleLarge) }
             item { SettingRow(OpenTuneIcons.Add, stringResource(R.string.playlist_new), onClick = onNew) }
@@ -114,7 +114,7 @@ fun AddSongsSheet(playlist: Release, state: AppState, vm: MainViewModel, onClose
     }
     val local = remember(state.local, text) { if (text.isBlank()) emptyList() else state.local.filter { it.title.contains(text, true) || it.artist.contains(text, true) || it.album.contains(text, true) } }
     val results = (if (text.isBlank()) state.favorites + state.local else local + remote).distinctBy(Track::id).filter { playlist.isDevicePlaylist || !it.isFile }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxSize().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.playlist_add_songs), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)

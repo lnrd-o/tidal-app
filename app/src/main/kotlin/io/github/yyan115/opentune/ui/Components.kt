@@ -2,6 +2,7 @@ package io.github.yyan115.opentune.ui
 
 import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
@@ -87,7 +88,7 @@ fun TrackArtwork(track: Track, description: String?, modifier: Modifier = Modifi
 /** Marks a file that the listener added from the device. A TIDAL track carries no mark, because TIDAL is what the app is for. */
 @Composable
 fun LocalBadge(modifier: Modifier = Modifier) {
-    Text(stringResource(R.string.label_local).uppercase(), modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+    Text(stringResource(R.string.label_local).uppercase(), modifier.border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 4.dp, vertical = 1.dp),
         fontFamily = AppFonts.body, fontSize = 9.sp, lineHeight = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
@@ -102,10 +103,29 @@ fun SectionTitle(title: String, action: String? = null, onAction: () -> Unit = {
     }
 }
 
+/** Three square bars that rise and fall while a track plays. They draw without recomposing. */
+@Composable
+fun PlayingBars(playing: Boolean, modifier: Modifier = Modifier, color: Color = Color.White) {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "playing-bars")
+    val a by transition.animateFloat(.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "a")
+    val b by transition.animateFloat(1f, .3f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(430, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b")
+    val c by transition.animateFloat(.4f, .9f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(610, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "c")
+    androidx.compose.foundation.Canvas(modifier.size(18.dp)) {
+        val bar = size.width / 5f
+        listOf(a, b, c).forEachIndexed { index, level ->
+            val h = size.height * if (playing) level else .25f
+            drawRect(color, androidx.compose.ui.geometry.Offset(index * bar * 2f, size.height - h), androidx.compose.ui.geometry.Size(bar, h))
+        }
+    }
+}
+
+@Composable
+fun SheetHandle() { androidx.compose.foundation.layout.Box(Modifier.padding(vertical = 10.dp).size(32.dp, 3.dp).background(MaterialTheme.colorScheme.outline)) }
+
 @Composable
 fun EmptyState(icon: ImageVector, title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+        Surface(shape = androidx.compose.ui.graphics.RectangleShape, color = MaterialTheme.colorScheme.surfaceContainerLow,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Icon(icon, null, Modifier.padding(24.dp).size(34.dp), tint = MaterialTheme.colorScheme.primary)
         }
@@ -140,7 +160,7 @@ fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu:
                 color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (track.explicit) {
-                    Text("E", Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
+                    Text("E", Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 3.dp),
                         style = MaterialTheme.typography.labelSmall)
                 }
                 if (track.isFile) LocalBadge(Modifier.padding(end = 6.dp))
@@ -197,18 +217,18 @@ fun UpperLabel(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun TuneButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    androidx.compose.material3.Button(onClick, modifier, enabled, shape = RoundedCornerShape(6.dp),
+    androidx.compose.material3.Button(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape,
         contentPadding = PaddingValues(horizontal = 22.dp, vertical = 13.dp), content = content)
 }
 
 @Composable
 fun TuneTonalButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    FilledTonalButton(onClick, modifier, enabled, shape = RoundedCornerShape(6.dp),
+    FilledTonalButton(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 13.dp), content = content)
 }
 
 @Composable
 fun TuneOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp, vertical = 13.dp), content: @Composable RowScope.() -> Unit) {
-    OutlinedButton(onClick, modifier, enabled, shape = RoundedCornerShape(6.dp), contentPadding = contentPadding, content = content)
+    OutlinedButton(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape, contentPadding = contentPadding, content = content)
 }

@@ -7,10 +7,11 @@ import androidx.media3.common.util.UnstableApi
 import io.github.yyan115.opentune.core.Spectrum
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The last samples that the player sent to the audio output, as one channel, for the visualizer.
- * The player writes them, and the screen reads them about thirty times a second.
+ * The last samples that the player sent to the audio output, as one channel, for the spectrum analyzer.
+ * The player writes them, and the screen reads them while the analyzer is open.
  */
 object AudioSpectrum {
     private val ring = FloatArray(Spectrum.SIZE * 4)
@@ -18,8 +19,13 @@ object AudioSpectrum {
     /** The rate of the samples in the ring. */
     @Volatile var sampleRate = 44_100
         private set
-    /** The tap does nothing while this is off, so that the visualizer costs nothing when nobody looks at it. */
-    @Volatile var enabled = false
+    private val viewers = AtomicInteger(0)
+    /** The tap does nothing while nobody watches, so that the analyzer costs nothing when it is closed. */
+    val enabled: Boolean get() = viewers.get() > 0
+
+    /** A screen that shows the spectrum calls this when it appears, and [release] when it leaves. */
+    fun watch() { viewers.incrementAndGet() }
+    fun release() { if (viewers.decrementAndGet() <= 0) { viewers.set(0); clear() } }
 
     internal fun write(sample: Float, rate: Int) {
         sampleRate = rate
@@ -33,13 +39,18 @@ object AudioSpectrum {
         val end = written
         if (end < Spectrum.SIZE) return false
         val start = end - Spectrum.SIZE
-        for (i in 0 until Spectrum.SIZE) into[i] = ring[((start + i) % ring.size).toInt()]
+        val size = ring.size
+        var from = (start % size).toInt()
+        // Two copies at most, instead of a modulo per sample.
+        val first = minOf(Spectrum.SIZE, size - from)
+        System.arraycopy(ring, from, into, 0, first)
+        if (first < Spectrum.SIZE) { from = 0; System.arraycopy(ring, from, into, first, Spectrum.SIZE - first) }
         return true
     }
 
     fun clear() { written = 0 }
 
-    /** The format that the tap was last configured for, for reports of a visualizer that stays empty. */
+    /** The format that the tap was last configured for, for reports of an analyzer that stays empty. */
     @Volatile var configuration = "never configured"
         internal set
 
@@ -47,7 +58,25 @@ object AudioSpectrum {
     @Volatile var sinks = 0
         internal set
 
-    override fun toString() = "enabled=$enabled written=$written sinks=$sinks configuration=$configuration"
+    override fun toString() = "viewers=${viewers.get()} written=$written sinks=$sinks configuration=$configuration"
+}
+
+/**
+ * What actually reaches the audio output: the decoded format as the player hands it on, and whether Android passes it unchanged.
+ * The player writes it, and the signal path panel reads it.
+ */
+object SignalPath {
+    /** The decoded format. Zero until the first track is configured. */
+    data class Decoded(val sampleRate: Int, val bits: Int, val float: Boolean, val channels: Int)
+
+    @Volatile var decoded: Decoded? = null
+        internal set
+    /** The name of the USB device that receives the stream unchanged, or null when Android's mixer handles it. */
+    @Volatile var bitPerfectDevice: String? = null
+        internal set
+    /** The gain that volume normalization applies, in decibels. Zero when it is off. */
+    @Volatile var normalizationDb: Float = 0f
+        internal set
 }
 
 /**
@@ -67,6 +96,9 @@ class SpectrumProcessor : BaseAudioProcessor() {
         // A format that the tap cannot read, such as compressed audio sent on to a receiver, is left alone.
         if (inputAudioFormat.encoding !in SUPPORTED) return AudioFormat.NOT_SET
         AudioSpectrum.configuration = "encoding ${inputAudioFormat.encoding}, ${inputAudioFormat.channelCount} channels, ${inputAudioFormat.sampleRate} Hz"
+        SignalPath.decoded = SignalPath.Decoded(inputAudioFormat.sampleRate, when (inputAudioFormat.encoding) {
+            C.ENCODING_PCM_16BIT -> 16; C.ENCODING_PCM_24BIT -> 24; else -> 32
+        }, inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT, inputAudioFormat.channelCount)
         encoding = inputAudioFormat.encoding; channels = inputAudioFormat.channelCount.coerceAtLeast(1)
         step = (inputAudioFormat.sampleRate / 48_000).coerceAtLeast(1); rate = inputAudioFormat.sampleRate / step
         sum = 0f; count = 0
@@ -85,18 +117,19 @@ class SpectrumProcessor : BaseAudioProcessor() {
         val frame = bytes * channels
         var frames = buffer.remaining() / frame
         var position = buffer.position()
+        val scale = 1f / channels
         while (frames-- > 0) {
             var mixed = 0f
             for (channel in 0 until channels) {
                 mixed += when (encoding) {
-                    C.ENCODING_PCM_16BIT -> buffer.getShort(position).toFloat() / 32768f
-                    C.ENCODING_PCM_24BIT -> (((buffer.get(position + 2).toInt() shl 16) or ((buffer.get(position + 1).toInt() and 0xFF) shl 8) or (buffer.get(position).toInt() and 0xFF)).toFloat()) / 8388608f
-                    C.ENCODING_PCM_32BIT -> buffer.getInt(position).toFloat() / 2147483648f
+                    C.ENCODING_PCM_16BIT -> buffer.getShort(position) * (1f / 32768f)
+                    C.ENCODING_PCM_24BIT -> ((buffer.get(position + 2).toInt() shl 16) or ((buffer.get(position + 1).toInt() and 0xFF) shl 8) or (buffer.get(position).toInt() and 0xFF)) * (1f / 8388608f)
+                    C.ENCODING_PCM_32BIT -> buffer.getInt(position) * (1f / 2147483648f)
                     else -> buffer.getFloat(position)
                 }
                 position += bytes
             }
-            sum += mixed / channels
+            sum += mixed * scale
             if (++count == step) { AudioSpectrum.write(sum / step, rate); sum = 0f; count = 0 }
         }
     }

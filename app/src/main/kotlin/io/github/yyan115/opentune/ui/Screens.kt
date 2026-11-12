@@ -151,7 +151,7 @@ fun SearchScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onMenu
 @Composable
 fun ReleaseRow(release: Release, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(release.artwork, null, Modifier.size(60.dp).then(if (release.type == ReleaseType.ARTIST) Modifier.clip(androidx.compose.foundation.shape.CircleShape) else Modifier))
+        Artwork(release.artwork, null, Modifier.size(60.dp))
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
             Text(release.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(release.artist.ifBlank { release.subtitle }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -365,19 +365,14 @@ fun startLogin(context: android.content.Context, vm: MainViewModel) {
     } catch (_: Exception) { vm.notify(context.getString(R.string.login_no_browser)) }
 }
 
-/** The first Android version on which the visualizer was checked to receive the audio of the player. */
-const val VISUALIZER_API = 30
-
 @UnstableApi
 @Composable
 fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOpenPage: (SettingsPage) -> Unit) {
     val context = LocalContext.current
     var quality by remember { mutableStateOf(false) }
     var mobile by remember { mutableStateOf(false) }
-    var theme by remember { mutableStateOf(false) }
     var signOut by remember { mutableStateOf(false) }
     var normalization by remember { mutableStateOf(false) }
-    var equalizer by remember { mutableStateOf(false) }
     var scrobbling by remember { mutableStateOf(false) }
     var clearHistory by remember { mutableStateOf(false) }
     var mobileDataWarning by remember { mutableStateOf(false) }
@@ -407,8 +402,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             }) }
             item { SettingRow(OpenTuneIcons.Folder, stringResource(R.string.settings_download_folder), io.github.yyan115.opentune.data.DownloadFiles.FOLDER) }
         }
-        item { SectionTitle(stringResource(R.string.settings_appearance)) }
-        item { SettingRow(OpenTuneIcons.Contrast, stringResource(R.string.settings_theme), stringResource(if (settings.theme == SYSTEM_THEME) R.string.theme_system else themeFor(settings.theme, false).nameRes), { theme = true }) }
         item { SectionTitle(stringResource(R.string.settings_listening)) }
         item { SettingRow(OpenTuneIcons.LibraryMusic, stringResource(R.string.stats_title), onClick = { onOpenPage(SettingsPage.Statistics) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SectionTitle(stringResource(R.string.settings_data)) }
@@ -416,9 +409,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.Refresh, stringResource(R.string.settings_restore), onClick = { restore.launch(arrayOf("application/json", "*/*")) }) }
         item { SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.settings_clear_history), stringResource(R.string.settings_clear_history_text), { clearHistory = true }) }
         item { SectionTitle(stringResource(R.string.settings_experimental)) }
-        item { SettingRow(OpenTuneIcons.Equalizer, stringResource(R.string.eq_title), stringResource(if (settings.equalizer) R.string.settings_on else R.string.settings_off), { equalizer = true }) }
         item { SettingRow(OpenTuneIcons.Lyrics, stringResource(R.string.scrobble_title), if (settings.scrobble) stringResource(R.string.settings_scrobble_on, settings.scrobbleServer.removePrefix("https://")) else stringResource(R.string.settings_off), { scrobbling = true }) }
-        if (android.os.Build.VERSION.SDK_INT >= VISUALIZER_API) item { SwitchRow(OpenTuneIcons.GraphicEq, stringResource(R.string.settings_visualizer), settings.visualizer, { value -> vm.settings { it.copy(visualizer = value) } }, stringResource(R.string.settings_visualizer_text)) }
         if (android.os.Build.VERSION.SDK_INT >= 34) item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_bitperfect), settings.bitPerfect, { value -> vm.settings { it.copy(bitPerfect = value) } }, stringResource(R.string.settings_bitperfect_text)) }
         if (state.signedIn) {
             // One rule decides what downloads, so turning one switch on turns the other off.
@@ -437,7 +428,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.Description, stringResource(R.string.settings_licenses), onClick = { onOpenPage(SettingsPage.Licenses) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
     }
     if (normalization) NormalizationDialog(settings.normalization, { value -> vm.settings { it.copy(normalization = value) } }) { normalization = false }
-    if (equalizer) EqualizerSheet(settings, { next -> vm.settings { next } }) { equalizer = false }
     if (scrobbling) ScrobbleDialog(settings, vm) { scrobbling = false }
     if (playedWarning) AlertDialog(onDismissRequest = { playedWarning = false }, title = { Text(stringResource(R.string.download_played_title)) },
         text = { Text(stringResource(R.string.download_played_text)) },
@@ -459,7 +449,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             RadioButton(if (mobile) settings.mobileQuality == value else settings.quality == value, onClick = null)
             Text(stringResource(value.labelRes()), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium)
         } } } }, confirmButton = {})
-    if (theme) AppearanceSheet(settings, { next -> vm.settings { next } }, onPreview = vm::previewTheme) { theme = false }
     if (signOut) AlertDialog(onDismissRequest = { signOut = false }, title = { Text(stringResource(R.string.signout_title)) }, text = { Text(stringResource(R.string.signout_text)) },
         confirmButton = { TextButton(onClick = { vm.signOut(); signOut = false }) { Text(stringResource(R.string.signout_confirm)) } }, dismissButton = { TextButton(onClick = { signOut = false }) { Text(stringResource(R.string.action_cancel)) } })
 }

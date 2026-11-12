@@ -16,9 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.yyan115.opentune.R
 
-/** The first screen after installation. TIDAL is the main way to use the app. Local music is available without an account. */
+/** The first screen. The app plays TIDAL, so it asks for the sign-in. */
 @Composable
-fun WelcomeScreen(onSignIn: () -> Unit, onLocalOnly: () -> Unit) {
+fun WelcomeScreen(onSignIn: () -> Unit) {
     Surface(Modifier.fillMaxSize().testTag("welcome"), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -28,7 +28,6 @@ fun WelcomeScreen(onSignIn: () -> Unit, onLocalOnly: () -> Unit) {
             Text(stringResource(R.string.welcome_tagline), Modifier.padding(top = 12.dp).padding(horizontal = 16.dp), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
             TuneButton(onClick = onSignIn, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp).testTag("welcome-sign-in")) { Text(stringResource(R.string.login_button)) }
-            TextButton(onClick = onLocalOnly, modifier = Modifier.padding(top = 8.dp).heightIn(min = 48.dp).testTag("welcome-local")) { Text(stringResource(R.string.welcome_local)) }
             // One sentence for each line, both in the largest size at which the longer one fits.
             WelcomeNote(listOf(stringResource(R.string.welcome_note), stringResource(R.string.welcome_risk)), Modifier.padding(top = 16.dp))
         }

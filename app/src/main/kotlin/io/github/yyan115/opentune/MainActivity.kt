@@ -19,7 +19,6 @@ import androidx.media3.common.util.UnstableApi
 import io.github.yyan115.opentune.ui.MainViewModel
 import io.github.yyan115.opentune.ui.OpenTuneRoot
 import io.github.yyan115.opentune.ui.OpenTuneTheme
-import io.github.yyan115.opentune.ui.themeFor
 import io.github.yyan115.opentune.ui.enterVideoPip
 import io.github.yyan115.opentune.ui.LocalNetworkEpoch
 import io.github.yyan115.opentune.ui.LocalOfflineMode
@@ -43,17 +42,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incomingCallback) {
                 incomingCallback?.let { model.completeBrowserLogin(it); incomingCallback = null }
             }
-            val preview by model.previewTheme.collectAsStateWithLifecycle()
-            val themeId = preview ?: state.settings.theme
-            val dark = themeFor(themeId, isSystemInDarkTheme()).dark
-            LaunchedEffect(dark) {
+            LaunchedEffect(Unit) {
                 withFrameNanos { }
-                WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
-                }
+                WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
             }
-            OpenTuneTheme(themeId) { CompositionLocalProvider(LocalOfflineMode provides state.settings.offline, LocalNetworkEpoch provides networkEpoch, LocalPlaybackPosition provides model.position) { OpenTuneRoot(model, state) } }
+            OpenTuneTheme { CompositionLocalProvider(LocalOfflineMode provides state.settings.offline, LocalNetworkEpoch provides networkEpoch, LocalPlaybackPosition provides model.position) { OpenTuneRoot(model, state) } }
         }
     }
 

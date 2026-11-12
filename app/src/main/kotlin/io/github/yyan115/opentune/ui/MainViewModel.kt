@@ -64,7 +64,6 @@ data class AppState(
     val settings: Settings = Settings(),
     val local: List<Track> = emptyList(), val favorites: List<Track> = emptyList(), val recent: List<Track> = emptyList(),
     val localPlaylists: List<LocalPlaylist> = emptyList(),
-    val deviceFolders: List<io.github.yyan115.opentune.data.LocalFolder> = emptyList(), val folderFiles: Set<String> = emptySet(), val scans: Map<String, io.github.yyan115.opentune.data.ScanState> = emptyMap(),
     val albums: List<Release> = emptyList(), val playlists: List<Release> = emptyList(),
     val search: SearchResult = SearchResult(), val searchQuery: String = "", val searching: Boolean = false,
     val searchError: String? = null,
@@ -117,10 +116,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val favoriteSyncLock = Mutex()
     private var collectionReady = false
     private var updateChecked = false
-    private val themePreview = MutableStateFlow<String?>(null)
-    /** The theme that the picker shows while the listener swipes. It replaces the saved theme until the picker closes. */
-    val previewTheme = themePreview.asStateFlow()
-    fun previewTheme(id: String?) { themePreview.value = id }
     private var networkCallbackRegistered = false
     private val connectivity = application.getSystemService(ConnectivityManager::class.java)
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -134,7 +129,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 controller = player
                 player.addListener(object : Player.Listener {
                     override fun onEvents(player: Player, events: Player.Events) {
-                        updatePlayback(); persistQueue()
+                        if (events.contains(Player.EVENT_TIMELINE_CHANGED)) decodedTracks.clear()
+                        updatePlayback()
+                        // Saving encodes the whole queue, so it waits for the events that change it. The loop below also saves every ten seconds.
+                        if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED)) persistQueue()
                         if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) && player.playbackState == Player.STATE_ENDED) continueWithSimilarMusic(player)
                     }
                     override fun onPlayerError(error: PlaybackException) {
@@ -157,17 +155,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(500)
                 controller?.let { player ->
                     clock.value = player.currentPosition.coerceAtLeast(0)
-                    ui.update { it.copy(playback = it.playback.copy(
-                        quality = it.playback.track?.let { track -> app.sources.quality(track.id) ?: track.quality }.orEmpty(),
-                        duration = player.duration.takeIf { d -> d > 0 } ?: it.playback.track?.durationMs ?: 0)) }
+                    // The whole screen reads this state, so it is written only when the quality or the length changed.
+                    val current = ui.value.playback
+                    val quality = current.track?.let { track -> app.sources.quality(track.id) ?: track.quality }.orEmpty()
+                    val duration = player.duration.takeIf { d -> d > 0 } ?: current.track?.durationMs ?: 0
+                    if (quality != current.quality || duration != current.duration) ui.update { it.copy(playback = it.playback.copy(quality = quality, duration = duration)) }
                 }
             }
         }
         viewModelScope.launch { while (true) { delay(10_000); persistQueue() } }
         // A scan stores a file after a file. The lists refresh once the changes pause, not after each one.
         viewModelScope.launch { app.library.changes.collectLatest { delay(200); refreshLocal() } }
-        viewModelScope.launch { app.folders.scans.collect { scans -> ui.update { it.copy(scans = scans) } } }
-        viewModelScope.launch(Dispatchers.IO) { app.folders.rescanStale() }
         // A download whose file the listener removed is a stream again. Downloads that an earlier version kept as segments move into the download folder.
         viewModelScope.launch(Dispatchers.IO) {
             app.library.localTracks().filter { it.isDownload && it.localUri?.startsWith("opentune-offline:") == false }
@@ -240,12 +238,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val favorites = withContext(Dispatchers.IO) { app.library.favorites() }
         val recent = withContext(Dispatchers.IO) { app.library.recent() }
         val playlists = withContext(Dispatchers.IO) { app.library.playlists() }
-        val folders = withContext(Dispatchers.IO) { app.library.folders() }
-        val folderFiles = withContext(Dispatchers.IO) { app.library.folderFileIds() }
         val pending = withContext(Dispatchers.IO) { app.library.pendingFavorites(app.tidal.accountId) }
         val localById = local.associateBy(Track::id)
         ui.update { it.copy(local = local, favorites = (favorites + cloudFavorites).filter { track -> pending[track.id] != false }.distinctBy(Track::id)
-            .map { track -> localById[track.id] ?: track }, recent = recent, localPlaylists = playlists, deviceFolders = folders, folderFiles = folderFiles) }
+            .map { track -> localById[track.id] ?: track }, recent = recent, localPlaylists = playlists) }
     }
 
     fun search(text: String) { query.value = text; ui.update { it.copy(searchQuery = text) } }
@@ -428,7 +424,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun seek(position: Long) { controller?.seekTo(position.coerceAtLeast(0)) }
-    fun next() { controller?.seekToNextMediaItem() }
+    fun next() {
+        controller?.let { player ->
+            ui.value.playback.track?.let { currentTrack ->
+                app.aiEngine.recordSkip(currentTrack, player.currentPosition)
+            }
+            player.seekToNextMediaItem()
+        }
+    }
     fun previous() { controller?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
     fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
     fun toggleRepeat() { controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }
@@ -456,6 +459,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             notify(app.getString(R.string.notify_track_not_saved)); return@launch
         }
         cloudFavorites = if (previous) cloudFavorites.filterNot { it.id == track.id } else cloudFavorites
+        app.aiEngine.recordSignal(track, !previous)
         refreshLocal()
         // The download of saved tracks starts with the save. A track that was saved earlier, or in another app, is not downloaded.
         if (!previous && !track.isFile && ui.value.settings.downloadSaved && DownloadRequests.hasRoom(app)) download(track, quiet = true)
@@ -486,24 +490,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The permissions page was answered. */
     fun finishSetup() { settings { it.copy(setupPending = false) } }
-
-    fun addDeviceFolder(tree: Uri) = viewModelScope.launch(Dispatchers.IO) {
-        try { app.folders.add(tree) }
-        catch (error: Exception) { if (error is CancellationException) throw error; notify(app.getString(R.string.notify_folder_failed)) }
-    }
-    fun removeDeviceFolder(id: String) = viewModelScope.launch(Dispatchers.IO) { app.folders.remove(id) }
-    fun rescanDeviceFolder(id: String) = viewModelScope.launch(Dispatchers.IO) { app.library.folders().firstOrNull { it.id == id }?.let(app.folders::rescan) }
-
-    fun import(uris: List<Uri>) = viewModelScope.launch {
-        var imported = 0
-        for (uri in uris) {
-            try {
-                app.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                app.importer.import(uri, direct = true); imported++
-            } catch (error: Exception) { if (error is CancellationException) throw error; notify(app.getString(R.string.notify_import_failed)) }
-        }
-        if (imported > 0) notify(app.resources.getQuantityString(R.plurals.notify_files_added, imported, imported))
-    }
 
     fun download(track: Track, quiet: Boolean = false) = viewModelScope.launch {
         if (track.onDevice || withContext(Dispatchers.IO) { app.library.get(track.id)?.onDevice == true }) { if (!quiet) notify(app.getString(R.string.notify_already_local)); return@launch }
@@ -717,6 +703,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         play(tracks, if (shuffle) tracks.indices.random() else 0, source, if (shuffle) true else null)
     }
 
+    /** Generates an AI-curated Smart Flow stream based on taste profile and social interaction signals. */
+    fun startAiFlow() = viewModelScope.launch {
+        notify(app.getString(R.string.ai_flow_generating))
+        val tracks = app.aiEngine.generateSmartFlow(35)
+        if (tracks.isNotEmpty()) {
+            play(tracks, 0, app.getString(R.string.ai_flow_title))
+        } else {
+            notify(app.getString(R.string.ai_flow_empty))
+        }
+    }
+
     /** Loads the playlists and folders inside a folder. The last result stays on screen until a new one arrives. */
     fun loadFolder(id: String = TidalClient.ROOT_FOLDER) = viewModelScope.launch {
         val account = app.tidal.accountId
@@ -799,18 +796,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (error: Exception) { if (error is CancellationException) throw error; notify(app.getString(R.string.notify_playlist_not_saved)) }
     }
 
+    /** Tracks that were decoded from the queue, by the id of the item. Decoding JSON for every item on every player event is wasteful. */
+    private val decodedTracks = HashMap<String, Track>()
+
     private fun updatePlayback() {
         val player = controller ?: return
         val queue = (0 until player.mediaItemCount).mapNotNull { index ->
-            player.getMediaItemAt(index).mediaMetadata.extras?.getString("track")?.let {
+            val item = player.getMediaItemAt(index)
+            decodedTracks[item.mediaId] ?: item.mediaMetadata.extras?.getString("track")?.let {
                 runCatching { JsonCodec.decodeTrack(JSONObject(it)) }.getOrNull()
-            }
+            }?.also { decodedTracks[item.mediaId] = it }
         }
+        if (decodedTracks.size > 400) decodedTracks.keys.retainAll(queue.map(Track::id).toSet())
         val quality = player.currentMediaItem?.localConfiguration?.tag as? String ?: queue.getOrNull(player.currentMediaItemIndex)?.quality.orEmpty()
-        ui.update { it.copy(playback = it.playback.copy(queue = queue, index = player.currentMediaItemIndex.coerceAtLeast(0),
+        val next = ui.value.playback.copy(queue = queue, index = player.currentMediaItemIndex.coerceAtLeast(0),
             playing = player.isPlaying, buffering = player.playbackState == Player.STATE_BUFFERING,
             shuffle = player.shuffleModeEnabled, repeat = player.repeatMode, quality = quality, nextIndex = player.nextMediaItemIndex,
-            error = if (player.playerError == null) null else it.playback.error)) }
+            error = if (player.playerError == null) null else ui.value.playback.error)
+        if (next != ui.value.playback) ui.update { it.copy(playback = next) }
     }
 
     private fun persistQueue() {

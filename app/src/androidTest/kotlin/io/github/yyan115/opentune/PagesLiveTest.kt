@@ -33,7 +33,7 @@ class PagesLiveTest {
     private fun settle(milliseconds: Long = 1500) { compose.waitForIdle(); Thread.sleep(milliseconds); compose.waitForIdle() }
 
     @Test fun listenTabShowsPersonalisedAndEditorialSections() {
-        compose.runOnIdle { model.settings { it.copy(offline = false, theme = "dark") } }
+        compose.runOnIdle { model.settings { it.copy(offline = false) } }
         compose.waitUntil(45_000) { pages.state.value[PageRoute.ForYou.key]?.page != null && pages.state.value[PageRoute.Home.key]?.page != null }
         val forYou = pages.state.value.getValue(PageRoute.ForYou.key).page!!
         assertTrue("For you has mixes", forYou.modules.any { it is CarouselModule && it.layout == CarouselLayout.MIXES })
@@ -46,7 +46,7 @@ class PagesLiveTest {
     }
 
     @Test fun thePlayerTitleAndArtistOpenTheAlbumAndTheArtistPage() {
-        compose.runOnIdle { model.settings { it.copy(offline = false, theme = "dark") } }
+        compose.runOnIdle { model.settings { it.copy(offline = false) } }
         compose.runOnIdle { model.search("Norah Jones Don't Know Why") }
         compose.waitUntil(30_000) { model.state.value.search.tracks.isNotEmpty() }
         val track = model.state.value.search.tracks.first { it.title.startsWith("Don't Know Why") }
@@ -73,7 +73,7 @@ class PagesLiveTest {
     }
 
     @Test fun albumArtistCreditsAndLyricsWork() {
-        compose.runOnIdle { model.settings { it.copy(offline = false, theme = "dark") } }
+        compose.runOnIdle { model.settings { it.copy(offline = false) } }
         compose.runOnIdle { model.search("Norah Jones Don't Know Why") }
         compose.waitUntil(30_000) { model.state.value.search.tracks.isNotEmpty() }
         val track = model.state.value.search.tracks.first { it.title.startsWith("Don't Know Why") }
@@ -139,7 +139,7 @@ class PagesLiveTest {
     }
 
     @Test fun libraryShowsAFolderWithItsPlaylistAndOpensIt() {
-        compose.runOnIdle { model.settings { it.copy(offline = false, theme = "dark") } }
+        compose.runOnIdle { model.settings { it.copy(offline = false) } }
         val suffix = java.util.UUID.randomUUID().toString().take(6)
         val folderName = "Check folder $suffix"; val playlistName = "Check playlist $suffix"
         val folder = kotlinx.coroutines.runBlocking { app.tidal.createFolder(folderName) }

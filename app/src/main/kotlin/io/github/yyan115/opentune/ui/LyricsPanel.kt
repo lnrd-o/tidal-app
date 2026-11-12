@@ -2,8 +2,9 @@ package io.github.yyan115.opentune.ui
 
 import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.DragInteraction
@@ -70,16 +71,20 @@ private fun SyncedLyrics(lyrics: Lyrics, onSeek: (Long) -> Unit) {
         val offset = with(androidx.compose.ui.platform.LocalDensity.current) { -(maxHeight * 0.3f).roundToPx() }
         LaunchedEffect(current) {
             if (current >= 0 && System.currentTimeMillis() >= pausedUntil) listState.animateScrollToItem(current, offset)
+            // Nothing to wait for: the scroll is short and the spring on the lines gives the motion.
         }
         CompositionLocalProvider(LocalLayoutDirection provides if (lyrics.rightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = maxHeight * 0.3f, bottom = maxHeight * 0.6f, start = 8.dp, end = 8.dp)) {
                 itemsIndexed(lyrics.lines, key = { index, line -> "$index:${line.timeMs}" }) { index, line ->
                     val active = index == current
-                    val color by animateColorAsState(if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f), label = "line-color")
-                    val scale by animateFloatAsState(if (active) 1f else .82f, label = "line-scale")
+                    // Lines fade with their distance from the line that sings, and the active line springs up to full size.
+                    val distance = if (current < 0) 3 else kotlin.math.abs(index - current)
+                    val alpha by animateFloatAsState(if (active) 1f else (.55f - distance * .1f).coerceAtLeast(.2f), tween(220), label = "line-alpha")
+                    val scale by animateFloatAsState(if (active) 1f else .84f, spring(dampingRatio = .7f, stiffness = 500f), label = "line-scale")
+                    val lift by animateFloatAsState(if (active) 0f else 6f, spring(stiffness = 500f), label = "line-lift")
                     Text(line.text.ifBlank { "♪" }, Modifier.fillMaxWidth().clickable { onSeek(line.timeMs) }.padding(vertical = 9.dp)
-                        .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = TransformOrigin(if (lyrics.rightToLeft) 1f else 0f, .5f) },
-                        style = AppFonts.title(28, 34), color = color)
+                        .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift; this.alpha = alpha; transformOrigin = TransformOrigin(if (lyrics.rightToLeft) 1f else 0f, .5f) },
+                        style = AppFonts.title(28, 34), color = MaterialTheme.colorScheme.onSurface)
                 }
                 item(key = "credit") { Attribution(lyrics) }
             }

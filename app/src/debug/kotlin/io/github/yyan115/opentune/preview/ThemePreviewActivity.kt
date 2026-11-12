@@ -31,12 +31,7 @@ class ThemePreviewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val themeId = intent.getStringExtra("theme") ?: "dark"
-        val dark = themeFor(themeId, false).dark
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
+        WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
         val model = ViewModelProvider(this)[MainViewModel::class.java]
         val covers = File(filesDir, "theme-preview")
         fun cover(name: String) = covers.resolve("$name.jpg").takeIf(File::isFile)?.toURI()?.toString()
@@ -56,15 +51,14 @@ class ThemePreviewActivity : ComponentActivity() {
             "Where the evening hums and never stops" to 65_500L, "Hold the quiet, let the city fade" to 70_000L, "Night walk, night walk, all the way home" to 75_000L,
             "Streetlight stories, written in chalk" to 80_500L, "Footsteps keeping time on the stone" to 85_000L,
         ).map { LyricLine(it.second, it.first) }, "", "Example")
-        val state = AppState(signedIn = true, settings = Settings(theme = themeId, welcomeDone = true),
+        val state = AppState(signedIn = true, settings = Settings(welcomeDone = true),
             recent = tracks.take(3), favorites = tracks, albums = albums,
             searchQuery = if (page == "search") "Harbour Lights" else "", search = SearchResult(tracks = listOf(tracks[0]), albums = listOf(albums[0])),
             playback = PlaybackState(queue = tracks, index = 0, nextIndex = 1, duration = tracks[0].durationMs, quality = "FLAC · 24-bit · 192 kHz"),
             detail = if (page == "album") albums[0] else null, detailTracks = if (page == "album") tracks.take(1) else emptyList(),
             lyrics = if (lyrics) sampleLyrics else null, lyricsStatus = if (lyrics) LyricsStatus.Ready else LyricsStatus.Idle, lyricsTrackId = tracks[0].id)
-        setContent { OpenTuneTheme(themeId) {
+        setContent { OpenTuneTheme {
             if (page == "icons") IconSheet()
-            else if (page == "appearance") AppearanceSheet(Settings(theme = themeId, welcomeDone = true), {}, onClose = {})
             else CompositionLocalProvider(LocalOfflineMode provides true, LocalPlaybackPosition provides MutableStateFlow(64_000L)) {
                 OpenTuneRoot(model, state, initialDestination = when (page) { "search" -> Destination.Search; "library" -> Destination.Library; "downloads", "device" -> Destination.Device; else -> Destination.Home },
                     initialPlayer = page == "player", initialSettings = page == "settings", initialLyrics = lyrics)

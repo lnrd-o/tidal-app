@@ -44,7 +44,6 @@
     <string name="label_playlists">Playlists</string>
     <string name="label_videos">Videos</string>
     <string name="action_shuffle">Shuffle</string>
-    <string name="label_local">Local</string>
 
     <!-- Navigation -->
     <string name="nav_search">Search</string>
@@ -59,9 +58,8 @@
     <string name="nav_open">Open navigation</string>
     <string name="status_offline">Offline mode</string>
     <string name="nav_home">Home</string>
-    <string name="nav_device">On device</string>
-    <string name="welcome_tagline">Unofficial open source music player for TIDAL with local playback</string>
-    <string name="welcome_local">Continue without TIDAL</string>
+    <string name="nav_device">Downloads</string>
+    <string name="welcome_tagline">Unofficial open source music player for TIDAL</string>
     <string name="welcome_risk">Use at your own risk</string>
     <string name="welcome_note">OpenTune is an independent app and is not affiliated with TIDAL</string>
 
@@ -132,8 +130,8 @@
     <string name="device_filter_all">All</string>
     <string name="device_filter_files">Local files</string>
     <string name="device_filter_empty">No tracks</string>
-    <string name="device_empty_title">Nothing on this device yet</string>
-    <string name="device_empty_text">Download tracks, or add audio files and folders</string>
+    <string name="device_empty_title">No downloads yet</string>
+    <string name="device_empty_text">Download tracks to listen offline</string>
     <string name="device_filter_downloads">Downloads</string>
 
     <!-- Playlists and folders -->
@@ -248,6 +246,16 @@
     <string name="player_playing_from">Playing from</string>
     <string name="player_from_album">From the album</string>
     <string name="player_now_playing">Now playing</string>
+    <string name="playing_now">Playing Now</string>
+    <string name="ai_flow_title">AI Smart Flow</string>
+    <string name="ai_flow_subtitle">Personalized infinite stream tailored to your listening habits</string>
+    <string name="ai_flow_start">Start Flow</string>
+    <string name="ai_flow_generating">Synthesizing your AI Smart Flow…</string>
+    <string name="ai_flow_empty">Need more favorites or listening history to generate Flow</string>
+    <string name="volume_hud">Volume %1$d%%</string>
+    <string name="volume_label">Volume</string>
+    <string name="gesture_swipe_queue">Swipe up for queue</string>
+    <string name="gesture_double_tap_liked">Liked</string>
     <string name="player_track_options">Track options</string>
     <string name="player_artwork">Artwork for %1$s</string>
     <string name="player_next_in_queue">Next in queue</string>
@@ -370,8 +378,6 @@
     <string name="licenses_entry">%1$s · %2$s</string>
     <string name="licenses_ofl">SIL Open Font License 1.1</string>
     <string name="licenses_apache">Apache License 2.0</string>
-    <string name="licenses_inter">Inter</string>
-    <string name="licenses_serif">Instrument Serif</string>
     <string name="login_no_browser">A browser is needed to sign in. Install one and try again.</string>
     <string name="login_button">Sign in to TIDAL</string>
     <string name="settings_account">Account</string>
@@ -385,7 +391,6 @@
     <string name="settings_bitperfect">Bit-perfect USB output</string>
     <string name="settings_bitperfect_text">Sends audio to a USB DAC without resampling. Requires Android 14 or later.</string>
     <string name="settings_appearance">Appearance</string>
-    <string name="settings_theme">Theme</string>
     <string name="settings_scrobble_on">On · %1$s</string>
     <string name="settings_backup">Back up data</string>
     <string name="settings_backup_text">Settings, local playlists and listening history</string>
@@ -406,21 +411,8 @@
     <string name="login_expired">This sign-in expired. Start a new TIDAL sign-in.</string>
     <string name="login_intent_label">Complete TIDAL sign-in</string>
     <string name="theme_dark">Dark</string>
-    <string name="theme_light">Light</string>
-    <string name="theme_obsidian">Obsidian</string>
-    <string name="theme_gold">Gold</string>
-    <string name="theme_cyberpunk">Cyberpunk</string>
-    <string name="theme_neon">Neon</string>
-    <string name="theme_ocean">Ocean</string>
-    <string name="theme_ember">Ember</string>
-    <string name="theme_forest">Forest</string>
-    <string name="theme_paper">Paper</string>
-    <string name="theme_sky">Sky</string>
-    <string name="theme_rose">Rose</string>
-    <string name="theme_system">System</string>
     <string name="appearance_use">Use %1$s</string>
     <string name="appearance_in_use">In use</string>
-    <string name="licenses_space">Space Grotesk</string>
     <string name="licenses_mono">JetBrains Mono</string>
     <string name="settings_listening">Listening</string>
     <string name="settings_data">Data</string>
@@ -456,8 +448,6 @@
     <string name="eq_preset">Preset</string>
     <string name="eq_custom">Custom</string>
     <string name="device_empty_text_local">Add audio files or folders to play on this device</string>
-    <string name="settings_visualizer">Visualizer</string>
-    <string name="settings_visualizer_text">Shows the spectrum of the music over the artwork in the player</string>
     <string name="connect_card_text">Sign in to stream, download and manage your TIDAL library</string>
 
     <!-- Listening -->
@@ -581,4 +571,75 @@
     <string name="error_playback_stopped">Playback stopped. Check the connection or choose another track.</string>
     <string name="error_file_unreadable">This file cannot be read. It may have been moved, renamed or deleted.</string>
     <string name="error_track_unavailable">This track is not available</string>
+    <!-- Quality and signal path -->
+    <string name="badge_max">MAX</string>
+    <string name="badge_hifi">HiFi</string>
+    <string name="path_badge_unknown">AUDIO</string>
+    <string name="path_open">Open signal path</string>
+    <string name="path_title">Signal path:</string>
+    <string name="path_hint">Tap a stage to learn more</string>
+    <string name="path_spectrum">Live spectrum</string>
+    <string name="path_source">Source</string>
+    <string name="path_decoder">Decoder</string>
+    <string name="path_normalization">Normalization</string>
+    <string name="path_origin_tidal">TIDAL</string>
+    <string name="path_origin_download">Download</string>
+    <string name="path_bits">%1$dbit</string>
+    <string name="path_channels">%1$dch</string>
+    <string name="path_decoded_pcm">PCM %1$d-bit %2$s kHz</string>
+    <string name="path_decoded_float">PCM float %1$s kHz</string>
+    <string name="path_normalization_db">%1$s dB</string>
+    <string name="path_source_lossless">The stream is lossless. Every sample of the master reaches the player.</string>
+    <string name="path_source_lossy">The stream is lossy. The codec discarded detail that no later stage can bring back.</string>
+    <string name="path_decoder_exact">The decoder hands on the samples at the depth and rate of the stream.</string>
+    <string name="path_decoder_truncated">The decoder hands on fewer bits than the stream carries.</string>
+    <string name="path_normalization_explain">Volume normalization turns the track down with a gain, which changes the samples.</string>
+    <string name="path_output_speaker">Phone speaker</string>
+    <string name="path_output_wired">Wired headphones</string>
+    <string name="path_output_usb">USB audio</string>
+    <string name="path_output_bluetooth">Bluetooth</string>
+    <string name="path_output_other">Audio output</string>
+    <string name="path_output_bitperfect">Bit-perfect to the USB device</string>
+    <string name="path_output_bitperfect_explain">Android sends the stream to the USB device without mixing or resampling it.</string>
+    <string name="path_output_bluetooth_detail">Compressed by the Bluetooth codec</string>
+    <string name="path_output_bluetooth_explain">Bluetooth compresses the audio again before it reaches the speaker or headphones.</string>
+    <string name="path_output_resampled">Android mixes at %1$s kHz</string>
+    <string name="path_output_resampled_explain">The Android mixer resamples the stream to its own rate before the output.</string>
+    <string name="path_output_mixer">Android mixer %1$s kHz</string>
+    <string name="path_output_android">Android mixer</string>
+    <string name="path_output_mixer_explain">Android mixes the stream with other sounds and sends it to the output at the rate of the mixer.</string>
+    <string name="path_verdict_hires">Hi-Res Lossless</string>
+    <string name="path_verdict_lossless">Lossless</string>
+    <string name="path_verdict_enhanced">Processed</string>
+    <string name="path_verdict_lossy">Lossy</string>
+    <string name="path_content_label">Highest frequency</string>
+    <string name="path_content_value">%1$s kHz</string>
+    <string name="path_content_none">no signal</string>
+    <!-- Player -->
+    <string name="player_up_next">Up next</string>
+    <string name="player_skip">Skip</string>
+    <string name="player_gesture_close">Swipe down to close</string>
+    <string name="queue_playing_next">Playing next</string>
+    <!-- Story and sharing -->
+    <string name="share_story_button">Share story</string>
+    <string name="share_story_preview_title">Story card</string>
+    <string name="share_to_instagram">Instagram Stories</string>
+    <string name="share_to_other_apps">More</string>
+    <string name="share_save_to_device">Save</string>
+    <string name="share_copy_track_link">Link</string>
+    <string name="share_toast_link_copied">Link copied to clipboard</string>
+    <string name="share_toast_saved">Story card saved to Pictures</string>
+    <string name="share_generating">Generating</string>
+    <string name="share_brand_title">TIDAL</string>
+    <string name="story_layout_1">Centered</string>
+    <string name="story_layout_2">Aura</string>
+    <string name="story_layout_3">Noir</string>
+    <string name="story_layout_4">Mini</string>
+    <string name="story_layout_5">Backdrop</string>
+    <string name="story_layout_6">Card</string>
+    <string name="story_layout_7">Glow</string>
+    <string name="story_layout_8">Slate</string>
+    <string name="story_layout_9">Split</string>
+    <string name="licenses_dmsans">DM Sans</string>
+    <string name="label_local">Device</string>
 </resources>

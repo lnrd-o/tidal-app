@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -153,7 +152,7 @@ private fun LinksRow(module: LinksModule, ctx: PageContext) {
 
 @Composable
 fun LinkPill(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+    Surface(onClick = onClick, shape = androidx.compose.ui.graphics.RectangleShape, color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontFamily = AppFonts.body, fontSize = 12.sp, lineHeight = 16.sp)
     }
@@ -166,9 +165,9 @@ fun PageCard(release: Release, modifier: Modifier = Modifier, fill: Boolean = fa
     val width = if (fill) Modifier else Modifier.width(if (video) 220.dp else 152.dp)
     Column(modifier.then(width).clickable(onClick = onClick).padding(4.dp)) {
         Box {
-            if (release.type == ReleaseType.ARTIST) Artwork(release.artwork, null, Modifier.fillMaxWidth().aspectRatio(1f).clip(CircleShape))
+            if (release.type == ReleaseType.ARTIST) Artwork(release.artwork, null, Modifier.fillMaxWidth().aspectRatio(1f))
             else Artwork(release.artwork, null, Modifier.fillMaxWidth().aspectRatio(if (video) 16f / 9f else 1f))
-            if (video) Icon(OpenTuneIcons.PlayArrow, stringResource(R.string.video_play), Modifier.align(Alignment.Center).size(36.dp).background(androidx.compose.ui.graphics.Color(0x99000000), CircleShape).padding(6.dp),
+            if (video) Icon(OpenTuneIcons.PlayArrow, stringResource(R.string.video_play), Modifier.align(Alignment.Center).size(36.dp).background(androidx.compose.ui.graphics.Color(0x99000000), androidx.compose.ui.graphics.RectangleShape).padding(6.dp),
                 tint = androidx.compose.ui.graphics.Color.White)
         }
         val round = release.type == ReleaseType.ARTIST
@@ -194,7 +193,7 @@ fun QualityBadges(tags: List<String>, modifier: Modifier = Modifier) {
     if (labels.isEmpty()) return
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         labels.forEach { label ->
-            Text(label, Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            Text(label, Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 6.dp, vertical = 2.dp),
                 fontFamily = AppFonts.body, fontSize = 9.sp, lineHeight = 12.sp, letterSpacing = 1.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

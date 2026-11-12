@@ -30,7 +30,7 @@ class LocalPlaybackTest {
         model = ViewModelProvider(compose.activity)[MainViewModel::class.java]
         compose.runOnIdle {
             model.clearQueue()
-            model.settings { it.copy(theme = "light", offline = false, welcomeDone = true, visualizer = false) }
+            model.settings { it.copy(offline = false, welcomeDone = true) }
         }
         app.library.playlists().filter { it.title == "Evening" }.forEach { app.library.deletePlaylist(it.id) }
         val file = File(app.filesDir, "playback-test.flac")
@@ -148,20 +148,6 @@ class LocalPlaybackTest {
         compose.onNodeWithText("Add folder").assertIsDisplayed()
         screenshot("downloads")
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Theme"))
-        compose.onNodeWithText("Theme").performClick()
-        // The sheet opens on the current theme. A swipe moves to the next one, and its button applies it to the whole app.
-        compose.onNodeWithTag("theme-pager").performTouchInput { swipeLeft() }
-        // The app shows the swiped theme at once, and the saved theme stays until Use.
-        compose.waitUntil(5_000) { model.previewTheme.value != null }
-        assertEquals("light", model.state.value.settings.theme)
-        compose.onNodeWithTag("theme-apply").performClick()
-        compose.waitUntil(5_000) { model.state.value.settings.theme != "light" }
-        compose.waitUntil(5_000) { model.previewTheme.value == null }
-        val chosen = model.state.value.settings.theme
-        compose.onNodeWithText("Done").performClick()
-        compose.activityRule.scenario.recreate()
-        compose.waitUntil(5_000) { ViewModelProvider(compose.activity)[MainViewModel::class.java].state.value.settings.theme == chosen }
         screenshot("settings-dark")
     }
 
@@ -339,9 +325,8 @@ class LocalPlaybackTest {
         compose.onNodeWithTag("player-artist").assertDoesNotExist()
     }
 
-    @Test fun theVisualizerReadsTheSamplesThatTheOutputReceives() {
-        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT >= io.github.yyan115.opentune.ui.VISUALIZER_API)
-        compose.runOnIdle { model.settings { it.copy(visualizer = true) } }
+    @Test fun theAnalyzerReadsTheSamplesThatTheOutputReceives() {
+        io.github.yyan115.opentune.playback.AudioSpectrum.watch()
         try {
             io.github.yyan115.opentune.playback.AudioSpectrum.clear()
             compose.runOnIdle { model.play(listOf(track)) }
@@ -351,11 +336,12 @@ class LocalPlaybackTest {
             while (System.currentTimeMillis() < end && !io.github.yyan115.opentune.playback.AudioSpectrum.latest(samples)) Thread.sleep(100)
             assertTrue("The tap received no samples: ${io.github.yyan115.opentune.playback.AudioSpectrum}", io.github.yyan115.opentune.playback.AudioSpectrum.latest(samples))
             assertTrue("The tap sees the music, not silence", samples.any { kotlin.math.abs(it) > 0.001f })
+            assertTrue("The signal path knows the decoded format", io.github.yyan115.opentune.playback.SignalPath.decoded != null)
             val bands = io.github.yyan115.opentune.core.Spectrum.bands(samples, io.github.yyan115.opentune.playback.AudioSpectrum.sampleRate)
             assertTrue("Some band carries energy", bands.any { it > 0.05f })
         } finally {
-            // The setting is kept on the device, so it must not stay on for the tests that follow.
-            compose.runOnIdle { model.settings { it.copy(visualizer = false) }; model.stopPlayback() }
+            io.github.yyan115.opentune.playback.AudioSpectrum.release()
+            compose.runOnIdle { model.stopPlayback() }
         }
     }
 }

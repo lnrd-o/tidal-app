@@ -163,6 +163,13 @@ class PlaybackService : MediaLibraryService() {
             }.getOrNull()
         }
 
+        override fun cuesOf(id: String): List<io.github.yyan115.opentune.core.dj.Cue> =
+            runCatching { app.library.cues(id).mapNotNull { (kind, at) -> runCatching { io.github.yyan115.opentune.core.dj.CueKind.valueOf(kind) }.getOrNull()?.let { io.github.yyan115.opentune.core.dj.Cue(it, at) } } }.getOrDefault(emptyList())
+
+        override fun saveCues(id: String, cues: List<io.github.yyan115.opentune.core.dj.Cue>) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.saveCues(id, cues.map { it.kind.name to it.atMs }) } }
+        }
+
         override fun profileFile(): java.io.File = java.io.File(filesDir, io.github.yyan115.opentune.playback.dj.DJAI_PROFILE_FILE)
     }
     private var albumKey: String? = null
@@ -228,7 +235,7 @@ class PlaybackService : MediaLibraryService() {
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
         scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
-            engine.configure(it.djai, it.crossfadeSeconds, it.elzar); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
+            engine.configure(it.djai, it.crossfadeSeconds, it.elzar, it.djEffects); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback, Handler(Looper.getMainLooper())) }

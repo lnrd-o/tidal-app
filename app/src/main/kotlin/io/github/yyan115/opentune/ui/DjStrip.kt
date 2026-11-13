@@ -97,6 +97,7 @@ private fun DjHeader(ui: DjUi, tint: Color) {
     ui.changed?.let { title ->
         Text(stringResource(R.string.djai_changed, title, "%.0f".format((ui.changedMatch ?: 0.0) * 100)), Modifier.padding(top = 6.dp), fontFamily = AppFonts.body, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = tint, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
+    if (ui.effects.isNotEmpty()) Text(stringResource(R.string.djai_effects, ui.effects), Modifier.padding(top = 4.dp), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.2.sp, color = tint.copy(alpha = .8f))
     ui.match?.let { match ->
         Text(stringResource(R.string.djai_match, "%.0f".format(match * 100)), Modifier.padding(top = 4.dp), fontFamily = AppFonts.body, fontSize = 10.sp, color = tint.copy(alpha = .55f))
     }

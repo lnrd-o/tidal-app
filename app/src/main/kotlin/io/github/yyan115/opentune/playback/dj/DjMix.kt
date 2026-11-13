@@ -48,6 +48,8 @@ data class DjUi(
     /** How many of the next songs were listened to, out of how many. */
     val scouted: Int = 0,
     val scoutTotal: Int = 0,
+    /** What the planned or running transition does besides the mix, for example ROLL and DROP. Empty when nothing. */
+    val effects: String = "",
 )
 
 /**

@@ -4,6 +4,11 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- D'JAI rolls a loop over the last two beats before the swap when both songs are loud, and the song comes back in time. A switch, D'JAI effects, turns the roll and the cue points off.
+
 ## [0.8.0] - 2026-11-12
 
 ### Added

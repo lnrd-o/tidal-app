@@ -27,6 +27,8 @@ data class Settings(
     val cacheMb: Int = 256,
     /** Colours the player and the spectrum with the main colour of the cover. Off keeps them white. */
     val adaptColor: Boolean = false,
+    /** D'JAI rolls a loop before the swap and uses the cue points of the songs. */
+    val djEffects: Boolean = true,
     /** Where D'JAI may learn the tempo and key of the songs ahead without listening: 0 nowhere, 1 from TIDAL's own data, 2 also from Deezer by ISRC. */
     val onlineData: Int = 1,
     val elzarFlavor: Int = 0,
@@ -74,7 +76,7 @@ class AppSettings(context: Context) {
         quality = quality("quality", AudioQuality.LOSSLESS), mobileQuality = quality("mobileQuality", AudioQuality.LOSSLESS),
         downloadOnWifi = preferences.getBoolean("downloadOnWifi", true), offline = preferences.getBoolean("offline", false),
         normalization = preferences.getString("normalization", "off") ?: "off",        bitPerfect = preferences.getBoolean("bitPerfect", false), djai = preferences.getBoolean("djai", false), crossfadeSeconds = preferences.getInt("crossfadeSeconds", 0).coerceIn(0, 12), elzar = preferences.getBoolean("elzar", false),
-        elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6), cacheMb = preferences.getInt("cacheMb", 256).coerceIn(0, 8192), adaptColor = preferences.getBoolean("adaptColor", false), onlineData = preferences.getInt("onlineData", 1).coerceIn(0, 2),
+        elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6), cacheMb = preferences.getInt("cacheMb", 256).coerceIn(0, 8192), adaptColor = preferences.getBoolean("adaptColor", false), djEffects = preferences.getBoolean("djEffects", true), onlineData = preferences.getInt("onlineData", 1).coerceIn(0, 2),
         elzarTapeType = preferences.getInt("elzarTapeType", 0).coerceIn(0, 3), elzarVinylCondition = preferences.getInt("elzarVinylCondition", 1).coerceIn(0, 2),
         elzarVinylFast = preferences.getBoolean("elzarVinylFast", false), elzarConsole = preferences.getInt("elzarConsole", 0).coerceIn(0, 100),
         elzarTube = preferences.getInt("elzarTube", 0).coerceIn(0, 100), elzarAir = preferences.getInt("elzarAir", 0).coerceIn(0, 100),
@@ -94,7 +96,7 @@ class AppSettings(context: Context) {
             .putBoolean("downloadOnWifi", next.downloadOnWifi).putBoolean("offline", next.offline)
             .remove("theme").remove("colorTheme").remove("equalizer").remove("equalizerLevels").remove("equalizerCustom").remove("equalizerUsesCustom").remove("visualizer")
             .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
-            .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor).putInt("cacheMb", next.cacheMb).putBoolean("adaptColor", next.adaptColor).putInt("onlineData", next.onlineData)
+            .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor).putInt("cacheMb", next.cacheMb).putBoolean("adaptColor", next.adaptColor).putBoolean("djEffects", next.djEffects).putInt("onlineData", next.onlineData)
             .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)
             .putInt("elzarConsole", next.elzarConsole).putInt("elzarTube", next.elzarTube).putInt("elzarAir", next.elzarAir).putInt("elzarClip", next.elzarClip)
             .putBoolean("elzarMidSide", next.elzarMidSide).putBoolean("elzarBypass", next.elzarBypass)

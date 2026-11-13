@@ -668,6 +668,9 @@
     <string name="crash_title">The app closed unexpectedly</string>
     <string name="crash_text">This report has the app version, the model of the phone, its Android version and what went wrong. It has nothing else. Share it so that the fault can be found.</string>
     <string name="crash_share">Share the report</string>
+    <string name="settings_dj_effects">D\'JAI effects</string>
+    <string name="settings_dj_effects_text">D\'JAI rolls a loop before the swap and uses the drops and outros that it found in songs it has heard. It does this by itself.</string>
+    <string name="djai_effects">%1$s</string>
     <string name="settings_adapt_color">Colours from the artwork</string>
     <string name="settings_adapt_color_text">Tints the player, its play button and the spectrum with the main colour of the cover. A cover without colour stays white.</string>
     <string name="settings_online">Online song data</string>

@@ -15,7 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-class LibraryStore(context: Context, databaseName: String = "library.db") : SQLiteOpenHelper(context, databaseName, null, 7) {
+class LibraryStore(context: Context, databaseName: String = "library.db") : SQLiteOpenHelper(context, databaseName, null, 8) {
     private val revision = MutableStateFlow(0L)
     val changes = revision.asStateFlow()
     override fun onCreate(db: SQLiteDatabase) {
@@ -29,6 +29,7 @@ class LibraryStore(context: Context, databaseName: String = "library.db") : SQLi
         createSourceTables(db)
         createRepeatTables(db)
         createDownloadFileTables(db)
+        createCueTables(db)
     }
     override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true); db.enableWriteAheadLogging() }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -55,10 +56,34 @@ class LibraryStore(context: Context, databaseName: String = "library.db") : SQLi
         }
         if (oldVersion < 6) createRepeatTables(db)
         if (oldVersion < 7) createDownloadFileTables(db)
+        if (oldVersion < 8) createCueTables(db)
     }
 
     /** A file on the device is known by the document it came from. [version] says how it was read, [direct] says that the listener added it by hand. */
     /** The audio files that downloads became, by the key of the file. A folder scan leaves these files out, because their tracks are known. */
+    /** The cue points that D'JAI found in a song: its drop, breaks and outro, in milliseconds from the start. */
+    private fun createCueTables(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE cue_points (track_id TEXT NOT NULL, at_ms INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(track_id, at_ms))")
+    }
+
+    @Synchronized fun cues(trackId: String): List<Pair<String, Long>> = readableDatabase.rawQuery(
+        "SELECT kind, at_ms FROM cue_points WHERE track_id=? ORDER BY at_ms", arrayOf(trackId)).use { cursor ->
+        val list = ArrayList<Pair<String, Long>>()
+        while (cursor.moveToNext()) list.add(cursor.getString(0) to cursor.getLong(1))
+        list
+    }
+
+    /** Replaces the cue points of a song with [cues], as kind and milliseconds. */
+    @Synchronized fun saveCues(trackId: String, cues: List<Pair<String, Long>>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("cue_points", "track_id=?", arrayOf(trackId))
+            for ((kind, at) in cues) db.insertWithOnConflict("cue_points", null, ContentValues().apply { put("track_id", trackId); put("at_ms", at); put("kind", kind) }, SQLiteDatabase.CONFLICT_REPLACE)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     private fun createDownloadFileTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE download_files (key TEXT PRIMARY KEY, track_id TEXT NOT NULL)")
     }

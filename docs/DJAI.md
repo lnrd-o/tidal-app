@@ -82,3 +82,14 @@ Costs and limits: two decoders and a resampler (fine on a flagship phone, to mea
 - **Scope: streams too.** The first version must mix streamed tracks, so TIDAL's BPM and key metadata (or a background decode of the next track) is needed from the start. Downloaded tracks stay the easy case and get exact analysis.
 - **Control: propose an order.** D'JAI suggests an order and the listener accepts it with one tap. The queue never changes by surprise.
 - **First step: the mixer spike (phase 0).** It answers the riskiest question first: sample-accurate mixing in the audio chain, and the handover to the second player. The first thing to check in parallel is whether TIDAL returns `bpm` and `key` for a signed-in session.
+
+## 9. Cue points, loop and roll (0.8.1)
+D'JAI uses these by itself. There is no pad and nothing to press.
+
+- **Cue points.** `SectionAccumulator` keeps half-second slices of the whole playthrough (bass below 150 Hz, loudness, onset strength) from the frames of `OnsetEnvelope`. `SectionDetector` turns them into bars from the grid and the phrase origin, scales bass (0.5), loudness (0.3) and onsets (0.2) into one energy per bar, splits the song into loud and quiet runs (short runs merged), and marks INTRO, BUILD (8 bars before a drop), DROP (a loud run after a quiet one with the bass rising), BREAK (a quiet run after a loud one) and OUTRO (the last quiet run). They are found at the swap, when the outgoing song has been heard from its start, and kept in `LibraryStore` (`cue_points`, schema 8). A song heard once has its cues next time.
+- **Loop primitive.** `DjMixer` can loop a deck (`setLoop`, `endLoop`): when the read position reaches the loop end it wraps to the start, with a 5 ms fade between the two so there is no click. A `shadow` position keeps the time that the deck would have without the loop, and ending with `toShadow` returns there.
+- **Roll.** `MixPlan.roll` (`RollPlan`) makes the outgoing deck repeat, over the two beats before the swap, its first half beat twice, then a quarter beat twice, then an eighth beat four times, and return to its own time at the swap. Beat mixes of two songs with energy 5 or more get it.
+- **Cue-aware plan.** `MixScheduler.schedule` starts the blend at the outgoing song's OUTRO cue when it fits, and enters the incoming song at its DROP minus the blend, so that its drop falls on the swap (`MixPlan.dropEntry`). A far drop is reached by starting the incoming player at `drop - 32 beats - 16 s` (`DjEngine.startForDrop`). The planner waits for enough of it to be decoded unless the outgoing song is nearly over.
+- **Setting.** "D'JAI effects" (default on). The strip shows ROLL, DROP and OUTRO while a plan uses them.
+- **Limits.** Cues exist only for songs that were heard from their start with D'JAI on, so the first play of a song is mixed as before. Chorus labels are not made. A loop that extends a song that ends too soon is not built yet.
+

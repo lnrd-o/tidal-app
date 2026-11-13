@@ -7,6 +7,9 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.yyan115.opentune.core.dj.BeatAnalysis
+import io.github.yyan115.opentune.core.dj.Cue
+import io.github.yyan115.opentune.core.dj.CueKind
+import io.github.yyan115.opentune.core.dj.CueMark
 import io.github.yyan115.opentune.core.dj.Candidate
 import io.github.yyan115.opentune.core.dj.KickAligner
 import io.github.yyan115.opentune.core.dj.PcmRing
@@ -44,6 +47,10 @@ interface DjHost {
     fun albumQueue(): Boolean
     /** The file in which what the listening ahead found out about songs is kept between sessions. */
     fun profileFile(): java.io.File
+    /** The cue points that were found in the song with [id] on an earlier playthrough, in milliseconds. */
+    fun cuesOf(id: String): List<Cue>
+    /** Keeps the cue points that were found in the song with [id]. */
+    fun saveCues(id: String, cues: List<Cue>)
     /** The tempo and key of [item] from an online catalogue, or null. It may take a network request. */
     suspend fun onlineHint(item: MediaItem): OnlineHint?
 }
@@ -61,7 +68,18 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private enum class State { OFF, IDLE, PREPARING, READY, MIXING }
 
     private val output = DjOutput()
-    private val analyzers = arrayOf(DeckAnalyzer(0, scope), DeckAnalyzer(1, scope))
+    private val analyzers = arrayOf(DeckAnalyzer(0, scope) { songPosition(0) }, DeckAnalyzer(1, scope) { songPosition(1) })
+
+    /** The position of the song of a deck in milliseconds: the session player when the deck is the session slot, else the player that is prepared. */
+    private fun songPosition(slot: Int): Long = (if (slot == DjMix.sessionSlot) host.player else incoming ?: scout)?.currentPosition ?: -1L
+
+    /** Whether D'JAI uses loop rolls and cue points inside its transitions. */
+    @Volatile private var effects = true
+    /** Where the incoming song began, in milliseconds, and its cue points, for the transition that is prepared. */
+    private var incomingStartMs = 0L
+    private var incomingCues: List<Cue> = emptyList()
+    /** What the plan of this transition does that is more than a mix, for the strip. */
+    private var planEffects = ""
     private var state = State.OFF
     private var tick: Job? = null
 
@@ -121,8 +139,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     /** Sets what the engine does: D'JAI automix, or only a crossfade of [crossfadeSeconds]. Call it before [setEnabled]. */
-    fun configure(djai: Boolean, crossfadeSeconds: Int, elzar: Boolean = false) {
+    fun configure(djai: Boolean, crossfadeSeconds: Int, elzar: Boolean = false, effects: Boolean = true) {
         val wasDjai = this.djai
+        this.effects = effects
         this.elzar = elzar
         this.djai = djai; crossfadeMs = crossfadeSeconds * 1000
         if (state == State.OFF || wasDjai == djai) return
@@ -385,7 +404,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         b.shuffleModeEnabled = a.shuffleModeEnabled
         b.repeatMode = a.repeatMode
         b.pauseAtEndOfMediaItems = a.pauseAtEndOfMediaItems
-        b.setMediaItems(items, next, 0L)
+        // A song whose drop is far into it starts a little before the blend that leads to the drop, so that it will have been decoded in time.
+        incomingCues = if (effects && djai) host.cuesOf(items[next].mediaId) else emptyList()
+        incomingStartMs = startForDrop(items[next].mediaId, incomingCues)
+        b.setMediaItems(items, next, incomingStartMs)
         DjMix.streams[inSlot].clear()
         DjMix.mixer.setSource(inSlot, DjMix.streams[inSlot])
         DjMix.mixer.setGain(inSlot, host.gainFor(items[next]))
@@ -399,6 +421,15 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         nextTitle = host.titleOf(items[next])
         plan = null; decision = null; swapped = false
         state = State.PREPARING
+    }
+
+    /** Where to start the incoming song: at the beginning, or before the blend into its drop when the drop is too far to be decoded in time. */
+    private fun startForDrop(id: String, cues: List<Cue>): Long {
+        val drop = cues.firstOrNull { it.kind == CueKind.DROP } ?: return 0L
+        if (drop.atMs <= DROP_FAR_MS) return 0L
+        val bpm = profiles[id]?.summary?.beat?.bpm ?: online[id]?.bpm ?: DEFAULT_BPM
+        val blendMs = (32 * 60_000.0 / bpm).toLong()
+        return (drop.atMs - blendMs - DROP_LEAD_MS).coerceAtLeast(0L)
     }
 
     // The next track decodes. When its tempo, key and energy are known, the transition is planned.
@@ -430,8 +461,13 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val enough = analysisIn.seconds >= READ_SECONDS
         val short = remaining < SOFT_FALLBACK_MS && analysisIn.seconds >= 5f
         if (!enough && !short) return
-        val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin)
-        val summaryIn = TrackSummary(analysisIn.beat, analysisIn.key?.camelot, analysisIn.energyIntro ?: analysisIn.energyRecent, analysisIn.origin)
+        // The cue points of the songs, as frames of their rings. The outgoing song is placed by the position of its player, which is where the ring is being filled.
+        val outCues = if (effects) host.cuesOf(itemId.orEmpty()).filter { it.atMs > a.currentPosition }
+            .map { CueMark(it.kind, ringOut.written + (it.atMs - a.currentPosition) * ringOut.rate / 1000.0) } else emptyList()
+        val inCues = incomingCues.filter { it.atMs >= incomingStartMs }
+            .map { CueMark(it.kind, ringIn.discontinuity + (it.atMs - incomingStartMs) * ringIn.rate / 1000.0) }
+        val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin, outCues)
+        val summaryIn = TrackSummary(analysisIn.beat, analysisIn.key?.camelot, analysisIn.energyIntro ?: analysisIn.energyRecent, analysisIn.origin, inCues)
         val pos = DjMix.mixer.position(outSlot)
         // The pointer of the mixer trails the audible position by a few hundred milliseconds, so the end is placed a little early.
         val end = pos + (remaining / 1000.0 - END_BIAS_SECONDS) * ringOut.rate
@@ -439,7 +475,11 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         var chosen = MixPlanner.decide(summaryOut, summaryIn, ringOut.rate, ringIn.rate)
         var found: MixPlan? = null
         if (chosen.kind == MixKind.BEAT) {
-            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first)
+            // Two loud songs get a loop roll before the swap.
+            val roll = effects && (chosen.energyOutgoing ?: 0.0) >= ROLL_ENERGY && (chosen.energyIncoming ?: 0.0) >= ROLL_ENERGY
+            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, roll, ringIn.written.toDouble())
+            // A song with a known drop waits until enough of it is decoded to enter at the drop, unless the outgoing song is nearly over.
+            if (found != null && effects && !found.dropEntry && incomingCues.any { it.kind == CueKind.DROP } && remaining > DROP_WAIT_MS) return
             // A phrase boundary may be a few seconds away, so the planner waits for one unless the track is nearly over.
             if (found == null && !short) return
         }
@@ -450,6 +490,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             found = lockKicks(found, summaryOut.beat!!, summaryIn.beat!!, ringOut, ringIn)
         }
         plan = found; decision = chosen
+        planEffects = listOfNotNull(if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null,
+            if (outCues.any { it.kind == CueKind.OUTRO }) "OUTRO" else null).joinToString(" ")
+        if (planEffects.isNotEmpty()) android.util.Log.i("OpenTune", "D'JAI effects: $planEffects")
         finishedBase = DjMix.mixer.finishedSeq
         DjMix.mixer.setPlan(found)
         state = State.READY
@@ -487,6 +530,15 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val a = outgoing ?: return
         val b = incoming ?: return
         a.removeListener(watcher); a.removeListener(mirrorOut)
+        // The outgoing song has been heard from its start: its cue points are found now and kept for the next time it plays.
+        val heardId = itemId
+        if (heardId != null && djai) {
+            val found = analyzers[outSlot].cues(a.duration)
+            if (found.isNotEmpty()) {
+                host.saveCues(heardId, found)
+                android.util.Log.i("OpenTune", "D'JAI cues of the song: " + found.joinToString { "${it.kind} ${it.atMs / 1000}s" })
+            }
+        }
         DjMix.sessionSlot = inSlot
         host.adopt(b)
         swapped = true
@@ -549,7 +601,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             energyIn = if (idle) null else (d?.energyIncoming ?: inn.energyIntro),
             keyScore = d?.keyScore ?: 0.5, match = d?.match, speed = p?.speedIncoming ?: 1.0, startsInMs = starts,
             lengthMs = p?.let { it.lengthOut * 1000L / DjMix.OUT_RATE } ?: 0L,
-            nextTitle = if (idle) null else nextTitle, album = albumNow,
+            nextTitle = if (idle) null else nextTitle, album = albumNow, effects = if (state == State.READY || state == State.MIXING) planEffects else "",
             changed = changedTitle, changedMatch = changedMatch, scouted = scouted, scoutTotal = scoutTotal,
         ))
     }
@@ -569,6 +621,15 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         const val SCOUT_TIMEOUT_MS = 45_000L
         const val CHOOSE_MS = 6_000L
         const val MAX_PROFILES = 1500
+        /** A drop further into the song than this is reached by starting the song later. */
+        const val DROP_FAR_MS = 40_000L
+        /** How much of the song before the blend into the drop is decoded first, enough for the tempo to be read. */
+        const val DROP_LEAD_MS = 16_000L
+        /** A plan that cannot enter at the drop yet is put off until the outgoing song has this little time left. */
+        const val DROP_WAIT_MS = 35_000L
+        const val DEFAULT_BPM = 124.0
+        /** Both songs need this much energy, on the scale of 1 to 10, for a roll. */
+        const val ROLL_ENERGY = 5.0
         private const val PROVISIONAL_RATE = 44_100
         private const val PROFILE_VERSION = "v1"
         const val MAX_KICK_SHIFT = 0.03

@@ -193,7 +193,7 @@ class PlaybackService : MediaLibraryService() {
     }
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
-        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, djHost::saveCues)
+        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, djHost::saveCues, { app.settings.state.value.djai })
     }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */

@@ -30,14 +30,28 @@ class Preprocessor(
     private val build: () -> ExoPlayer,
     private val learn: (String, TrackSummary, Int) -> Unit,
     private val saveCues: (String, List<Cue>) -> Unit,
+    /** Whether D'JAI is on. While it is off nothing is prepared: a song that is being read is put back, and the queue waits. */
+    private val enabled: () -> Boolean = { true },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
-    init { scope.launch { for (request in queue) DjMix.preprocessResults.tryEmit(run(request)) } }
+    init {
+        scope.launch {
+            for (request in queue) {
+                var result: PreprocessResult? = null
+                while (result == null) {
+                    while (!enabled()) delay(1_000)
+                    result = run(request)
+                }
+                DjMix.preprocessResults.tryEmit(result)
+            }
+        }
+    }
 
     fun add(request: PreprocessRequest) { queue.trySend(request) }
 
-    private suspend fun run(request: PreprocessRequest): PreprocessResult {
+    /** Reads the song and returns what came of it, or null when D'JAI was turned off on the way: the song is then read again later. */
+    private suspend fun run(request: PreprocessRequest): PreprocessResult? {
         val failed = PreprocessResult(request.title, false, null, null, emptyList())
         val analyzer = DeckAnalyzer(DjMix.ANALYSIS_SLOT, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
         DjMix.streams[DjMix.ANALYSIS_SLOT].clear()
@@ -52,7 +66,10 @@ class Preprocessor(
             val started = SystemClock.elapsedRealtime()
             // A song is read in a quarter of its length or less. Twice that, and some seconds, is the most that it may take.
             val limit = 45_000L + (if (request.durationMs > 0) request.durationMs else 600_000L) / 2
-            while (player.playbackState != Player.STATE_ENDED && player.playerError == null && SystemClock.elapsedRealtime() - started < limit) delay(250)
+            while (player.playbackState != Player.STATE_ENDED && player.playerError == null && SystemClock.elapsedRealtime() - started < limit) {
+                if (!enabled()) return null
+                delay(250)
+            }
             if (player.playbackState != Player.STATE_ENDED) return failed
             // The analyzer is still catching up with the end of the ring: it makes one more estimate when it has.
             val before = analyzer.estimates

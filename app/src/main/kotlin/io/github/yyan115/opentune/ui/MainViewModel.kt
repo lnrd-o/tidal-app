@@ -95,6 +95,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Asks D'JAI to prepare [track]: its tempo, key, energy and cue points, without playing it. The result comes as a message. */
     fun analyzeForDjai(track: Track) {
         if (track.isFile && track.localUri == null) return
+        if (!app.settings.state.value.djai) { notify(app.getString(R.string.djai_analyze_needs_djai)); return }
         viewModelScope.launch {
             // A song whose cue points are kept was read to the end already: it is not read again.
             if (cuesOf(track.id).isNotEmpty()) { notify(app.getString(R.string.djai_already, track.title)); return@launch }

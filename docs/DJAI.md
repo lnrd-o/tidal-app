@@ -104,3 +104,6 @@ What is kept, and where:
 - **Cue points**: `cue_points` in the library database. A song whose cue points are kept is not analyzed again (the button says so), and the swap does not find them again.
 - Not kept: the online hints (TIDAL, Deezer), which are cheap to ask again. Two recordings of the same song under different track ids are analyzed twice; keying by ISRC would join them.
 
+## 12. Off means off
+With D'JAI off (`DjEngine.configure`) nothing of it runs in the background: a prepared transition is dropped, the listening ahead and its hidden players end, the analyzers stop, the online questions stop, and `Preprocessor` waits (a song that was being read is put back in line). Songs that were learned stay learned. With D'JAI on again the engine starts again for the song that plays: its analysis, the listening ahead and the questions to the catalogue, and the queue of songs to prepare goes on. The deck that prepares songs has its own stream, which the engine never clears.
+

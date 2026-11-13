@@ -671,6 +671,7 @@
     <string name="track_analyze">Analyze for D\'JAI</string>
     <string name="djai_analyzing">Analyzing %1$s for D\'JAI. It takes about a minute.</string>
     <string name="djai_analyzed">%1$s is ready: %2$s BPM, key %3$s, %4$d cue points</string>
+    <string name="djai_analyze_needs_djai">Turn on D\'JAI to analyze songs</string>
     <string name="djai_already">%1$s was analyzed already</string>
     <string name="djai_analyze_failed">Could not analyze %1$s</string>
     <string name="settings_dj_effects">D\'JAI effects</string>

@@ -157,8 +157,18 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         this.elzar = elzar
         this.djai = djai; crossfadeMs = crossfadeSeconds * 1000
         if (state == State.OFF || wasDjai == djai) return
-        if (!djai) { endScout(); analyzers.forEach { it.stop() } }
-        else if (!suspended) analyzers[DjMix.sessionSlot].start()
+        if (!djai) {
+            // With D'JAI off nothing of it runs in the background: a transition that is prepared is dropped, the listening ahead ends, the analyzers stop,
+            // and what the strip showed about the next song goes away. Songs that were learned stay learned.
+            if (state == State.PREPARING || state == State.READY) abort("D'JAI off")
+            endScout()
+            analyzers.forEach { it.stop() }
+            scouted = 0; scoutTotal = 0; changedTitle = null; changedMatch = null
+        } else if (!suspended) {
+            // With D'JAI on again everything starts again for the song that plays now: its analysis, the listening ahead and the questions to the catalogue.
+            chosenFor = null; attempted = null; asked.clear(); online.clear()
+            analyzers[DjMix.sessionSlot].start()
+        }
     }
 
     fun setEnabled(on: Boolean) {
@@ -175,7 +185,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
 
     private fun startRouting() {
         val slot = DjMix.sessionSlot
-        DjMix.streams.forEach { it.clear() }
+        for (deck in 0..1) DjMix.streams[deck].clear()
         DjMix.mixer.cancel(slot)
         DjMix.mixer.setSource(slot, DjMix.streams[slot])
         DjMix.mixer.setSource(1 - slot, null)
@@ -191,7 +201,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         output.stop()
         analyzers.forEach { it.stop() }
         DjMix.mixer.setSource(0, null); DjMix.mixer.setSource(1, null)
-        DjMix.streams.forEach { it.clear() }
+        for (deck in 0..1) DjMix.streams[deck].clear()
     }
 
     private fun disable() {

@@ -7,6 +7,7 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 ### Added
 
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- D'JAI cues the next song as a DJ does: it parks it just before its entry and starts it right before the mix. Before, the next song ran on silently from its preparation, so the mix could enter it at a random place off the beat and time the next mix too early. The incoming song also stays at the matched tempo while the outgoing one can still be heard.
 - D'JAI follows the kick of a song to settle its tempo, so that busy hats and snares no longer make a song read at double, or at three to two. Tempos that were kept before are read again.
 - D'JAI keeps the match that it saw when it chose the next song: songs known only by a guess no longer pass for songs that were listened to, the mix reads the same song as the choice did, a mix that has to be soft keeps its match, and a mix whose match turns out low is given a better song from the queue when there is time.
 - The tempo that D'JAI shows, in song lists and in its strip, blinks at its own beats per minute on the real clock, whatever the animation speed of the system, and in the strip on the beats that are heard, so that two songs that do not agree can be seen to disagree. A switch on the D'JAI page turns it off. Keys show with their note in musical notation after the Camelot code, for example 8A Am.

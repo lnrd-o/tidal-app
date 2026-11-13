@@ -108,11 +108,18 @@ object MixCurves {
     /** The cutoff of the high-pass on the outgoing track, in hertz. */
     fun highpassHz(u: Double, swap: Double): Double = HIGH_START_HZ * Math.pow(HIGH_END_HZ / HIGH_START_HZ, highpassClosed(u, swap))
 
-    /** The tempo factor of the incoming track: its matched value until the swap, then easing back to its own tempo. */
+    /**
+     * The tempo factor of the incoming track: its matched value while the outgoing track can still be heard, then easing back to its own tempo over the end of
+     * the tail. Easing from the swap on would pull the beats of the two songs apart while both play, and they would flam.
+     */
     fun speed(u: Double, speed: Double, swap: Double): Double {
         val s = swap.coerceIn(0.2, 0.8)
-        return if (u <= s) speed else speed + (1.0 - speed) * smooth(((u - s) / (1 - s)).coerceIn(0.0, 1.0))
+        val held = s + SPEED_HOLD * (1 - s)
+        return if (u <= held) speed else speed + (1.0 - speed) * smooth(((u - held) / (1 - held)).coerceIn(0.0, 1.0))
     }
+
+    /** The share of the tail that the incoming track stays at the matched tempo. */
+    private const val SPEED_HOLD = 0.7
 
     private fun smooth(x: Double): Double { val t = x.coerceIn(0.0, 1.0); return t * t * (3 - 2 * t) }
 }

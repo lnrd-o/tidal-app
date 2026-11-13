@@ -75,7 +75,7 @@ interface DjHost {
  */
 @UnstableApi
 class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
-    private enum class State { OFF, IDLE, PREPARING, READY, MIXING }
+    private enum class State { OFF, IDLE, PREPARING, CUEING, READY, MIXING }
 
     private val output = DjOutput()
     private val analyzers = arrayOf(DeckAnalyzer(0, scope, songMs = { songPosition(0) }), DeckAnalyzer(1, scope, songMs = { songPosition(1) }))
@@ -101,6 +101,22 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private var incomingCues: List<Cue> = emptyList()
     /** What the plan of this transition does that is more than a mix, for the strip. */
     private var planEffects = ""
+    /**
+     * The cue of the incoming song. After the plan, the incoming player is sent back to a little before the point where the mix will enter it ([cueMs]) and
+     * held there, paused, until just before the mix: then it plays from there, and the song that the mixer reads is the song that the player plays. Without it
+     * the incoming player would run on from its preparation, tens of seconds ahead of what is heard, and the mix would read an old part of the ring, or one that
+     * was already overwritten, and the next mix would be timed by a player that was ahead of the music.
+     */
+    private var incomingHeld = false
+    private var pending: MixPlan? = null
+    private var enterMs = 0.0
+    private var cueMs = 0L
+    private var cueDiscontinuity = 0L
+    private var cueSince = 0L
+    private var placedDiscontinuity = 0L
+    /** What the plan knew of the incoming song, for the strip while its analyzer starts again after the cue. */
+    private var planBpmIn: Double? = null
+    private var planKeyIn: String? = null
     /** The match that the choice saw for the song that it left in the next place, by song, and the song for which another has been chosen already. */
     private val choiceMatch = HashMap<String, Double>()
     private var rechosenFor: String? = null
@@ -152,10 +168,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         override fun onTimelineChanged(timeline: Timeline, reason: Int) { if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && !swapped) abort("queue changed") }
     }
     private val mirrorOut = object : Player.Listener {
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { incoming?.let { if (it.playWhenReady != playWhenReady) it.playWhenReady = playWhenReady } }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!incomingHeld) incoming?.let { if (it.playWhenReady != playWhenReady) it.playWhenReady = playWhenReady } }
     }
     private val mirrorIn = object : Player.Listener {
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { outgoing?.let { if (it.playWhenReady != playWhenReady) it.playWhenReady = playWhenReady } }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!incomingHeld) outgoing?.let { if (it.playWhenReady != playWhenReady) it.playWhenReady = playWhenReady } }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) { if (!swapped) abort("deck error") }
     }
 
@@ -245,6 +261,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         when (state) {
             State.IDLE -> idle()
             State.PREPARING -> preparing()
+            State.CUEING -> cueing()
             State.READY -> ready()
             State.MIXING -> mixing()
             State.OFF -> Unit
@@ -562,9 +579,7 @@ val measured = profiles[key]
             if (start < pos + 0.3 * ringOut.rate) return abort("too late")
             val simple = MixPlan(outSlot, inSlot, start, ringIn.oldest().toDouble(), lengthOut, 1.0, MixKind.CROSSFADE, 0, 0, 0.5)
             plan = simple; decision = null
-            finishedBase = DjMix.mixer.finishedSeq
-            DjMix.mixer.setPlan(simple)
-            state = State.READY
+            cue(b, ringIn, simple)
             return
         }
         val enough = analysisIn.seconds >= READ_SECONDS
@@ -603,9 +618,7 @@ val measured = profiles[key]
         if (chosen.kind == MixKind.BEAT) {
             // Two loud songs get a loop roll before the swap.
             val roll = options.roll && (chosen.energyOutgoing ?: 0.0) >= ROLL_ENERGY && (chosen.energyIncoming ?: 0.0) >= ROLL_ENERGY
-            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, roll, ringIn.written.toDouble())
-            // A song with a known drop waits until enough of it is decoded to enter at the drop, unless the outgoing song is nearly over.
-            if (found != null && options.cues && !found.dropEntry && incomingCues.any { it.kind == CueKind.DROP } && remaining > DROP_WAIT_MS) return
+            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, roll)
             // A phrase boundary may be a few seconds away, so the planner waits for one unless the track is nearly over.
             if (found == null && !short) return
         }
@@ -620,8 +633,45 @@ val measured = profiles[key]
         planEffects = listOfNotNull(if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null, if (found.echo != null) "ECHO" else null,
             if (outCues.any { it.kind == CueKind.OUTRO }) "OUTRO" else null).joinToString(" ")
         if (planEffects.isNotEmpty()) android.util.Log.i("OpenTune", "D'JAI effects: $planEffects")
+        planBpmIn = analysisIn.beat?.bpm; planKeyIn = summaryIn.camelot
+        cue(b, ringIn, found)
+    }
+
+    /** Sends the incoming player back to a little before where the mix enters it, and holds it there. The plan goes to the mixer once the player is there. */
+    private fun cue(b: ExoPlayer, ringIn: io.github.yyan115.opentune.core.dj.PcmRing, found: MixPlan) {
+        // Where the mix enters the song, in milliseconds of the song: the frames of the ring count from where the player began.
+        enterMs = incomingStartMs + (found.startIncoming - ringIn.discontinuity) * 1000.0 / ringIn.rate
+        cueMs = (enterMs - CUE_LEAD_MS).toLong().coerceAtLeast(0L)
+        cueDiscontinuity = ringIn.discontinuity
+        cueSince = System.currentTimeMillis()
+        pending = found
+        incomingHeld = true
+        b.playWhenReady = false
+        // The analyzer of the deck starts again after the seek, and reads where in the song it starts from here: the song is learned from its start.
+        positions[inSlot] = cueMs
+        b.seekTo(cueMs)
+        android.util.Log.i("OpenTune", "D'JAI cue: the incoming song enters at %.1f s, held at %.1f s".format(enterMs / 1000, cueMs / 1000.0))
+        state = State.CUEING
+    }
+
+    /** Waits for the seek of the cue to reach the ring, then gives the mixer the plan with the entry at its new frame. */
+    private fun cueing() {
+        val a = outgoing ?: return abort("lost")
+        val b = incoming ?: return abort("lost")
+        val found = pending ?: return abort("lost")
+        if (b.playerError != null) return abort("deck error")
+        if (a.duration - a.currentPosition < 2_000) return abort("missed")
+        val ringIn = DjMix.streams[inSlot].ring ?: return
+        // The seek flushes the ring: frames from the new discontinuity on are the song from the cue on.
+        if (ringIn.discontinuity == cueDiscontinuity) {
+            if (System.currentTimeMillis() - cueSince > CUE_TIMEOUT_MS) abort("cue")
+            return
+        }
+        val placed = found.copy(startIncoming = ringIn.discontinuity + (enterMs - cueMs) * ringIn.rate / 1000.0)
+        placedDiscontinuity = ringIn.discontinuity
+        plan = placed; pending = null
         finishedBase = DjMix.mixer.finishedSeq
-        DjMix.mixer.setPlan(found)
+        DjMix.mixer.setPlan(placed)
         state = State.READY
     }
 
@@ -643,6 +693,24 @@ val measured = profiles[key]
     private fun ready() {
         val a = outgoing ?: return abort("lost")
         if (incoming?.playerError != null) return abort("deck error")
+        var p = plan
+        val ringOut = DjMix.streams[outSlot].ring
+        // A second flush of the incoming deck (the player can flush again on its way) moves the entry with it, as long as the mix has not begun.
+        val ringIn = DjMix.streams[inSlot].ring
+        if (p != null && ringIn != null && ringIn.discontinuity != placedDiscontinuity && !DjMix.mixer.mixing) {
+            p = p.copy(startIncoming = ringIn.discontinuity + (enterMs - cueMs) * ringIn.rate / 1000.0)
+            placedDiscontinuity = ringIn.discontinuity
+            plan = p
+            DjMix.mixer.setPlan(p)
+        }
+        if (incomingHeld && p != null && ringOut != null) {
+            // The player decodes in real time, so it is let go a little more than the lead before the mix: the entry is in the ring when the mix reads it.
+            val toStart = (p.startOutgoing - DjMix.mixer.position(outSlot)) / ringOut.rate * 1000.0
+            if (toStart <= (enterMs - cueMs) + RELEASE_MARGIN_MS) {
+                incomingHeld = false
+                incoming?.playWhenReady = a.playWhenReady
+            }
+        }
         if (DjMix.mixer.mixing) { state = State.MIXING; return }
         if (a.duration - a.currentPosition < 2_000) abort("missed")
     }
@@ -682,6 +750,7 @@ val measured = profiles[key]
         DjMix.streams[outSlot].clear()
         analyzers[outSlot].stop()
         outgoing = null; incoming = null; plan = null; decision = null; swapped = false
+        incomingHeld = false; pending = null; planBpmIn = null; planKeyIn = null
         attempted = null
         state = State.IDLE
     }
@@ -705,6 +774,7 @@ val measured = profiles[key]
             attempted = itemId
         }
         outgoing = null; incoming = null; plan = null; decision = null; swapped = false
+        incomingHeld = false; pending = null; planBpmIn = null; planKeyIn = null
         state = if (state == State.OFF) State.OFF else State.IDLE
     }
 
@@ -721,15 +791,15 @@ val measured = profiles[key]
             State.OFF -> DjPhase.OFF
             State.IDLE -> DjPhase.WAITING
             State.PREPARING -> DjPhase.READING
-            State.READY -> DjPhase.PLANNED
+            State.CUEING, State.READY -> DjPhase.PLANNED
             State.MIXING -> DjPhase.MIXING
         }
         val d = decision
         val starts = if (p != null && state == State.READY) ((p.startOutgoing - DjMix.mixer.position(outSlot)) / rate * 1000).toLong().coerceAtLeast(0) else 0L
         DjMix.publish(DjUi(
             phase = phase, kind = p?.kind, beats = p?.beats ?: 48, blendBeats = p?.blendBeats ?: 32, swap = p?.swap ?: (2.0 / 3.0),
-            bpmOut = out.beat?.bpm, bpmIn = if (idle) null else inn.beat?.bpm,
-            keyOut = out.key?.camelot, keyIn = if (idle) null else inn.key?.camelot,
+            bpmOut = out.beat?.bpm, bpmIn = if (idle) null else inn.beat?.bpm ?: planBpmIn,
+            keyOut = out.key?.camelot, keyIn = if (idle) null else inn.key?.camelot ?: planKeyIn,
             energyOut = if (idle) out.energyRecent else (d?.energyOutgoing ?: out.energyRecent),
             energyIn = if (idle) null else (d?.energyIncoming ?: inn.energyIntro),
             keyScore = d?.keyScore ?: 0.5, match = d?.match, speed = p?.speedIncoming ?: 1.0, startsInMs = starts,
@@ -741,6 +811,11 @@ val measured = profiles[key]
     private companion object {
         const val TICK_MS = 200L
         const val PREROLL_MS = 75_000L
+        /** The cue sits this long before the entry, and the held player is let go this long, and the margin, before the mix. */
+        const val CUE_LEAD_MS = 1_500.0
+        const val RELEASE_MARGIN_MS = 1_000.0
+        /** A seek that has not reached the ring after this long gives up the transition. */
+        const val CUE_TIMEOUT_MS = 4_000L
         const val MIN_REMAINING_MS = 34_000L
         const val MIN_TRACK_MS = 90_000L
         const val SOFT_FALLBACK_MS = 38_000L

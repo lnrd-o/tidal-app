@@ -142,6 +142,7 @@ object BeatTracker {
     /** The kick must mark a new tempo with at least this much contrast, and with this many times the contrast of the old one, for the tempo to change. */
     private const val KICK_MIN = 0.4
     private const val KICK_GAIN = 1.3
+    private const val KICK_GAIN_THIRDS = 1.6
 
     fun analyze(envelope: FloatArray, firstSample: Double, rate: Int, minBpm: Double = 70.0, maxBpm: Double = 180.0, kick: FloatArray? = null): BeatAnalysis? {
         val n = envelope.size
@@ -210,13 +211,13 @@ object BeatTracker {
     private fun followTheKick(kick: FloatArray, bpm: Double, fps: Double, minBpm: Double, maxBpm: Double): Double {
         var best = bpm
         var bestContrast = kickContrast(kick, bpm, fps)
-        // Half and double are the usual mistakes, and three to two (dotted notes and triplets against the beat) the next.
-        for (factor in doubleArrayOf(0.5, 2.0 / 3.0, 0.75, 4.0 / 3.0, 1.5, 2.0)) {
+        // A syncopated kick can look like three to two, so that change needs more evidence than double or half.
+        for ((factor, gain) in listOf(0.5 to KICK_GAIN, 2.0 to KICK_GAIN, 2.0 / 3.0 to KICK_GAIN_THIRDS, 1.5 to KICK_GAIN_THIRDS)) {
             val candidate = bpm * factor
             if (candidate < minBpm || candidate > maxBpm) continue
             val contrast = kickContrast(kick, candidate, fps)
             // The kick must be clear at the new tempo, and clearly clearer than at the one that was found.
-            if (contrast >= KICK_MIN && contrast > bestContrast * KICK_GAIN) { best = candidate; bestContrast = contrast }
+            if (contrast >= KICK_MIN && contrast > bestContrast * gain) { best = candidate; bestContrast = contrast }
         }
         return best
     }

@@ -139,4 +139,13 @@ class LoopTest {
         assertTrue("it plays again", after.maxOf { abs(it) } > 0.1f)
         assertTrue("from where it stopped: ${mixer.position(0)} after $held", mixer.position(0) in held..(held + 1.2 * rate))
     }
+
+    @Test fun theIncomingSongStaysMatchedWhileTheOutgoingOneCanBeHeard() {
+        // With the swap half way, the tail is the second half: the tempo stays matched for 70 percent of it, then eases back.
+        assertEquals(1.04, MixCurves.speed(0.3, 1.04, 0.5), 1e-12)
+        assertEquals(1.04, MixCurves.speed(0.8, 1.04, 0.5), 1e-12)
+        assertTrue(MixCurves.speed(0.92, 1.04, 0.5) in 1.0..1.04)
+        assertEquals(1.0, MixCurves.speed(1.0, 1.04, 0.5), 1e-12)
+    }
 }
+

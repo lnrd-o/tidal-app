@@ -417,7 +417,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun togglePlay() {
         controller?.let { player ->
-            if (player.isPlaying) player.pause()
+            // A player that wants to play but is buffering is playing for this button, as for the system: pressing it pauses.
+            val wantsToPlay = player.playWhenReady && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE
+            if (player.isPlaying || wantsToPlay) player.pause()
             else {
                 if (player.playbackState == Player.STATE_ENDED) player.seekToDefaultPosition()
                 if (player.playerError != null || player.playbackState == Player.STATE_IDLE) player.prepare()

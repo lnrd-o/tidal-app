@@ -222,6 +222,7 @@ class PlaybackService : MediaLibraryService() {
         }
         override fun onAudioSessionIdChanged(audioSessionId: Int) { applyBitPerfect() }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            DjMix.mixer.setHold(!playWhenReady)
             if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtTrackEnd) clearSleepTimer()
         }
     }

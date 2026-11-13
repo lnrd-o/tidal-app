@@ -70,8 +70,19 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private val output = DjOutput()
     private val analyzers = arrayOf(DeckAnalyzer(0, scope) { songPosition(0) }, DeckAnalyzer(1, scope) { songPosition(1) })
 
-    /** The position of the song of a deck in milliseconds: the session player when the deck is the session slot, else the player that is prepared. */
-    private fun songPosition(slot: Int): Long = (if (slot == DjMix.sessionSlot) host.player else incoming ?: scout)?.currentPosition ?: -1L
+    /**
+     * The position of the song of a deck in milliseconds, as the last tick saw it. A player may only be asked on the main thread, and the analyzers
+     * ask from their own, so the main thread keeps the numbers here.
+     */
+    private val positions = LongArray(2) { -1L }
+    private fun songPosition(slot: Int): Long = positions[slot]
+
+    /** Reads the players, on the main thread. The session player is the deck of the session slot, and the other deck is the one that is prepared or listened to. */
+    private fun readPositions() {
+        val session = DjMix.sessionSlot
+        positions[session] = host.player.currentPosition
+        positions[1 - session] = (incoming ?: scout)?.currentPosition ?: -1L
+    }
 
     /** Whether D'JAI uses loop rolls and cue points inside its transitions. */
     @Volatile private var effects = true
@@ -192,6 +203,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     private fun step() {
+        readPositions()
+        // A paused player holds the mixer too: it must not play on from what the ring still holds.
+        DjMix.mixer.setHold(!host.player.playWhenReady)
         // An album plays as released: the mixer stops and the player uses its own audio path until the queue is mixed again.
         val album = host.albumQueue()
         albumNow = album

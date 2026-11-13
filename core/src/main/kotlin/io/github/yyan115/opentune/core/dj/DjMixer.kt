@@ -54,6 +54,10 @@ class DjMixer(val outRate: Int = 48_000) {
     fun setElZar(on: Boolean, glue: Float, tape: Float, vinyl: Float, flavor: Flavor = Flavor.STUDIO) =
         setElZar(ElZarConfig(on = on, glue = glue, tape = tape, vinyl = vinyl, flavor = flavor))
 
+    /** While the player is paused the mixer holds: it plays nothing, and no deck and no transition moves, so that playing again continues from the same place. */
+    @Volatile private var hold = false
+    fun setHold(on: Boolean) { hold = on }
+
     /** Turns the filter sweep on or off. */
     @Volatile var filters = true
     private val bufA = FloatArray(BLOCK * 2)
@@ -270,10 +274,10 @@ class DjMixer(val outRate: Int = 48_000) {
         val stepB = if (ringB != null) ringB.rate.toDouble() / outRate * speed else 1.0
 
         if (running && ringA != null) p!!.roll?.let { applyRoll(it, first) }
-        var okA = ringA != null && ready(first, ringA, stepA, n)
+        var okA = ringA != null && !hold && ready(first, ringA, stepA, n)
         var okB = true
         if (running) {
-            okB = ringB != null && ready(second!!, ringB, stepB, n)
+            okB = ringB != null && !hold && ready(second!!, ringB, stepB, n)
             if (!(okA && okB)) { okA = false; okB = false }
         }
         if (okA) { first.starving = false; fetch(first, ringA!!, stepA, n, bufA) } else first.starving = true

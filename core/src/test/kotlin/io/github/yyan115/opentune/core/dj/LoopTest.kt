@@ -122,4 +122,21 @@ class LoopTest {
         assertEquals(1, mixer.finishedSeq)
         assertEquals(1, mixer.primary)
     }
+
+    @Test fun aHeldMixerIsSilentAndStaysWhereItIsUntilItIsReleased() {
+        val (mixer, _, _) = mixerWith(tone(220.0, 40))
+        render(mixer, rate)
+        mixer.setHold(true)
+        render(mixer, 2400)                       // the fade to silence
+        val held = mixer.position(0)
+        val out = FloatArray(rate)
+        render(mixer, rate, out)
+        assertTrue("silent while held: ${out.maxOf { abs(it) }}", out.maxOf { abs(it) } < 1e-6f)
+        assertEquals("the deck does not move while held", held, mixer.position(0), 1.0)
+        mixer.setHold(false)
+        val after = FloatArray(rate)
+        render(mixer, rate, after)
+        assertTrue("it plays again", after.maxOf { abs(it) } > 0.1f)
+        assertTrue("from where it stopped: ${mixer.position(0)} after $held", mixer.position(0) in held..(held + 1.2 * rate))
+    }
 }

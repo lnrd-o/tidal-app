@@ -711,6 +711,10 @@
     <string name="djcfg_echo_text">Washes out the song that leaves with an echo when two songs do not match.</string>
     <string name="djcfg_groove">Match the groove</string>
     <string name="djcfg_groove_text">Does not lock a straight song on a swung one, and counts the groove in the match.</string>
+    <string name="djcfg_beatfirst">Beat mixes first, soft blends last</string>
+    <string name="djcfg_beatfirst_text">D\'JAI ranks the songs in the queue by how well they mix with the one that plays: songs that can be mixed on the beat come first, from the best match down, and songs that can only blend softly come at the end.</string>
+    <string name="djcfg_revalidate">Check the queue when I change the song</string>
+    <string name="djcfg_revalidate_text">When you skip or jump to another song, D\'JAI checks all the songs in the queue again and puts the one that mixes best next. A song that you play next yourself is left where it is.</string>
     <string name="djcfg_arc">Shape the set</string>
     <string name="djcfg_arc_text">Prefers a next song that breaks a run of loud songs, or of quiet ones, when it still goes well.</string>
     <string name="djcfg_min_match">Change the next song below %1$d%% match</string>

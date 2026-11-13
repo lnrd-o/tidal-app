@@ -511,12 +511,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (queued != null) {
             if (!next) { notify(app.getString(R.string.notify_already_queued)); return }
             // Play next on a song that is queued already moves it to the next place.
+            DjMix.pinnedNext = track.id
             if (queued == current + 1) notify(app.getString(R.string.notify_plays_next))
             else { player.moveMediaItem(queued, current + 1); notify(app.getString(R.string.notify_plays_next)) }
             return
         }
         val index = if (next) player.currentMediaItemIndex + 1 else player.mediaItemCount
         player.addMediaItem(index, app.sources.unresolved(track))
+        if (next) DjMix.pinnedNext = track.id
         // Undo takes the song out again, if it is still where it was put.
         notify(app.getString(if (next) R.string.notify_plays_next else R.string.notify_added_queue)) {
             controller?.let { p -> if (index < p.mediaItemCount && p.getMediaItemAt(index).mediaId == track.id) p.removeMediaItem(index) }

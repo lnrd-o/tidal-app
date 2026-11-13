@@ -40,6 +40,8 @@ class DjOptions(
     val groove: Boolean = true, val arc: Boolean = true,
     val minMatch: Double = io.github.yyan115.opentune.core.dj.MixPlanner.MIN_MATCH,
     val listenAhead: Int = 12,
+    val revalidate: Boolean = true,
+    val beatFirst: Boolean = true,
 )
 
 /** The tempo that TIDAL gave for the song of a media item, in its data, or null. */
@@ -130,6 +132,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private var rechosenFor: String? = null
     /** The incoming song whose match for the mix was logged last. */
     private var checkedFor: String? = null
+    /** After a change by hand the whole queue is checked again: since when, and with how many songs known at the last check. */
+    private var revalidating = false
+    private var revalidateSince = 0L
+    private var revalidatedWith = -1
     /** The energies of the songs that played last, the oldest first, for the arc of the set. */
     private val played = ArrayDeque<Double>()
     private var state = State.OFF
@@ -217,6 +223,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         chosenFor = null; attempted = null; rechosenFor = null; checkedFor = null
         scouted = 0; scoutTotal = 0; changedTitle = null; changedMatch = null; planEffects = ""
         asked.clear()
+        // The song that was asked to play next has played, or has been replaced: the pin goes.
+        if (host.player.currentMediaItem?.mediaId == DjMix.pinnedNext) DjMix.pinnedNext = null
+        revalidating = options.revalidate && djai
+        revalidateSince = System.currentTimeMillis(); revalidatedWith = -1
         if (djai) {
             val slot = DjMix.sessionSlot
             analyzers[slot].hintBpm = hintFor(host.player.currentMediaItem)
@@ -234,6 +244,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     fun onTrackChanged() {
+        if (host.player.currentMediaItem?.mediaId == DjMix.pinnedNext) DjMix.pinnedNext = null
         if (state != State.IDLE) return
         val slot = DjMix.sessionSlot
         analyzers[slot].hintBpm = hintFor(host.player.currentMediaItem)
@@ -345,6 +356,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             if (crossfadeMs > 0 && remaining <= crossfadeMs + CROSSFADE_PREROLL_MS && remaining >= crossfadeMs + 2_000L) startPreroll(a, next, id)
             return
         }
+        if (revalidating) revalidate(a, remaining)
         // Listening goes on until the choice is due, unless every song ahead is already known: then the choice is made at once.
         val everythingKnown = scout == null && scoutTotal > 0 && scouted >= scoutTotal
         if (remaining > PREROLL_MS + CHOOSE_MS && !everythingKnown) { scouting(a, id); return }
@@ -356,13 +368,13 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     /** The indexes of the songs that come after the current one, in the order in which they will play, with shuffle and repeat. */
-    private fun upcoming(a: ExoPlayer): List<Int> {
+    private fun upcoming(a: ExoPlayer, limit: Int = if (revalidating) maxOf(options.listenAhead, REVALIDATE_AHEAD) else options.listenAhead): List<Int> {
         val timeline = a.currentTimeline
         if (timeline.isEmpty) return emptyList()
         val list = ArrayList<Int>()
         var i = a.currentMediaItemIndex
         val first = i
-        while (list.size < options.listenAhead) {
+        while (list.size < limit) {
             i = timeline.getNextWindowIndex(i, a.repeatMode, a.shuffleModeEnabled)
             if (i == C.INDEX_UNSET || i == first || i in list) break
             list.add(i)
@@ -415,6 +427,43 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             startScout(item, scoutSlot)
             return
         }
+    }
+
+    /**
+     * The song was changed by hand: all the songs in the queue are scored again against the song that plays now, and the one that mixes best goes next, if it
+     * is clearly better than the one that is there ([REVALIDATE_GAIN] more, or the next one is below the limit). It runs each time that the listening has learned
+     * more songs, until all of them are known, or after [REVALIDATE_MS], or when the normal choice is due. A song that the listener put next is not moved.
+     */
+    private fun revalidate(a: ExoPlayer, remaining: Long) {
+        val slot = DjMix.sessionSlot
+        val ahead = upcoming(a)
+        val known = ahead.count { a.getMediaItemAt(it).mediaId in profiles }
+        val everything = scout == null && ahead.isNotEmpty() && known >= ahead.size
+        if (everything || System.currentTimeMillis() - revalidateSince > REVALIDATE_MS || remaining <= PREROLL_MS + CHOOSE_MS) revalidating = false
+        if (known == revalidatedWith && !everything) return
+        revalidatedWith = known
+        val current = a.currentMediaItem?.mediaId?.let { profiles[it] }
+        val out = analyzers[slot]
+        // The song that plays is known from what was heard of it so far, or from what was learned of it before.
+        val outgoing = if (out.beat != null) TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing.takeIf { options.groove })
+            else current?.summary?.let { if (options.groove) it else it.withoutSwing() } ?: return
+        val rate = DjMix.streams[slot].ring?.rate ?: current?.rate ?: 44_100
+        val next = a.nextMediaItemIndex
+        if (next == C.INDEX_UNSET || a.getMediaItemAt(next).mediaId == DjMix.pinnedNext) return
+        val arc = if (options.arc) EnergyArc(played.toList() + listOfNotNull(outgoing.energy)) else null
+        val scored = ahead.mapNotNull { i ->
+            val measured = profiles[a.getMediaItemAt(i).mediaId] ?: return@mapNotNull null
+            val summary = if (options.groove) measured.summary else measured.summary.withoutSwing()
+            val d = MixPlanner.decide(outgoing, summary, rate, measured.rate)
+            Triple(i, d.match, d.match + MixPlanner.rankBonus(d.kind, options.beatFirst) + 0.1 * (arc?.score(summary.energy) ?: 0.5))
+        }
+        val here = scored.firstOrNull { it.first == next } ?: return
+        val best = scored.filter { it.first != next && it.second >= options.minMatch }.maxByOrNull { it.third } ?: return
+        if (here.second >= options.minMatch && best.third < here.third + REVALIDATE_GAIN) return
+        android.util.Log.i("OpenTune", "D'JAI checked the queue: %s goes next, %.0f%% against %.0f%% for %s".format(host.titleOf(a.getMediaItemAt(best.first)), best.second * 100, here.second * 100, host.titleOf(a.getMediaItemAt(next))))
+        promote(a, best.first)
+        changedTitle = host.titleOf(a.getMediaItemAt(a.nextMediaItemIndex)); changedMatch = best.second
+        choiceMatch[a.getMediaItemAt(a.nextMediaItemIndex).mediaId] = best.second
     }
 
     private fun startScout(item: MediaItem, scoutSlot: Int) {
@@ -555,6 +604,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val outgoing = TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing.takeIf { options.groove })
         val next = a.nextMediaItemIndex
         if (next == C.INDEX_UNSET) return
+        if (a.getMediaItemAt(next).mediaId == DjMix.pinnedNext) return
         // A song that was listened to is scored from what was heard, and one that was not from what the catalogue says.
         val candidates = upcoming(a).mapNotNull { i ->
             val key = a.getMediaItemAt(i).mediaId
@@ -566,7 +616,7 @@ val measured = profiles[key]
         })
         // The songs that played last shape the choice: a run of loud songs, or of quiet ones, gives way to one that breaks it.
         val arc = if (options.arc) EnergyArc(played.toList() + listOfNotNull(outgoing.energy)) else null
-        val best = MixPlanner.choose(outgoing, rate, candidates, next, arc, options.minMatch) ?: return
+        val best = MixPlanner.choose(outgoing, rate, candidates, next, arc, options.minMatch, options.beatFirst) ?: return
         val match = MixPlanner.decide(outgoing, best.summary, rate, best.rate).match
         if (best.index != next) {
             promote(a, best.index)
@@ -583,10 +633,11 @@ val measured = profiles[key]
      */
     private fun rechoose(a: ExoPlayer, outgoing: TrackSummary, current: Double, rate: Int): Boolean {
         val next = a.nextMediaItemIndex
+        if (a.getMediaItemAt(next).mediaId == DjMix.pinnedNext) return false
         val best = upcoming(a).filter { it != next }.mapNotNull { i ->
             profiles[a.getMediaItemAt(i).mediaId]?.let { Triple(i, if (options.groove) it.summary else it.summary.withoutSwing(), it.rate) }
-        }.map { (i, summary, r) -> Pair(i, MixPlanner.decide(outgoing, summary, rate, r).match) }
-            .filter { it.second >= maxOf(options.minMatch, current + RECHOOSE_GAIN) }.maxByOrNull { it.second } ?: return false
+        }.map { (i, summary, r) -> MixPlanner.decide(outgoing, summary, rate, r).let { d -> Triple(i, d.match, d.match + MixPlanner.rankBonus(d.kind, options.beatFirst)) } }
+            .filter { it.second >= maxOf(options.minMatch, current + RECHOOSE_GAIN) }.maxByOrNull { it.third }?.let { Pair(it.first, it.second) } ?: return false
         android.util.Log.i("OpenTune", "D'JAI changed the next song: %.0f%% on the mix, %.0f%% for %s".format(current * 100, best.second * 100, host.titleOf(a.getMediaItemAt(best.first))))
         promote(a, best.first)
         changedTitle = host.titleOf(a.getMediaItemAt(a.nextMediaItemIndex)); changedMatch = best.second
@@ -951,6 +1002,10 @@ val measured = profiles[key]
         const val DROP_WAIT_MS = 35_000L
         /** A mix whose match turns out low is given another song only while the outgoing song has this much time left. */
         const val RECHOOSE_MS = 48_000L
+        /** After a change by hand, this many songs of the queue are checked, for at most this long, and a song replaces the next one if it is this much better. */
+        const val REVALIDATE_AHEAD = 30
+        const val REVALIDATE_MS = 45_000L
+        const val REVALIDATE_GAIN = 0.08
         /** The song that replaces a next song with a low match must go at least this much better. */
         const val RECHOOSE_GAIN = 0.05
         const val DEFAULT_BPM = 124.0

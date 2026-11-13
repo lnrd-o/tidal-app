@@ -103,6 +103,9 @@ object DjMix {
     /** What D'JAI has kept about a song: its tempo, key and energy when known, and whether its cue points are kept. */
     class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean)
 
+    /** The id of the song that the listener chose to play next. D'JAI does not move it: it was asked for. */
+    @Volatile var pinnedNext: String? = null
+
     /** The listener asked D'JAI to forget what it kept about songs. The service reads it. */
     val forgetRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 

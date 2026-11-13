@@ -6,6 +6,8 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ### Added
 
+- When you skip or jump to another song, D'JAI checks the whole queue again (up to 30 songs) against the new song and moves the one that mixes clearly better to the next place. A song that you put next yourself is not moved. Switch on the D'JAI page.
+- Beat mixes first, soft blends last: D'JAI ranks the songs of the queue by how they mix, songs that can be mixed on the beat first and from the best match down, and songs that only blend softly at the end. Switch on the D'JAI page.
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
 - D'JAI finds the verses, choruses and bridge of a song from its timed lyrics when it has them: the lines that come back are the chorus. It is more reliable than listening for it, and the music still gives the peak, drops and outro.
 - When TIDAL (or Deezer) gives the tempo of a song, D'JAI uses it to choose between a tempo and its double or half, and confirms it by listening. A tempo that the music does not support is not taken.

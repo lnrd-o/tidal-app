@@ -65,6 +65,8 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
 
         item { SectionTitle(stringResource(R.string.djcfg_section_choice)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_groove), settings.djGroove, { value -> vm.settings { it.copy(djGroove = value) } }, stringResource(R.string.djcfg_groove_text)) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_beatfirst), settings.djBeatFirst, { value -> vm.settings { it.copy(djBeatFirst = value) } }, stringResource(R.string.djcfg_beatfirst_text)) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_revalidate), settings.djRevalidate, { value -> vm.settings { it.copy(djRevalidate = value) } }, stringResource(R.string.djcfg_revalidate_text)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_arc), settings.djArc, { value -> vm.settings { it.copy(djArc = value) } }, stringResource(R.string.djcfg_arc_text)) }
         item {
             ValueRow(stringResource(R.string.djcfg_min_match, settings.djMinMatch), stringResource(R.string.djcfg_min_match_text), settings.djMinMatch, 50..90, 7) { value ->

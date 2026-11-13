@@ -194,28 +194,43 @@ object MixPlanner {
      * the candidate with the best match takes its place, even if no candidate reaches [MIN_MATCH], as long as it is clearly better.
      * Returns null when there is nothing to choose from.
      */
-    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null, minMatch: Double = MIN_MATCH): Candidate? {
+    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null, minMatch: Double = MIN_MATCH, beatFirst: Boolean = true): Candidate? {
         // A guess counts for less than a measure, so that a song that is only guessed to go well cannot hold the place of one that is known to.
-        val scored = candidates.map { it to decide(outgoing, it.summary, rateOutgoing, it.rate).match - (if (it.verified) 0.0 else GUESS_PENALTY) }
+        val scored = candidates.map { c ->
+            val d = decide(outgoing, c.summary, rateOutgoing, c.rate)
+            val match = d.match - (if (c.verified) 0.0 else GUESS_PENALTY)
+            Scored(c, match, match + rankBonus(d.kind, beatFirst))
+        }
         // A next track that has not been listened to yet is not replaced: nothing is known that says it is a bad match.
-        val next = scored.firstOrNull { it.first.index == nextIndex } ?: return null
+        val next = scored.firstOrNull { it.candidate.index == nextIndex } ?: return null
         // A next song that is only a guess gives way to one that was listened to and goes at least as well, whatever the guess says.
-        if (!next.first.verified) {
-            val known = scored.filter { it.first.verified && it.first.index != nextIndex && it.second >= minMatch && it.second > next.second }.maxByOrNull { it.second }
-            if (known != null) return known.first
+        if (!next.candidate.verified) {
+            val known = scored.filter { it.candidate.verified && it.candidate.index != nextIndex && it.match >= minMatch && it.rank > next.rank }.maxByOrNull { it.rank }
+            if (known != null) return known.candidate
         }
-        if (next.second >= minMatch) {
-            // A next track that goes well but would prolong a plateau of loud or quiet songs gives way to another that goes well and breaks it.
-            if (arc != null && arc.score(next.first.summary.energy) < PLATEAU_SCORE) {
-                val better = scored.filter { it.first.index != nextIndex && it.second >= minMatch && arc.score(it.first.summary.energy) >= BREAK_SCORE }
-                    .maxByOrNull { 0.6 * it.second + 0.4 * arc.score(it.first.summary.energy) }
-                if (better != null) return better.first
+        if (next.match >= minMatch) {
+            // Beat mixes come first: a next song that would only blend softly gives way to one that mixes on the beat and goes well.
+            if (beatFirst && next.rank - next.match < BEAT_BONUS) {
+                val beat = scored.filter { it.candidate.index != nextIndex && it.candidate.verified && it.match >= minMatch && it.rank - it.match >= BEAT_BONUS }.maxByOrNull { it.rank }
+                if (beat != null) return beat.candidate
             }
-            return next.first
+            // A next track that goes well but would prolong a plateau of loud or quiet songs gives way to another that goes well and breaks it.
+            if (arc != null && arc.score(next.candidate.summary.energy) < PLATEAU_SCORE) {
+                val better = scored.filter { it.candidate.index != nextIndex && it.match >= minMatch && arc.score(it.candidate.summary.energy) >= BREAK_SCORE && (!beatFirst || it.rank - it.match >= next.rank - next.match) }
+                    .maxByOrNull { 0.6 * it.rank + 0.4 * arc.score(it.candidate.summary.energy) }
+                if (better != null) return better.candidate
+            }
+            return next.candidate
         }
-        val best = scored.maxByOrNull { it.second } ?: return null
-        return if (best.second <= next.second + 0.02) next.first else best.first
+        val best = scored.maxByOrNull { it.rank } ?: return null
+        return if (best.rank <= next.rank + 0.02) next.candidate else best.candidate
     }
+
+    private class Scored(val candidate: Candidate, val match: Double, val rank: Double)
+
+    /** What a mix on the beat adds to the ranking of a song over one that blends softly, when beat mixes come first. */
+    const val BEAT_BONUS = 0.25
+    fun rankBonus(kind: MixKind, beatFirst: Boolean) = if (beatFirst && kind == MixKind.BEAT) BEAT_BONUS else 0.0
 
     /** Decides how to mix: matching the beats when both tracks have a clear grid, their tempos are within 6 percent and their energies are close. */
     fun decide(outgoing: TrackSummary, incoming: TrackSummary, rateOutgoing: Int, rateIncoming: Int): MixDecision {

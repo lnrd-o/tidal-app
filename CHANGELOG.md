@@ -7,6 +7,8 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 ### Added
 
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- A D'JAI page in Settings with all of its options: the automix, filter sweeps, loop roll, cue points, echo wash, matching grooves, shaping the set, the match below which the next song is changed, how many songs are listened to ahead, the online source for tempo and key, and a button to forget what it learned.
+- Song lists mark the songs that D'JAI has kept with a G, and can show their tempo, key and energy under the name.
 - When two songs do not match, D'JAI washes the song that leaves out with an echo that rings under the new one, in place of a plain crossfade.
 - D'JAI reads the groove of each song, straight or swung. It does not lock a straight song on a swung one, and a close pair gets a shorter blend.
 - D'JAI keeps the shape of the set: after a run of loud songs, or of quiet ones, it prefers a next song that breaks the run, as long as that song goes well with the one that plays.

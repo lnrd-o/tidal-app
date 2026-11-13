@@ -69,6 +69,16 @@ class LibraryStore(context: Context, databaseName: String = "library.db") : SQLi
         db.execSQL("CREATE TABLE cue_points (track_id TEXT NOT NULL, at_ms INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(track_id, at_ms))")
     }
 
+    /** Removes the cue points of all songs. */
+    @Synchronized fun clearCues() { writableDatabase.delete("cue_points", null, null); cueRevision.value++ }
+
+    /** The ids of the songs that have cue points. */
+    @Synchronized fun cueTrackIds(): List<String> = readableDatabase.rawQuery("SELECT DISTINCT track_id FROM cue_points", null).use { cursor ->
+        val list = ArrayList<String>()
+        while (cursor.moveToNext()) list.add(cursor.getString(0))
+        list
+    }
+
     @Synchronized fun cues(trackId: String): List<Pair<String, Long>> = readableDatabase.rawQuery(
         "SELECT kind, at_ms FROM cue_points WHERE track_id=? ORDER BY at_ms", arrayOf(trackId)).use { cursor ->
         val list = ArrayList<Pair<String, Long>>()

@@ -109,6 +109,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notify(app.getString(R.string.djai_analyzed, result.title, result.bpm?.let { "%.0f".format(it) } ?: "?", result.key ?: "?", result.cues.size))
     }
 
+    /** Asks D'JAI to forget what it kept about songs: their tempo, key, energy and cue points. */
+    fun forgetDjai() { DjMix.forgetRequests.tryEmit(Unit) }
+
     /** The cue points that D'JAI found in the song with [id]. */
     suspend fun cuesOf(id: String): List<io.github.yyan115.opentune.core.dj.Cue> = withContext(Dispatchers.IO) {
         runCatching {

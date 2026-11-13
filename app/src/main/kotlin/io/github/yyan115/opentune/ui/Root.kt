@@ -157,6 +157,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
             when {
                 settings -> when (settingsPageOpen) {
                     SettingsPage.Repeats -> AvoidRepeatsPage(state, vm)
+                    SettingsPage.Djai -> DjaiPage(state, vm)
                     SettingsPage.Statistics -> StatisticsPage(vm)
                     SettingsPage.Licenses -> LicencesPage { settingsPage = it.name }
                     SettingsPage.Apache, SettingsPage.DmSans, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)

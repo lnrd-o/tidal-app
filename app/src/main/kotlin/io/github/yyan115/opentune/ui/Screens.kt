@@ -377,7 +377,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
     var crossfade by remember { mutableStateOf(false) }
     var elzarOpen by remember { mutableStateOf(false) }
     var cacheOpen by remember { mutableStateOf(false) }
-    var onlineOpen by remember { mutableStateOf(false) }
     var scrobbling by remember { mutableStateOf(false) }
     var clearHistory by remember { mutableStateOf(false) }
     var mobileDataWarning by remember { mutableStateOf(false) }
@@ -397,13 +396,11 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.Timer, stringResource(R.string.settings_crossfade), if (settings.crossfadeSeconds == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_crossfade_value, settings.crossfadeSeconds),
             { crossfade = true }) }
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.settings_adapt_color), settings.adaptColor, { value -> vm.settings { it.copy(adaptColor = value) } }, stringResource(R.string.settings_adapt_color_text)) }
-        item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.settings_online), stringResource(ONLINE_MODES[settings.onlineData.coerceIn(0, 2)]), { onlineOpen = true }) }
         item { SettingRow(OpenTuneIcons.Download, stringResource(R.string.settings_cache),
             if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }
         item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
             if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }
-        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_dj_effects), settings.djEffects, { value -> vm.settings { it.copy(djEffects = value) } }, stringResource(R.string.settings_dj_effects_text)) }
-        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_djai), settings.djai, { value -> vm.settings { it.copy(djai = value) } }, stringResource(R.string.settings_djai_text)) }
+        item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.djai_name), djaiSummary(settings), { onOpenPage(SettingsPage.Djai) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         // These settings change how TIDAL is streamed and downloaded, so they appear once an account is connected.
         if (state.signedIn) {
             item { SectionTitle(stringResource(R.string.settings_tidal)) }
@@ -442,18 +439,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.PrivacyTip, stringResource(R.string.settings_privacy), stringResource(R.string.settings_privacy_text)) }
         item { SettingRow(OpenTuneIcons.Description, stringResource(R.string.settings_licenses), onClick = { onOpenPage(SettingsPage.Licenses) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
     }
-    if (onlineOpen) AlertDialog(onDismissRequest = { onlineOpen = false }, title = { Text(stringResource(R.string.settings_online)) }, text = {
-        Column {
-            Text(stringResource(R.string.settings_online_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            for (mode in ONLINE_MODES.indices) Row(Modifier.fillMaxWidth().clickable { vm.settings { it.copy(onlineData = mode) } }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(settings.onlineData == mode, { vm.settings { it.copy(onlineData = mode) } })
-                Column(Modifier.padding(start = 8.dp)) {
-                    Text(stringResource(ONLINE_MODES[mode]), style = MaterialTheme.typography.bodyMedium)
-                    Text(stringResource(ONLINE_HINTS[mode]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }, confirmButton = { TextButton(onClick = { onlineOpen = false }) { Text(stringResource(R.string.action_close)) } })
     if (cacheOpen) CacheDialog(settings.cacheMb, vm, { value -> vm.settings { it.copy(cacheMb = value) } }) { cacheOpen = false }
     if (elzarOpen) ElZarDialog(settings, { change -> vm.settings(change) }) { elzarOpen = false }
     if (crossfade) {
@@ -492,9 +477,6 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
     if (signOut) AlertDialog(onDismissRequest = { signOut = false }, title = { Text(stringResource(R.string.signout_title)) }, text = { Text(stringResource(R.string.signout_text)) },
         confirmButton = { TextButton(onClick = { vm.signOut(); signOut = false }) { Text(stringResource(R.string.signout_confirm)) } }, dismissButton = { TextButton(onClick = { signOut = false }) { Text(stringResource(R.string.action_cancel)) } })
 }
-
-private val ONLINE_MODES = intArrayOf(R.string.settings_online_off, R.string.settings_online_tidal, R.string.settings_online_deezer)
-private val ONLINE_HINTS = intArrayOf(R.string.settings_online_off_text, R.string.settings_online_tidal_text, R.string.settings_online_deezer_text)
 
 private val CACHE_SIZES = intArrayOf(0, 128, 256, 512, 1024, 2048, 4096, 8192)
 

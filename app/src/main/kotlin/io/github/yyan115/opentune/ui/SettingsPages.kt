@@ -25,7 +25,7 @@ import java.util.Date
 
 /** The pages that open from the Settings list. Each one has its own title in the top bar. */
 enum class SettingsPage(@StringRes val title: Int) {
-    Repeats(R.string.settings_repeats), Statistics(R.string.stats_title), Licenses(R.string.settings_licenses),
+    Repeats(R.string.settings_repeats), Djai(R.string.djai_name), Statistics(R.string.stats_title), Licenses(R.string.settings_licenses),
     Apache(R.string.licenses_apache),
     DmSans(R.string.licenses_dmsans), Mono(R.string.licenses_mono);
 

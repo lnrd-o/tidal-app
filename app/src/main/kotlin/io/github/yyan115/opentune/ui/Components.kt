@@ -4,6 +4,8 @@ import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.selection.toggleable
@@ -161,6 +163,8 @@ val LocalTrackActions = staticCompositionLocalOf<TrackActions?> { null }
 @Composable
 fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu: () -> Unit, index: Int? = null) {
     val actions = LocalTrackActions.current
+    val known = LocalDjKnown.current[track.id]
+    val showDjData = LocalShowDjData.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
         when (value) {
@@ -192,6 +196,12 @@ fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu:
                     fontWeight = if (playing) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // A G, for guardado: D'JAI has kept something about this song.
+                    if (known != null) {
+                        val saved = stringResource(R.string.dj_saved_description)
+                        Text(stringResource(R.string.dj_saved_mark), Modifier.padding(end = 6.dp).border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f)).padding(horizontal = 3.dp)
+                            .semantics { contentDescription = saved }, fontFamily = AppFonts.mono, fontSize = 9.sp, lineHeight = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     if (track.explicit) {
                         Text("E", Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.ui.graphics.RectangleShape).padding(horizontal = 3.dp),
                             style = MaterialTheme.typography.labelSmall)
@@ -200,6 +210,13 @@ fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu:
                     else if (track.onDevice) Icon(OpenTuneIcons.DownloadDone, stringResource(R.string.track_available_offline), Modifier.padding(end = 4.dp).size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(track.artist, fontFamily = AppFonts.body, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // The tempo, key and energy that D'JAI kept, when the setting is on.
+                if (showDjData && known != null) {
+                    val parts = listOfNotNull(known.bpm?.let { stringResource(R.string.dj_row_bpm, Math.round(it).toInt()) }, known.key,
+                        known.energy?.let { stringResource(R.string.dj_row_energy, Math.round(it).toInt()) })
+                    if (parts.isNotEmpty()) Text(parts.joinToString(" \u00B7 "), Modifier.padding(top = 2.dp), fontFamily = AppFonts.mono, fontSize = 10.sp, lineHeight = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconButton(onClick = onMenu) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.track_options, track.title), Modifier.size(20.dp)) }
@@ -266,3 +283,9 @@ fun TuneOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabl
     contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp, vertical = 13.dp), content: @Composable RowScope.() -> Unit) {
     OutlinedButton(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape, contentPadding = contentPadding, content = content)
 }
+
+/** What D'JAI has kept about songs, by track id. The activity provides it, and the rows of the lists read it. */
+val LocalDjKnown = androidx.compose.runtime.staticCompositionLocalOf<Map<String, io.github.yyan115.opentune.playback.dj.DjMix.SongInfo>> { emptyMap() }
+
+/** Whether the rows show the tempo, key and energy that D'JAI kept. */
+val LocalShowDjData = androidx.compose.runtime.staticCompositionLocalOf { true }

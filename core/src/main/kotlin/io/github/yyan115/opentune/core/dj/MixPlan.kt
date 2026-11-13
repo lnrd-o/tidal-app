@@ -127,7 +127,10 @@ class TrackSummary(
     val cues: List<CueMark> = emptyList(),
     /** Where the off-beat eighth falls in the beat (0.5 straight, up to 0.67 swung), or null when it is not known. See [Swing]. */
     val swing: Double? = null,
-)
+) {
+    /** The same song without its groove, for when the listener turned the matching of grooves off. */
+    fun withoutSwing() = if (swing == null) this else TrackSummary(beat, camelot, energy, origin, cues, null)
+}
 
 class MixDecision(
     val kind: MixKind,
@@ -179,14 +182,14 @@ object MixPlanner {
      * the candidate with the best match takes its place, even if no candidate reaches [MIN_MATCH], as long as it is clearly better.
      * Returns null when there is nothing to choose from.
      */
-    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null): Candidate? {
+    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null, minMatch: Double = MIN_MATCH): Candidate? {
         val scored = candidates.map { it to decide(outgoing, it.summary, rateOutgoing, it.rate).match }
         // A next track that has not been listened to yet is not replaced: nothing is known that says it is a bad match.
         val next = scored.firstOrNull { it.first.index == nextIndex } ?: return null
-        if (next.second >= MIN_MATCH) {
+        if (next.second >= minMatch) {
             // A next track that goes well but would prolong a plateau of loud or quiet songs gives way to another that goes well and breaks it.
             if (arc != null && arc.score(next.first.summary.energy) < PLATEAU_SCORE) {
-                val better = scored.filter { it.first.index != nextIndex && it.second >= MIN_MATCH && arc.score(it.first.summary.energy) >= BREAK_SCORE }
+                val better = scored.filter { it.first.index != nextIndex && it.second >= minMatch && arc.score(it.first.summary.energy) >= BREAK_SCORE }
                     .maxByOrNull { 0.6 * it.second + 0.4 * arc.score(it.first.summary.energy) }
                 if (better != null) return better.first
             }

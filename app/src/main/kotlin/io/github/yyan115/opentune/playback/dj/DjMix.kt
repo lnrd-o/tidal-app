@@ -79,6 +79,15 @@ object DjMix {
     val streams = arrayOf(Stream(), Stream(), Stream())
     const val ANALYSIS_SLOT = 2
 
+    /** What D'JAI has kept about a song: its tempo, key and energy when known, and whether its cue points are kept. */
+    class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean)
+
+    /** The listener asked D'JAI to forget what it kept about songs. The service reads it. */
+    val forgetRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** The songs that D'JAI has kept something about, by track id. The lists read it to mark them. */
+    val known = kotlinx.coroutines.flow.MutableStateFlow<Map<String, SongInfo>>(emptyMap())
+
     /** Songs that the listener asked to prepare, and what came of them. The screen sends the first and reads the second. */
     val preprocess = kotlinx.coroutines.flow.MutableSharedFlow<PreprocessRequest>(extraBufferCapacity = 64)
     val preprocessResults = kotlinx.coroutines.flow.MutableSharedFlow<PreprocessResult>(extraBufferCapacity = 64)

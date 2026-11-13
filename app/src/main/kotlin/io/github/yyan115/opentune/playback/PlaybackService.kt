@@ -193,7 +193,7 @@ class PlaybackService : MediaLibraryService() {
     }
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
-        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, djHost::saveCues, { app.settings.state.value.djai })
+        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai })
     }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */
@@ -242,8 +242,21 @@ class PlaybackService : MediaLibraryService() {
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
         scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
-            engine.configure(it.djai, it.crossfadeSeconds, it.elzar, it.djEffects); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
+            engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
+                io.github.yyan115.opentune.playback.dj.DjOptions(roll = it.djRoll, cues = it.djCues, echo = it.djEcho, filters = it.djFilters, groove = it.djGroove,
+                    arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { DjMix.preprocess.collect { preprocessor.add(it) } }
+        scope.launch {
+            DjMix.forgetRequests.collect {
+                engine.forgetAll()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.clearCues() } }
+            }
+        }
+        // The lists mark the songs that D'JAI has kept something about: the engine tells which have profiles, and the store which have cue points.
+        scope.launch {
+            val withCues = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.cueTrackIds() }.getOrDefault(emptyList()) }
+            engine.refreshKnown(withCues)
+        }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback, Handler(Looper.getMainLooper())) }

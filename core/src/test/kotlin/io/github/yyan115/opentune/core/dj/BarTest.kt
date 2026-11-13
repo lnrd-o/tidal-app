@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.sin
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -174,5 +175,16 @@ class BarTest {
         assertEquals("5B", Camelot.fromName("EFlat", "MAJOR"))
         assertEquals(null, Camelot.fromName("", "MAJOR"))
         assertEquals(null, Camelot.fromName("H", "MAJOR"))
+    }
+
+    @Test fun aCamelotCodeHasAKeyNameInMusicalNotation() {
+        assertEquals("Am", Camelot.noteName("8A")); assertEquals("C", Camelot.noteName("8B"))
+        assertEquals("G#m", Camelot.noteName("1A")); assertEquals("B", Camelot.noteName("1B"))
+        assertEquals("Cm", Camelot.noteName("5A")); assertEquals("Eb", Camelot.noteName("5B"))
+        assertEquals("F#m", Camelot.noteName("11A")); assertEquals("F#", Camelot.noteName("2B"))
+        assertEquals("C#m", Camelot.noteName("12A")); assertEquals("A", Camelot.noteName("11B"))
+        // Every code that the detector can make has a name.
+        for (pitch in 0 until 12) for (minor in listOf(false, true)) assertNotNull(Camelot.noteName(Camelot.code(pitch, minor)))
+        assertEquals(null, Camelot.noteName(null)); assertEquals(null, Camelot.noteName("13A")); assertEquals(null, Camelot.noteName("X"))
     }
 }

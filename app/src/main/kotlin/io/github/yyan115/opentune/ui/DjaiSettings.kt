@@ -79,6 +79,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
 
         item { SectionTitle(stringResource(R.string.djcfg_section_songs)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_dj_data), settings.showDjData, { value -> vm.settings { it.copy(showDjData = value) } }, stringResource(R.string.settings_dj_data_text)) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_pulse), settings.djPulse, { value -> vm.settings { it.copy(djPulse = value) } }, stringResource(R.string.djcfg_pulse_text)) }
         item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.settings_online), stringResource(OnlineModes[settings.onlineData.coerceIn(0, 2)]), { online = true }) }
         item { SettingRow(OpenTuneIcons.Info, stringResource(R.string.djcfg_kept), stringResource(R.string.djcfg_kept_value, kept.size)) }
         item { SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.djcfg_forget), stringResource(R.string.djcfg_forget_text), { forget = true }) }

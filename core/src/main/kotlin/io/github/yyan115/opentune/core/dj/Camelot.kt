@@ -26,6 +26,17 @@ object Camelot {
         return code(base + shift, minor)
     }
 
+    private val majorNames = arrayOf("C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+    private val minorNames = arrayOf("Cm", "C#m", "Dm", "Ebm", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "Bbm", "Bm")
+
+    /** The key that a Camelot code stands for, in musical notation: "8A" is "Am" and "8B" is "C". Null for something that is not a code. */
+    fun noteName(code: String?): String? {
+        if (code == null || code.length < 2) return null
+        val index = (if (code.last() == 'B') major else if (code.last() == 'A') minor else return null).indexOf(code)
+        if (index < 0) return null
+        return if (code.last() == 'B') majorNames[index] else minorNames[index]
+    }
+
     fun code(pitchClass: Int, isMinor: Boolean): String = (if (isMinor) minor else major)[((pitchClass % 12) + 12) % 12]
 
     private fun number(code: String) = code.dropLast(1).toIntOrNull()

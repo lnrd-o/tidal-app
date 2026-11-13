@@ -701,6 +701,8 @@
     <string name="djcfg_min_match_text">When the next song matches the one that plays by less than this, D\'JAI picks a better one from the queue.</string>
     <string name="djcfg_ahead">Songs listened to ahead: %1$d</string>
     <string name="djcfg_ahead_text">How many of the next songs D\'JAI listens to, so that it can choose among them.</string>
+    <string name="djcfg_pulse">Pulse the tempo to the beat</string>
+    <string name="djcfg_pulse_text">The tempo shown in song lists and in the D\'JAI strip blinks at its beats per minute. Keys show with their note, for example 8A Am.</string>
     <string name="djcfg_kept">Songs kept</string>
     <string name="djcfg_kept_value">%1$d songs have their tempo, key, energy or cue points kept</string>
     <string name="djcfg_forget">Forget what D\'JAI learned</string>

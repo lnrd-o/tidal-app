@@ -213,10 +213,13 @@ fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu:
                 }
                 // The tempo, key and energy that D'JAI kept, when the setting is on.
                 if (showDjData && known != null) {
-                    val parts = listOfNotNull(known.bpm?.let { stringResource(R.string.dj_row_bpm, Math.round(it).toInt()) }, known.key,
-                        known.energy?.let { stringResource(R.string.dj_row_energy, Math.round(it).toInt()) })
-                    if (parts.isNotEmpty()) Text(parts.joinToString(" \u00B7 "), Modifier.padding(top = 2.dp), fontFamily = AppFonts.mono, fontSize = 10.sp, lineHeight = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val rest = listOfNotNull(known.key?.let(::keyWithNote), known.energy?.let { stringResource(R.string.dj_row_energy, Math.round(it).toInt()) })
+                    if (known.bpm != null || rest.isNotEmpty()) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val style = androidx.compose.ui.text.TextStyle(fontFamily = AppFonts.mono, fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f))
+                        // The tempo blinks at its own beats per minute.
+                        known.bpm?.let { Text(stringResource(R.string.dj_row_bpm, Math.round(it).toInt()), Modifier.beatPulse(it), style = style, maxLines = 1) }
+                        if (rest.isNotEmpty()) Text((if (known.bpm != null) " \u00B7 " else "") + rest.joinToString(" \u00B7 "), style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
             IconButton(onClick = onMenu) { Icon(OpenTuneIcons.MoreVert, stringResource(R.string.track_options, track.title), Modifier.size(20.dp)) }

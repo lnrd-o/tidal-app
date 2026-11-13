@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
                 WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
             }
             OpenTuneTheme { CompositionLocalProvider(LocalOfflineMode provides state.settings.offline, LocalNetworkEpoch provides networkEpoch, LocalPlaybackPosition provides model.position,
-                io.github.yyan115.opentune.ui.LocalDjKnown provides djKnown, io.github.yyan115.opentune.ui.LocalShowDjData provides state.settings.showDjData,
+                io.github.yyan115.opentune.ui.LocalDjKnown provides djKnown, io.github.yyan115.opentune.ui.LocalDjPulse provides state.settings.djPulse, io.github.yyan115.opentune.ui.LocalShowDjData provides state.settings.showDjData,
                 io.github.yyan115.opentune.ui.LocalTrackActions provides io.github.yyan115.opentune.ui.TrackActions(playNext = { model.queue(it, true) }, addToQueue = { model.queue(it) })) { OpenTuneRoot(model, state) } }
         }
     }

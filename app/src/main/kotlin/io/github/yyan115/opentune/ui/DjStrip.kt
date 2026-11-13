@@ -77,9 +77,18 @@ private fun DjHeader(ui: DjUi, tint: Color) {
     val keys = listOfNotNull(ui.keyOut, ui.keyIn)
     val energy = listOfNotNull(ui.energyOut, ui.energyIn).map { "%.0f".format(it) }
     if (tempo.isNotEmpty() || keys.isNotEmpty() || energy.isNotEmpty()) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (tempo.isNotEmpty()) Text(tempo.joinToString("  →  "), fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
+        if (tempo.isNotEmpty()) {
+            // Each tempo blinks at its own beats per minute, so that two songs that do not agree can be seen to disagree.
+            val bpms = listOfNotNull(ui.bpmOut, ui.bpmIn)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                tempo.forEachIndexed { index, text ->
+                    if (index > 0) Text("  →  ", fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
+                    Text(text, Modifier.beatPulse(bpms.getOrNull(index)), fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
+                }
+            }
+        }
         if (tempo.isNotEmpty() && keys.isNotEmpty()) Spacer(Modifier.width(14.dp))
-        if (keys.isNotEmpty()) Text(keys.joinToString("  →  "), fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
+        if (keys.isNotEmpty()) Text(keys.joinToString("  →  ") { keyWithNote(it) }, fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
         if (ui.keyOut != null && ui.keyIn != null) {
             Spacer(Modifier.width(10.dp))
             Text(stringResource(if (ui.keyScore >= .8) R.string.djai_keys_match else if (ui.keyScore >= .5) R.string.djai_keys_near else R.string.djai_keys_clash),

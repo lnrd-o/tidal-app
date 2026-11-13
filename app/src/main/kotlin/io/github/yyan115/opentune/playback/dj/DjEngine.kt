@@ -104,6 +104,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     /** The match that the choice saw for the song that it left in the next place, by song, and the song for which another has been chosen already. */
     private val choiceMatch = HashMap<String, Double>()
     private var rechosenFor: String? = null
+    /** The incoming song whose match for the mix was logged last. */
+    private var checkedFor: String? = null
     /** The energies of the songs that played last, the oldest first, for the arc of the set. */
     private val played = ArrayDeque<Double>()
     private var state = State.OFF
@@ -584,14 +586,18 @@ val measured = profiles[key]
         val end = pos + (remaining / 1000.0 - END_BIAS_SECONDS) * ringOut.rate
         val first = ringIn.oldest().toDouble() + ringIn.rate * 0.1
         var chosen = MixPlanner.decide(summaryOut, summaryIn, ringOut.rate, ringIn.rate)
-        android.util.Log.i("OpenTune", "D'JAI match for the mix %.0f%% (tempo %.2f, key %.2f, energy %.2f, groove %s), at the choice %s".format(chosen.match * 100, chosen.tempoScore,
+        if (checkedFor != incomingId) android.util.Log.i("OpenTune", "D'JAI match for the mix %.0f%% (tempo %.2f, key %.2f, energy %.2f, groove %s), at the choice %s".format(chosen.match * 100, chosen.tempoScore,
             chosen.keyScore, chosen.energyScore, chosen.grooveScore?.let { "%.2f".format(it) } ?: "unknown", incomingId?.let { choiceMatch[it] }?.let { "%.0f%%".format(it * 100) } ?: "unknown"))
         // A mix whose match is low, with what is known now, is given another song when there is time and a better one: it must be a good mix.
-        if (chosen.match < options.minMatch && rechosenFor != itemId && remaining > RECHOOSE_MS && rechoose(a, summaryOut, chosen.match, ringOut.rate)) {
+        checkedFor = incomingId
+        if (chosen.match < options.minMatch && rechosenFor != itemId && remaining > RECHOOSE_MS) {
+            // The songs ahead are looked at again once for each song, whether or not a better one is found.
             rechosenFor = itemId
-            abort("a better song")
-            attempted = null
-            return
+            if (rechoose(a, summaryOut, chosen.match, ringOut.rate)) {
+                abort("a better song")
+                attempted = null
+                return
+            }
         }
         var found: MixPlan? = null
         if (chosen.kind == MixKind.BEAT) {
@@ -708,6 +714,9 @@ val measured = profiles[key]
         val idle = state == State.IDLE
         val out = if (idle) analyzers[DjMix.sessionSlot] else analyzers[outSlot]
         val inn = analyzers[inSlot]
+        val slotOut = if (idle) DjMix.sessionSlot else outSlot
+        DjMix.gridOut = out.beat?.let { DjMix.LiveGrid(slotOut, it.anchorSample, it.periodSamples, out.rate) }
+        DjMix.gridIn = if (idle) null else inn.beat?.let { DjMix.LiveGrid(inSlot, it.anchorSample, it.periodSamples, inn.rate) }
         val phase = when (state) {
             State.OFF -> DjPhase.OFF
             State.IDLE -> DjPhase.WAITING

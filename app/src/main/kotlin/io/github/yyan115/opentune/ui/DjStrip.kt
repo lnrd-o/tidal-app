@@ -83,7 +83,11 @@ private fun DjHeader(ui: DjUi, tint: Color) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 tempo.forEachIndexed { index, text ->
                     if (index > 0) Text("  →  ", fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
-                    Text(text, Modifier.beatPulse(bpms.getOrNull(index)), fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
+                    // The song that plays blinks on its own beats. The song that comes in does so once the mix plays it, and keeps the tempo on the clock before.
+                    val incoming = index == 1 || ui.bpmOut == null
+                    val live: () -> Double? = if (incoming) { { if (DjMix.mixer.mixing) DjMix.beatPhase(DjMix.gridIn) else null } }
+                        else { { DjMix.beatPhase(DjMix.gridOut) } }
+                    Text(text, Modifier.beatPulse(bpms.getOrNull(index), phase = live), fontFamily = AppFonts.mono, fontSize = 11.sp, color = tint.copy(alpha = .8f))
                 }
             }
         }

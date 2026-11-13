@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
             val model: MainViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             val djKnown by io.github.yyan115.opentune.playback.dj.DjMix.known.collectAsStateWithLifecycle()
+            io.github.yyan115.opentune.ui.BeatClockHost()
             val networkEpoch by (application as OpenTuneApp).networkEpoch.collectAsStateWithLifecycle()
             LaunchedEffect(incomingSearch) { incomingSearch?.let { model.playFromSearch(it); incomingSearch = null } }
             LaunchedEffect(incomingCallback) {

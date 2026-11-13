@@ -79,6 +79,27 @@ object DjMix {
     val streams = arrayOf(Stream(), Stream(), Stream())
     const val ANALYSIS_SLOT = 2
 
+    /** The beat grid of a deck: its first beat and the length of a beat, in frames of the ring of [slot]. */
+    class LiveGrid(val slot: Int, val anchor: Double, val period: Double, val rate: Int)
+
+    /** The grids of the song that plays and of the song that comes in, for the blink of their tempos. The engine writes them on each tick. */
+    @Volatile var gridOut: LiveGrid? = null
+    @Volatile var gridIn: LiveGrid? = null
+
+    /** The time from the mixer reading a frame to the frame being heard: the buffer of the output and of the device, roughly. */
+    private const val HEARD_LATER_SECONDS = 0.1
+
+    /**
+     * Where the music that is heard now is in its beat, from 0 at a beat to 1 just before the next, by the grid [grid] and the position of its deck in the
+     * mixer. Null when the deck is not heard: no grid, or the mixer is not playing.
+     */
+    fun beatPhase(grid: LiveGrid?): Double? {
+        if (grid == null || !routing) return null
+        val heard = mixer.position(grid.slot) - HEARD_LATER_SECONDS * grid.rate
+        val beats = (heard - grid.anchor) / grid.period
+        return beats - kotlin.math.floor(beats)
+    }
+
     /** What D'JAI has kept about a song: its tempo, key and energy when known, and whether its cue points are kept. */
     class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean)
 

@@ -15,7 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-class LibraryStore(context: Context, databaseName: String = "library.db") : SQLiteOpenHelper(context, databaseName, null, 8) {
+class LibraryStore(context: Context, databaseName: String = "library.db") : SQLiteOpenHelper(context, databaseName, null, 9) {
     private val revision = MutableStateFlow(0L)
     val changes = revision.asStateFlow()
     private val cueRevision = MutableStateFlow(0L)
@@ -60,13 +60,19 @@ class LibraryStore(context: Context, databaseName: String = "library.db") : SQLi
         if (oldVersion < 6) createRepeatTables(db)
         if (oldVersion < 7) createDownloadFileTables(db)
         if (oldVersion < 8) createCueTables(db)
+        else if (oldVersion < 9) {
+            // Version 8 kept one cue point for each moment, and none of the verses, choruses, bridges and peaks that are found now. Two can share a moment,
+            // so the kind is part of the key. The cue points are only what was found in the songs, so they are found again, the next time a song is heard.
+            db.execSQL("DROP TABLE cue_points")
+            createCueTables(db)
+        }
     }
 
     /** A file on the device is known by the document it came from. [version] says how it was read, [direct] says that the listener added it by hand. */
     /** The audio files that downloads became, by the key of the file. A folder scan leaves these files out, because their tracks are known. */
     /** The cue points that D'JAI found in a song: its drop, breaks and outro, in milliseconds from the start. */
     private fun createCueTables(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE cue_points (track_id TEXT NOT NULL, at_ms INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(track_id, at_ms))")
+        db.execSQL("CREATE TABLE cue_points (track_id TEXT NOT NULL, at_ms INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(track_id, at_ms, kind))")
     }
 
     /** Removes the cue points of all songs. */

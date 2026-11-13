@@ -425,13 +425,13 @@ private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent:
             enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
             thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },
             track = { SliderDefaults.Track(it, Modifier.height(2.dp), colors = colors, thumbTrackGapSize = 0.dp, drawStopIndicator = null, trackInsideCornerSize = 0.dp) }, colors = colors)
-        // Pins above the line: a small square on a thin stem for each cue point. A drop is white, the others are fainter.
+        // Pins above the line: a small square on a thin stem for each cue point. The drop, the chorus and the peak are bright, the others fainter.
         if (cues.isNotEmpty() && duration > 0) Canvas(Modifier.matchParentSize()) {
             val edge = 5.dp.toPx()
             val span = size.width - 2 * edge
             for (cue in cues) {
                 val x = edge + (cue.atMs.toFloat() / duration).coerceIn(0f, 1f) * span
-                val color = if (cue.kind == CueKind.DROP) accent else Color.White.copy(alpha = .55f)
+                val color = if (cue.kind == CueKind.DROP || cue.kind == CueKind.CHORUS || cue.kind == CueKind.PEAK) accent else Color.White.copy(alpha = .55f)
                 drawRect(color, Offset(x - .5.dp.toPx(), 5.dp.toPx()), Size(1.dp.toPx(), 7.dp.toPx()))
                 drawRect(color, Offset(x - 2.dp.toPx(), 2.dp.toPx()), Size(4.dp.toPx(), 4.dp.toPx()))
             }

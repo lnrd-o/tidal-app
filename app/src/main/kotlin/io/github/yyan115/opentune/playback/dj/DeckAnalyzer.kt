@@ -4,6 +4,7 @@ import io.github.yyan115.opentune.core.dj.BarFinder
 import io.github.yyan115.opentune.core.dj.Cue
 import io.github.yyan115.opentune.core.dj.SectionAccumulator
 import io.github.yyan115.opentune.core.dj.SectionDetector
+import io.github.yyan115.opentune.core.dj.Swing
 import io.github.yyan115.opentune.core.dj.BeatAnalysis
 import io.github.yyan115.opentune.core.dj.BeatTracker
 import io.github.yyan115.opentune.core.dj.Energy
@@ -56,6 +57,11 @@ class DeckAnalyzer(
     @Volatile var rate = 0
         private set
     @Volatile private var restartAt = -1L
+    /** Where the off-beat eighth falls in the beat: 0.5 for a straight groove, later for a swung one. Null until it has been read. */
+    @Volatile var swing: Double? = null
+        private set
+    private var swingTick = 0
+
     /** The whole playthrough in slices of half a second, from which the cue points are found. */
     private var sections: SectionAccumulator? = null
     /** The position of the song, in milliseconds, at which the analysis began, or -1 when it is not known. And the ring frame at that moment. */
@@ -76,7 +82,7 @@ class DeckAnalyzer(
     /** Starts the analysis again from [frame] of the ring, for a new track that began without a flush. */
     fun restart(frame: Long) { restartAt = frame }
 
-    private fun clearResults() { sections?.reset(); firstHit = null; beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
+    private fun clearResults() { sections?.reset(); swing = null; swingTick = 0; firstHit = null; beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
 
     private suspend fun loop() {
         var attached: PcmRing? = null
@@ -139,6 +145,8 @@ class DeckAnalyzer(
             val hit = firstHit
             val found = BarFinder.refine(ring, tracked, hit ?: ring.oldest().toDouble(), hit)
             beat = found
+            // The groove is read when it is not known, and now and then after that: it changes little within a song.
+            if (swing == null || ++swingTick % 4 == 0) Swing.measure(ring, found, hit ?: ring.oldest().toDouble())?.let { swing = it }
             // The origin is kept on the newest grid, so that the blocks of 32 beats stay true. It waits for the bar to be known, but not for long.
             val existing = origin
             if (existing == null) { if (hit != null && (found.barKnown || seconds >= 24f)) origin = BarFinder.origin(found, hit) }

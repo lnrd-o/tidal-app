@@ -39,6 +39,8 @@ data class MixPlan(
     val roll: RollPlan? = null,
     /** True when the incoming track enters so that its drop falls on the swap. */
     val dropEntry: Boolean = false,
+    /** An echo that washes the outgoing track out, for a soft transition, or null. */
+    val echo: EchoPlan? = null,
 ) {
     val beats: Int get() = blendBeats + tailBeats
 }
@@ -123,6 +125,8 @@ class TrackSummary(
     val beat: BeatAnalysis?, val camelot: String?, val energy: Double? = null, val origin: Double? = null,
     /** The cue points that are known, as frames of the ring of the deck that plays the track. */
     val cues: List<CueMark> = emptyList(),
+    /** Where the off-beat eighth falls in the beat (0.5 straight, up to 0.67 swung), or null when it is not known. See [Swing]. */
+    val swing: Double? = null,
 )
 
 class MixDecision(
@@ -137,9 +141,16 @@ class MixDecision(
     val tempoScore: Double = 0.2,
     /** The number of beats before the swap that the incoming track is blended in: 32 when the tracks agree well, else 16. */
     val blendBeats: Int = 16,
+    /** How alike the grooves of the two tracks are, from 0 to 1, or null when one of them is not known. */
+    val grooveScore: Double? = null,
 ) {
-    /** How well the two tracks go together, from 0 to 1: tempo 40 percent, key 30 percent, energy 30 percent. */
-    val match: Double get() = 0.4 * tempoScore + 0.3 * keyScore + 0.3 * energyScore
+    /**
+     * How well the two tracks go together, from 0 to 1: tempo 40 percent, key 30 percent, energy 30 percent. When the grooves of both are known they
+     * count for 15 percent, and the rest is shared as 35, 25 and 25.
+     */
+    val match: Double get() =
+        if (grooveScore == null) 0.4 * tempoScore + 0.3 * keyScore + 0.3 * energyScore
+        else 0.35 * tempoScore + 0.25 * keyScore + 0.25 * energyScore + 0.15 * grooveScore
 }
 
 /** A track further down the queue that could be played next, with what is known about it. */
@@ -150,6 +161,12 @@ object MixPlanner {
     const val MIN_MATCH = 0.70
     /** A match of at least this is almost perfect: tempo, key and energy all agree. */
     const val PERFECT_MATCH = 0.90
+    /** A next song with an arc score below this prolongs a plateau, and one with a score at or above [BREAK_SCORE] breaks it. */
+    const val PLATEAU_SCORE = 0.4
+    const val BREAK_SCORE = 0.65
+    /** Two grooves further apart than this (in beats) are not locked on the beat, and those apart by more than [GROOVE_LONG] get the short blend. */
+    const val GROOVE_CLASH = 0.10
+    const val GROOVE_LONG = 0.06
     const val MIN_CONFIDENCE = 0.3f
     const val MAX_TEMPO_CHANGE = 0.06
     /** Two tracks further apart than this on the energy scale of 1 to 10 are not matched on the beat. */
@@ -162,11 +179,19 @@ object MixPlanner {
      * the candidate with the best match takes its place, even if no candidate reaches [MIN_MATCH], as long as it is clearly better.
      * Returns null when there is nothing to choose from.
      */
-    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int): Candidate? {
+    fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null): Candidate? {
         val scored = candidates.map { it to decide(outgoing, it.summary, rateOutgoing, it.rate).match }
         // A next track that has not been listened to yet is not replaced: nothing is known that says it is a bad match.
         val next = scored.firstOrNull { it.first.index == nextIndex } ?: return null
-        if (next.second >= MIN_MATCH) return next.first
+        if (next.second >= MIN_MATCH) {
+            // A next track that goes well but would prolong a plateau of loud or quiet songs gives way to another that goes well and breaks it.
+            if (arc != null && arc.score(next.first.summary.energy) < PLATEAU_SCORE) {
+                val better = scored.filter { it.first.index != nextIndex && it.second >= MIN_MATCH && arc.score(it.first.summary.energy) >= BREAK_SCORE }
+                    .maxByOrNull { 0.6 * it.second + 0.4 * arc.score(it.first.summary.energy) }
+                if (better != null) return better.first
+            }
+            return next.first
+        }
         val best = scored.maxByOrNull { it.second } ?: return null
         return if (best.second <= next.second + 0.02) next.first else best.first
     }
@@ -178,13 +203,16 @@ object MixPlanner {
         val eo = outgoing.energy; val ei = incoming.energy
         val gap = if (eo != null && ei != null) abs(eo - ei) else null
         val energyScore = if (gap == null) 0.5 else (1.0 - gap / 6.0).coerceIn(0.0, 1.0)
+        // A straight groove and a swung one clash even at the same tempo.
+        val swingGap = if (outgoing.swing != null && incoming.swing != null) abs(outgoing.swing - incoming.swing) else null
+        val groove = Swing.score(outgoing.swing, incoming.swing)
         if (a != null && b != null && a.confidence >= MIN_CONFIDENCE && b.confidence >= MIN_CONFIDENCE && a.beatsPerBar == b.beatsPerBar) {
             // The incoming track plays this much faster to bring its beats onto the grid of the outgoing one.
             val speed = (b.periodSamples / rateIncoming) / (a.periodSamples / rateOutgoing)
             val tempoScore = (1.0 - abs(speed - 1.0) / MAX_TEMPO_CHANGE).coerceIn(0.0, 1.0)
-            if (abs(speed - 1.0) <= MAX_TEMPO_CHANGE && (gap == null || gap <= MAX_ENERGY_GAP)) {
-                val blend = if (gap == null || gap <= LONG_BLEND_GAP) 32 else 16
-                return MixDecision(MixKind.BEAT, speed, key, a.bpm, b.bpm, eo, ei, energyScore, tempoScore, blend)
+            if (abs(speed - 1.0) <= MAX_TEMPO_CHANGE && (gap == null || gap <= MAX_ENERGY_GAP) && (swingGap == null || swingGap <= GROOVE_CLASH)) {
+                val blend = if ((gap == null || gap <= LONG_BLEND_GAP) && (swingGap == null || swingGap <= GROOVE_LONG)) 32 else 16
+                return MixDecision(MixKind.BEAT, speed, key, a.bpm, b.bpm, eo, ei, energyScore, tempoScore, blend, groove)
             }
         }
         // No match on the beat. A song at a nearer tempo is still a better neighbour than a far one, so the score is not flat.
@@ -194,7 +222,7 @@ object MixPlanner {
             val nearest = minOf(abs(speed - 1.0), abs(speed / 2 - 1.0), abs(speed * 2 - 1.0))
             soft = 0.2 + 0.3 * (1.0 - nearest / 0.25).coerceIn(0.0, 1.0)
         }
-        return MixDecision(MixKind.SOFT, 1.0, key, a?.bpm, b?.bpm, eo, ei, energyScore, soft, 16)
+        return MixDecision(MixKind.SOFT, 1.0, key, a?.bpm, b?.bpm, eo, ei, energyScore, soft, 16, groove)
     }
 }
 
@@ -224,7 +252,7 @@ object MixScheduler {
     fun schedule(
         outgoing: Int, incoming: Int, decision: MixDecision, a: TrackSummary, b: TrackSummary, rateOutgoing: Int, rateIncoming: Int, outRate: Int,
         posOutgoing: Double, endOutgoing: Double, firstIncoming: Double,
-        roll: Boolean = false, writtenIncoming: Double = Double.POSITIVE_INFINITY,
+        roll: Boolean = false, writtenIncoming: Double = Double.POSITIVE_INFINITY, echo: Boolean = false,
     ): MixPlan? {
         val earliest = posOutgoing + LEAD_SECONDS * rateOutgoing
         val latestEnd = endOutgoing - TAIL_SECONDS * rateOutgoing
@@ -266,7 +294,9 @@ object MixScheduler {
         val span = lengthOut.toDouble() * rateOutgoing / outRate
         val start = latestEnd - span
         if (start < earliest) return null
-        return MixPlan(outgoing, incoming, start, firstIncoming, lengthOut, 1.0, MixKind.SOFT, 8, 8, 0.5)
+        // The echo repeats at three quarters of a beat of the outgoing song when its tempo is known, else at three eighths of a second.
+        val delay = if (gridA != null) (0.75 * gridA.periodSamples * outRate / rateOutgoing).toInt().coerceIn(outRate / 8, outRate * 3 / 2) else outRate * 3 / 8
+        return MixPlan(outgoing, incoming, start, firstIncoming, lengthOut, 1.0, MixKind.SOFT, 8, 8, 0.5, echo = if (echo) EchoPlan(delay) else null)
     }
 
     /** The first phrase boundary (or downbeat, without a known origin) at or after [sample]. */

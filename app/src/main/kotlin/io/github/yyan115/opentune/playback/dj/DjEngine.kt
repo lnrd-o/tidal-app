@@ -10,6 +10,7 @@ import io.github.yyan115.opentune.core.dj.BeatAnalysis
 import io.github.yyan115.opentune.core.dj.Cue
 import io.github.yyan115.opentune.core.dj.CueKind
 import io.github.yyan115.opentune.core.dj.CueMark
+import io.github.yyan115.opentune.core.dj.EnergyArc
 import io.github.yyan115.opentune.core.dj.Candidate
 import io.github.yyan115.opentune.core.dj.KickAligner
 import io.github.yyan115.opentune.core.dj.PcmRing
@@ -92,6 +93,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private var incomingCues: List<Cue> = emptyList()
     /** What the plan of this transition does that is more than a mix, for the strip. */
     private var planEffects = ""
+    /** The energies of the songs that played last, the oldest first, for the arc of the set. */
+    private val played = ArrayDeque<Double>()
     private var state = State.OFF
     private var tick: Job? = null
 
@@ -308,7 +311,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             val done = result.seconds >= SCOUT_SECONDS || System.currentTimeMillis() - scoutSince > SCOUT_TIMEOUT_MS || s.playerError != null
             if (done) {
                 val key = scoutId
-                if (key != null) remember(key, Profile(TrackSummary(result.beat, result.key?.camelot, result.energyIntro ?: result.energyRecent, result.origin), result.rate))
+                if (key != null) remember(key, Profile(TrackSummary(result.beat, result.key?.camelot, result.energyIntro ?: result.energyRecent, result.origin, swing = result.swing), result.rate))
                 endScout()
             }
             return
@@ -362,7 +365,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
                 if (f.size < 8) continue
                 val bpm = f[1].toDoubleOrNull()
                 val beat = if (bpm == null) null else BeatAnalysis(bpm, f[2].toDouble(), 0.0, 0, f[3].toFloat(), f[4].toInt(), false)
-                into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null), f[7].toInt())
+                into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null, swing = f.getOrNull(8)?.toDoubleOrNull()), f[7].toInt())
             }
         }
     }
@@ -387,7 +390,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         for ((id, p) in profiles) {
             val b = p.summary.beat
             lines.add(listOf(id.replace('\t', '_').replace('\n', '_'), b?.bpm?.toString() ?: "-", b?.periodSamples?.toString() ?: "0", b?.confidence?.toString() ?: "0",
-                b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString()).joinToString("\t"))
+                b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString(), p.summary.swing?.toString() ?: "-").joinToString("\t"))
         }
         val file = host.profileFile()
         withContext(Dispatchers.IO) { runCatching { synchronized(this@DjEngine) { file.writeText(lines.joinToString("\n")) } } }
@@ -422,7 +425,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val slot = DjMix.sessionSlot
         val out = analyzers[slot]
         val rate = DjMix.streams[slot].ring?.rate ?: return
-        val outgoing = TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin)
+        val outgoing = TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing)
         val next = a.nextMediaItemIndex
         if (next == C.INDEX_UNSET) return
         // A song that was listened to is scored from what was heard, and one that was not from what the catalogue says.
@@ -433,7 +436,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         android.util.Log.i("OpenTune", "D'JAI scores: " + candidates.joinToString { c ->
             "%s%s %.0f%%".format(if (c.index == next) "*" else "", host.titleOf(a.getMediaItemAt(c.index)), MixPlanner.decide(outgoing, c.summary, rate, c.rate).match * 100)
         })
-        val best = MixPlanner.choose(outgoing, rate, candidates, next) ?: return
+        // The songs that played last shape the choice: a run of loud songs, or of quiet ones, gives way to one that breaks it.
+        val arc = EnergyArc(played.toList() + listOfNotNull(outgoing.energy))
+        val best = MixPlanner.choose(outgoing, rate, candidates, next, arc) ?: return
         val match = MixPlanner.decide(outgoing, best.summary, rate, best.rate).match
         if (best.index != next) {
             promote(a, best.index)
@@ -511,8 +516,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             .map { CueMark(it.kind, ringOut.written + (it.atMs - a.currentPosition) * ringOut.rate / 1000.0) } else emptyList()
         val inCues = incomingCues.filter { it.atMs >= incomingStartMs }
             .map { CueMark(it.kind, ringIn.discontinuity + (it.atMs - incomingStartMs) * ringIn.rate / 1000.0) }
-        val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin, outCues)
-        val summaryIn = TrackSummary(analysisIn.beat, analysisIn.key?.camelot, analysisIn.energyIntro ?: analysisIn.energyRecent, analysisIn.origin, inCues)
+        val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin, outCues, analysisOut.swing)
+        val summaryIn = TrackSummary(analysisIn.beat, analysisIn.key?.camelot, analysisIn.energyIntro ?: analysisIn.energyRecent, analysisIn.origin, inCues, analysisIn.swing)
         val pos = DjMix.mixer.position(outSlot)
         // The pointer of the mixer trails the audible position by a few hundred milliseconds, so the end is placed a little early.
         val end = pos + (remaining / 1000.0 - END_BIAS_SECONDS) * ringOut.rate
@@ -530,12 +535,12 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         }
         if (found == null) {
             chosen = MixDecision(MixKind.SOFT, 1.0, chosen.keyScore, chosen.bpmOutgoing, chosen.bpmIncoming, chosen.energyOutgoing, chosen.energyIncoming, chosen.energyScore, 0.2, 16)
-            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first) ?: return
+            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, echo = effects) ?: return
         } else {
             found = lockKicks(found, summaryOut.beat!!, summaryIn.beat!!, ringOut, ringIn)
         }
         plan = found; decision = chosen
-        planEffects = listOfNotNull(if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null,
+        planEffects = listOfNotNull(if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null, if (found.echo != null) "ECHO" else null,
             if (outCues.any { it.kind == CueKind.OUTRO }) "OUTRO" else null).joinToString(" ")
         if (planEffects.isNotEmpty()) android.util.Log.i("OpenTune", "D'JAI effects: $planEffects")
         finishedBase = DjMix.mixer.finishedSeq
@@ -576,6 +581,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val b = incoming ?: return
         a.removeListener(watcher); a.removeListener(mirrorOut)
         // The outgoing song has been heard from its start: its cue points are found now and kept for the next time it plays.
+        // The song that just played goes into the history of the set.
+        (decision?.energyOutgoing ?: analyzers[outSlot].energyRecent)?.let { played.addLast(it); while (played.size > EnergyArc.MAX) played.removeFirst() }
         val heardId = itemId
         if (heardId != null && djai && host.cuesOf(heardId).isEmpty()) {
             val found = analyzers[outSlot].cues(a.duration)

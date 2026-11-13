@@ -80,7 +80,7 @@ class Preprocessor(
             val beat = analyzer.beat
             val key = analyzer.key
             val cues = analyzer.cues(duration)
-            val summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin)
+            val summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
             if (beat == null && key == null) return failed
             learn(request.id, summary, analyzer.rate)
             if (cues.isNotEmpty()) saveCues(request.id, cues)

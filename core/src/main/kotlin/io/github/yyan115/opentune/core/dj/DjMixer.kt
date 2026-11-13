@@ -45,6 +45,9 @@ class DjMixer(val outRate: Int = 48_000) {
     /** The filter sweep of a transition: a high-pass on the outgoing track and a low-pass that opens on the incoming one. */
     private val sweepOut = SweepFilter(outRate, highpass = true)
     private val sweepIn = SweepFilter(outRate, highpass = false)
+    /** The echo that washes out the outgoing song in a soft transition, and the frames that it still rings after the transition. */
+    private val echo = EchoTail(outRate)
+    private var echoTail = 0
     /** Tone Lab: studio glue, tape and vinyl, applied to everything that is heard. */
     val elzar = ElZar(outRate)
 
@@ -91,7 +94,7 @@ class DjMixer(val outRate: Int = 48_000) {
     fun setSource(slot: Int, source: RingSource?) = post { val d = decks[slot]; d.source = source; if (source == null) { d.ring = null; d.level = 0f; d.starving = true } }
     fun setGain(slot: Int, gain: Float) = post { decks[slot].gain = gain }
     fun setPrimary(slot: Int) = post { primary = slot }
-    fun setPlan(next: MixPlan?) = post { plan = next; mixFrame = -1; mixing = false; progress = 0f; clearLoops() }
+    fun setPlan(next: MixPlan?) = post { plan = next; mixFrame = -1; mixing = false; progress = 0f; clearLoops(); clearEcho() }
 
     /** Repeats [lengthFrames] frames of the ring of [slot] from [startFrame], for as long as it takes to call [endLoop]. */
     fun setLoop(slot: Int, startFrame: Double, lengthFrames: Double) = post { beginLoop(decks[slot], startFrame, lengthFrames) }
@@ -100,6 +103,8 @@ class DjMixer(val outRate: Int = 48_000) {
     fun endLoop(slot: Int, toShadow: Boolean) = post { endLoop(decks[slot], toShadow) }
 
     private fun clearLoops() { for (d in decks) { d.loopLen = 0.0; d.fadeLeft = 0; d.rollStage = -1 } }
+
+    private fun clearEcho() { echo.reset(); echoTail = 0 }
 
     private fun timeline(d: Deck) = if (d.loopLen > 0.0) d.shadow else d.pos
 
@@ -124,7 +129,7 @@ class DjMixer(val outRate: Int = 48_000) {
         d.loopLen = 0.0
     }
     /** Ends the plan without finishing it. The deck [primarySlot] is heard afterwards. */
-    fun cancel(primarySlot: Int) = post { plan = null; mixFrame = -1; mixing = false; progress = 0f; primary = primarySlot; clearLoops() }
+    fun cancel(primarySlot: Int) = post { plan = null; mixFrame = -1; mixing = false; progress = 0f; primary = primarySlot; clearLoops(); clearEcho() }
 
     fun render(out: FloatArray, frames: Int) {
         while (true) { (commands.poll() ?: break).run() }
@@ -155,6 +160,7 @@ class DjMixer(val outRate: Int = 48_000) {
         mixFrame = 0
         mixing = true
         sweepOut.reset(); sweepIn.reset()
+        p.echo?.let { echo.reset(); echo.configure(it.delayFrames, it.feedback); echoTail = 0 }
         val b = decks[p.incoming]
         refresh(b)
         b.pos = p.startIncoming
@@ -294,6 +300,8 @@ class DjMixer(val outRate: Int = 48_000) {
             if (filters) { sweepOut.setCutoff(MixCurves.highpassHz(middle, p.swap)); sweepIn.setCutoff(MixCurves.lowpassHz(middle, p.swap)) }
             else { sweepOut.setCutoff(0.0); sweepIn.setCutoff(1e9) }
         }
+        // The share of the outgoing song that goes into the echo during this block.
+        val echoSend = if (running) p!!.echo?.send((u0 + u1) / 2) ?: 0.0 else 0.0
         val eqA = eq[if (running) p!!.outgoing else primary]
         val eqB = if (running) eq[p!!.incoming] else null
         val targetA = if (okA) 1f else 0f
@@ -315,6 +323,10 @@ class DjMixer(val outRate: Int = 48_000) {
                         val pl = sweepOut.process(0, eqA.processLeft(xl, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
                         val pr = sweepOut.process(1, eqA.processRight(xr, lerp(g0[0], g1[0], f), lerp(g0[1], g1[1], f), lerp(g0[2], g1[2], f)))
                         l += pl * mix + xl * (1 - mix); r += pr * mix + xr * (1 - mix)
+                        p.echo?.let { plan ->
+                            echo.process((xl * echoSend).toFloat(), (xr * echoSend).toFloat())
+                            l += echo.outLeft * ECHO_WET; r += echo.outRight * ECHO_WET
+                        }
                     }
                 } else if (first.eqBlend > 0f) {
                     // The mix has ended: the deck leaves the equalizer the same way, with its gains at one.
@@ -338,6 +350,11 @@ class DjMixer(val outRate: Int = 48_000) {
                     r += sweepIn.process(1, eqB.processRight(xr, lerp(g0[3], g1[3], f), lerp(g0[4], g1[4], f), lerp(g0[5], g1[5], f)))
                 }
             }
+            if (!running && echoTail > 0) {
+                echo.process(0f, 0f)
+                l += echo.outLeft * ECHO_WET; r += echo.outRight * ECHO_WET
+                echoTail--
+            }
             out[offset + i * 2] = l
             out[offset + i * 2 + 1] = r
         }
@@ -353,7 +370,11 @@ class DjMixer(val outRate: Int = 48_000) {
             progress = (mixFrame.toDouble() / p!!.lengthOut).toFloat().coerceIn(0f, 1f)
             if (mixFrame >= p.lengthOut) {
                 primary = p.incoming; plan = null; mixFrame = -1; mixing = false; progress = 1f
-                decks[p.outgoing].level = 0f; decks[p.outgoing].eqBlend = 0f; clearLoops()
+                decks[p.outgoing].level = 0f; decks[p.outgoing].eqBlend = 0f
+                val ringing = p.echo != null
+                clearLoops()
+                // The echo of the outgoing song goes on after the transition for a few seconds.
+                if (ringing) echoTail = ECHO_TAIL_SECONDS * outRate
                 eq[p.outgoing].reset(); sweepOut.reset(); sweepIn.reset()
                 finishedSeq++
             }
@@ -376,6 +397,9 @@ class DjMixer(val outRate: Int = 48_000) {
         const val CUSHION_SECONDS = 0.12
         const val WARM_SECONDS = 4.0
         private const val SMOOTH = 0.004f
+        /** The level of the echo in the mix, and how long it rings after the transition, in seconds. */
+        private const val ECHO_WET = 0.7f
+        private const val ECHO_TAIL_SECONDS = 4
         /** A jump or the wrap of a loop is faded over about 5 ms at 48 kHz. */
         private const val FADE_FRAMES = 240
         /** The equalizer is moved into or out of in about 20 ms at 48 kHz. */

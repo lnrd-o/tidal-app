@@ -38,7 +38,7 @@ class DjTest {
         env.reset(0)
         env.feed(samples, samples.size)
         val (tail, first) = env.tail(172 * 20)
-        return BeatTracker.analyze(tail, env.timeOf(first), rate)
+        return BeatTracker.analyze(tail, env.timeOf(first), rate, kick = env.lowTail(172 * 20))
     }
 
     @Test fun theTempoOfAClickTrackIsFoundWithinAFewThousandths() {

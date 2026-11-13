@@ -24,6 +24,9 @@ class OnsetEnvelope(val rate: Int) {
     private var hopFill = 0
     private var consumed = 0L
     private var values = FloatArray(8192)
+    /** The onset strength of the kick alone: the same flux, over the bins below about 130 Hz. */
+    private var lowValues = FloatArray(8192)
+    private val lowMax = max(3, (130.0 * Spectrum.SIZE / rate).toInt())
 
     /** The ring frame of the first sample that was fed. */
     var startSample = 0L
@@ -64,17 +67,22 @@ class OnsetEnvelope(val rate: Int) {
     private fun frame() {
         Spectrum.powerSpectrum(window, power, re, im)
         var flux = 0f
+        var lowFlux = 0f
         for (bin in 2..maxBin) {
             val magnitude = sqrt(power[bin]) * (4f / Spectrum.SIZE)
             val v = ln(1f + 800f * magnitude)
             val d = v - previous[bin]
-            if (d > 0f) flux += d
+            if (d > 0f) { flux += d; if (bin <= lowMax) lowFlux += d }
             previous[bin] = v
         }
         if (count == values.size) {
-            if (count >= MAX_FRAMES) { val cut = count / 2; System.arraycopy(values, cut, values, 0, count - cut); count -= cut; dropped += cut }
-            else values = values.copyOf(values.size * 2)
+            if (count >= MAX_FRAMES) {
+                val cut = count / 2
+                System.arraycopy(values, cut, values, 0, count - cut); System.arraycopy(lowValues, cut, lowValues, 0, count - cut)
+                count -= cut; dropped += cut
+            } else { values = values.copyOf(values.size * 2); lowValues = lowValues.copyOf(lowValues.size * 2) }
         }
+        lowValues[count] = lowFlux
         values[count++] = flux
         lastFlux = flux
         onFrame?.invoke(power)
@@ -92,6 +100,9 @@ class OnsetEnvelope(val rate: Int) {
         for (k in from..to) sum += values[k - dropped]
         return sum / (to - from + 1)
     }
+
+    /** The newest [maxFrames] values of the kick alone, from the same frame as the values of [tail]. */
+    fun lowTail(maxFrames: Int): FloatArray = lowValues.copyOfRange(max(0, count - maxFrames), count)
 
     /** The newest [maxFrames] values, and the absolute index of the first of them. */
     fun tail(maxFrames: Int): Pair<FloatArray, Int> {
@@ -128,7 +139,11 @@ class BeatAnalysis(
 
 /** Finds the tempo and the beat grid in an onset envelope with a comb filter: the grid that collects the most onset energy wins. */
 object BeatTracker {
-    fun analyze(envelope: FloatArray, firstSample: Double, rate: Int, minBpm: Double = 70.0, maxBpm: Double = 180.0): BeatAnalysis? {
+    /** The kick must mark a new tempo with at least this much contrast, and with this many times the contrast of the old one, for the tempo to change. */
+    private const val KICK_MIN = 0.4
+    private const val KICK_GAIN = 1.3
+
+    fun analyze(envelope: FloatArray, firstSample: Double, rate: Int, minBpm: Double = 70.0, maxBpm: Double = 180.0, kick: FloatArray? = null): BeatAnalysis? {
         val n = envelope.size
         val fps = rate.toDouble() / OnsetEnvelope.HOP
         if (n < fps * 8) return null
@@ -144,6 +159,10 @@ object BeatTracker {
             if (score > bestScore) { bestScore = score; bestBpm = bpm }
             bpm += 0.5
         }
+
+        // The beats of a song are where its kick falls. The hats and the snares divide a beat, and they can make the tempo look double (or half), so when the
+        // kick is known its pattern decides between a tempo and its double and half.
+        if (kick != null && kick.size == envelope.size) bestBpm = followTheKick(prepare(kick, fps), bestBpm, fps, minBpm, maxBpm)
 
         // Fine: within 1.5 percent of the coarse tempo in steps of 0.02 percent, with a finer phase.
         var bpmFine = bestBpm; var phase = 0.0; var peak = -1.0
@@ -175,6 +194,32 @@ object BeatTracker {
     }
 
     private fun square(x: Double) = x * x
+
+    /**
+     * How much more the kick falls on the beats of a grid of [bpm] than half way between them, in the units of an envelope with a mean of one.
+     * At the right tempo the kick sits on the beats and nothing is half way between them. At double the tempo, half of the beats are empty, and at half the
+     * tempo the beats that the grid skips have kicks half way between its own.
+     */
+    private fun kickContrast(kick: FloatArray, bpm: Double, fps: Double): Double {
+        val period = 60.0 * fps / bpm
+        val (phase, on) = bestPhase(kick, period, 1.0)
+        return on - comb(kick, phase + period / 2, period)
+    }
+
+    /** The tempo, or its double, half or three to two, that the kick of the song marks the best. The one that is found stays unless another is clearly better. */
+    private fun followTheKick(kick: FloatArray, bpm: Double, fps: Double, minBpm: Double, maxBpm: Double): Double {
+        var best = bpm
+        var bestContrast = kickContrast(kick, bpm, fps)
+        // Half and double are the usual mistakes, and three to two (dotted notes and triplets against the beat) the next.
+        for (factor in doubleArrayOf(0.5, 2.0 / 3.0, 0.75, 4.0 / 3.0, 1.5, 2.0)) {
+            val candidate = bpm * factor
+            if (candidate < minBpm || candidate > maxBpm) continue
+            val contrast = kickContrast(kick, candidate, fps)
+            // The kick must be clear at the new tempo, and clearly clearer than at the one that was found.
+            if (contrast >= KICK_MIN && contrast > bestContrast * KICK_GAIN) { best = candidate; bestContrast = contrast }
+        }
+        return best
+    }
 
     /** Removes the slow average, so that only the peaks remain, and scales to a mean of 1. */
     private fun prepare(env: FloatArray, fps: Double): FloatArray {

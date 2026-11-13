@@ -161,4 +161,25 @@ class SetShapeTest {
         assertEquals("but not to a song that does not go well", 1, MixPlanner.choose(outgoing, rate, listOf(next, badMatch), 1, plateau)!!.index)
         assertEquals("and nothing changes without a plateau", 1, MixPlanner.choose(outgoing, rate, listOf(next, breather), 1, EnergyArc(listOf(5.0, 7.0, 4.0, 6.0)))!!.index)
     }
+
+    @Test fun aSongThatIsOnlyGuessedToGoWellDoesNotHoldThePlaceOfOneThatIsKnownTo() {
+        val outgoing = summary(null, energy = 6.0)
+        // The next song is known only from a catalogue: its tempo and key look perfect, and its energy is not known.
+        val guessed = Candidate(1, TrackSummary(BeatAnalysis(120.0, 0.5 * rate, 0.0, 0, 0.9f), "8A", null), rate, verified = false)
+        val known = Candidate(2, summary(null, energy = 6.5), rate)
+        assertEquals("the known song takes the place", 2, MixPlanner.choose(outgoing, rate, listOf(guessed, known), 1)!!.index)
+        // A guess that is the only one stays, as there is nothing better.
+        assertEquals(1, MixPlanner.choose(outgoing, rate, listOf(guessed), 1)!!.index)
+        // A guess is lowered by the penalty, and a known song is not.
+        val g = MixPlanner.decide(outgoing, guessed.summary, rate, rate).match
+        assertTrue("$g", g - MixPlanner.GUESS_PENALTY < MixPlanner.decide(outgoing, known.summary, rate, rate).match)
+    }
+
+    @Test fun aMixThatDoesNotFitOnTheBeatKeepsTheMatchOfThePair() {
+        val d = MixPlanner.decide(summary(null, energy = 6.0), summary(null, energy = 6.5), rate, rate)
+        assertEquals(MixKind.BEAT, d.kind)
+        val soft = MixDecision(MixKind.SOFT, 1.0, d.keyScore, d.bpmOutgoing, d.bpmIncoming, d.energyOutgoing, d.energyIncoming, d.energyScore, d.tempoScore, 16, d.grooveScore)
+        assertEquals("a fallback to soft does not lower the match", d.match, soft.match, 1e-9)
+    }
 }
+

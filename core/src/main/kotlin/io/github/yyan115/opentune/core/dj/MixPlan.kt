@@ -156,8 +156,11 @@ class MixDecision(
         else 0.35 * tempoScore + 0.25 * keyScore + 0.25 * energyScore + 0.15 * grooveScore
 }
 
-/** A track further down the queue that could be played next, with what is known about it. */
-class Candidate(val index: Int, val summary: TrackSummary, val rate: Int)
+/**
+ * A track further down the queue that could be played next, with what is known about it. [verified] is false when it is only known from a catalogue
+ * (a tempo and a key, and no energy or groove): its match is a guess, so it counts for less.
+ */
+class Candidate(val index: Int, val summary: TrackSummary, val rate: Int, val verified: Boolean = true)
 
 object MixPlanner {
     /** A pair of tracks that matches less than this is not mixed if a better one is waiting in the queue. */
@@ -166,6 +169,8 @@ object MixPlanner {
     const val PERFECT_MATCH = 0.90
     /** A next song with an arc score below this prolongs a plateau, and one with a score at or above [BREAK_SCORE] breaks it. */
     const val PLATEAU_SCORE = 0.4
+    /** What a match is lowered by when it is only a guess from a catalogue. */
+    const val GUESS_PENALTY = 0.10
     const val BREAK_SCORE = 0.65
     /** Two grooves further apart than this (in beats) are not locked on the beat, and those apart by more than [GROOVE_LONG] get the short blend. */
     const val GROOVE_CLASH = 0.10
@@ -183,9 +188,15 @@ object MixPlanner {
      * Returns null when there is nothing to choose from.
      */
     fun choose(outgoing: TrackSummary, rateOutgoing: Int, candidates: List<Candidate>, nextIndex: Int, arc: EnergyArc? = null, minMatch: Double = MIN_MATCH): Candidate? {
-        val scored = candidates.map { it to decide(outgoing, it.summary, rateOutgoing, it.rate).match }
+        // A guess counts for less than a measure, so that a song that is only guessed to go well cannot hold the place of one that is known to.
+        val scored = candidates.map { it to decide(outgoing, it.summary, rateOutgoing, it.rate).match - (if (it.verified) 0.0 else GUESS_PENALTY) }
         // A next track that has not been listened to yet is not replaced: nothing is known that says it is a bad match.
         val next = scored.firstOrNull { it.first.index == nextIndex } ?: return null
+        // A next song that is only a guess gives way to one that was listened to and goes at least as well, whatever the guess says.
+        if (!next.first.verified) {
+            val known = scored.filter { it.first.verified && it.first.index != nextIndex && it.second >= minMatch && it.second > next.second }.maxByOrNull { it.second }
+            if (known != null) return known.first
+        }
         if (next.second >= minMatch) {
             // A next track that goes well but would prolong a plateau of loud or quiet songs gives way to another that goes well and breaks it.
             if (arc != null && arc.score(next.first.summary.energy) < PLATEAU_SCORE) {

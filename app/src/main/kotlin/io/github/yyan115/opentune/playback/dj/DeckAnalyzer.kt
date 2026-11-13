@@ -138,7 +138,7 @@ class DeckAnalyzer(
     private fun estimateOnce(ring: PcmRing, e: OnsetEnvelope, keys: KeyDetector, read: Long) {
         val fps = ring.rate.toDouble() / OnsetEnvelope.HOP
         val (tail, first) = e.tail((fps * 20).toInt())
-        BeatTracker.analyze(tail, e.timeOf(first), ring.rate)?.let { tracked ->
+        BeatTracker.analyze(tail, e.timeOf(first), ring.rate, kick = e.lowTail((fps * 20).toInt()))?.let { tracked ->
             // The first drum hit is found once. The grid is then moved onto the kick, and the bar is read from the kick and the snare, so that
             // the phrase starts on bar one and not on whatever drum came first.
             if (firstHit == null) e.head((fps * 24).toInt())?.let { head -> firstHit = PhraseOrigin.detect(head, e.timeOf(0), tracked, ring.rate) }

@@ -101,6 +101,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private var incomingCues: List<Cue> = emptyList()
     /** What the plan of this transition does that is more than a mix, for the strip. */
     private var planEffects = ""
+    /** The match that the choice saw for the song that it left in the next place, by song, and the song for which another has been chosen already. */
+    private val choiceMatch = HashMap<String, Double>()
+    private var rechosenFor: String? = null
     /** The energies of the songs that played last, the oldest first, for the arc of the set. */
     private val played = ArrayDeque<Double>()
     private var state = State.OFF
@@ -465,7 +468,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         // A song that was listened to is scored from what was heard, and one that was not from what the catalogue says.
         val candidates = upcoming(a).mapNotNull { i ->
             val key = a.getMediaItemAt(i).mediaId
-            (profiles[key] ?: online[key]?.let(::provisional))?.let { Candidate(i, if (options.groove) it.summary else it.summary.withoutSwing(), it.rate) }
+val measured = profiles[key]
+            (measured ?: online[key]?.let(::provisional))?.let { Candidate(i, if (options.groove) it.summary else it.summary.withoutSwing(), it.rate, verified = measured != null) }
         }
         android.util.Log.i("OpenTune", "D'JAI scores: " + candidates.joinToString { c ->
             "%s%s %.0f%%".format(if (c.index == next) "*" else "", host.titleOf(a.getMediaItemAt(c.index)), MixPlanner.decide(outgoing, c.summary, rate, c.rate).match * 100)
@@ -479,6 +483,25 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             changedTitle = host.titleOf(a.getMediaItemAt(a.nextMediaItemIndex)); changedMatch = match
             android.util.Log.i("OpenTune", "D'JAI changed the next song for a better match: %.0f%%".format(match * 100))
         } else { changedTitle = null; changedMatch = match }
+        a.getMediaItemAt(a.nextMediaItemIndex).mediaId.let { choiceMatch[it] = match }
+        if (choiceMatch.size > 64) choiceMatch.remove(choiceMatch.keys.first())
+    }
+
+    /**
+     * Looks again for a better next song, with what was read of the outgoing song and of the next one while they decoded. The songs ahead that were listened to
+     * are scored against the outgoing song, and the best one that goes clearly better than [current] takes the place of the next one. Returns whether it did.
+     */
+    private fun rechoose(a: ExoPlayer, outgoing: TrackSummary, current: Double, rate: Int): Boolean {
+        val next = a.nextMediaItemIndex
+        val best = upcoming(a).filter { it != next }.mapNotNull { i ->
+            profiles[a.getMediaItemAt(i).mediaId]?.let { Triple(i, if (options.groove) it.summary else it.summary.withoutSwing(), it.rate) }
+        }.map { (i, summary, r) -> Pair(i, MixPlanner.decide(outgoing, summary, rate, r).match) }
+            .filter { it.second >= maxOf(options.minMatch, current + RECHOOSE_GAIN) }.maxByOrNull { it.second } ?: return false
+        android.util.Log.i("OpenTune", "D'JAI changed the next song: %.0f%% on the mix, %.0f%% for %s".format(current * 100, best.second * 100, host.titleOf(a.getMediaItemAt(best.first))))
+        promote(a, best.first)
+        changedTitle = host.titleOf(a.getMediaItemAt(a.nextMediaItemIndex)); changedMatch = best.second
+        choiceMatch[a.getMediaItemAt(a.nextMediaItemIndex).mediaId] = best.second
+        return true
     }
 
     private fun startPreroll(a: ExoPlayer, next: Int, id: String) {
@@ -550,13 +573,26 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             .map { CueMark(it.kind, ringOut.written + (it.atMs - a.currentPosition) * ringOut.rate / 1000.0) } else emptyList()
         val inCues = incomingCues.filter { it.atMs >= incomingStartMs }
             .map { CueMark(it.kind, ringIn.discontinuity + (it.atMs - incomingStartMs) * ringIn.rate / 1000.0) }
+        // What the listening ahead learned about the song, from more of it than is decoded now, goes first: the choice and the plan then see the same song.
+        val incomingId = b.currentMediaItem?.mediaId
+        val known = incomingId?.let { profiles[it] }?.summary
         val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin, outCues, analysisOut.swing.takeIf { options.groove })
-        val summaryIn = TrackSummary(analysisIn.beat, analysisIn.key?.camelot, analysisIn.energyIntro ?: analysisIn.energyRecent, analysisIn.origin, inCues, analysisIn.swing.takeIf { options.groove })
+        val summaryIn = TrackSummary(analysisIn.beat, known?.camelot ?: analysisIn.key?.camelot, known?.energy ?: (analysisIn.energyIntro ?: analysisIn.energyRecent), analysisIn.origin, inCues,
+            (known?.swing ?: analysisIn.swing).takeIf { options.groove })
         val pos = DjMix.mixer.position(outSlot)
         // The pointer of the mixer trails the audible position by a few hundred milliseconds, so the end is placed a little early.
         val end = pos + (remaining / 1000.0 - END_BIAS_SECONDS) * ringOut.rate
         val first = ringIn.oldest().toDouble() + ringIn.rate * 0.1
         var chosen = MixPlanner.decide(summaryOut, summaryIn, ringOut.rate, ringIn.rate)
+        android.util.Log.i("OpenTune", "D'JAI match for the mix %.0f%% (tempo %.2f, key %.2f, energy %.2f, groove %s), at the choice %s".format(chosen.match * 100, chosen.tempoScore,
+            chosen.keyScore, chosen.energyScore, chosen.grooveScore?.let { "%.2f".format(it) } ?: "unknown", incomingId?.let { choiceMatch[it] }?.let { "%.0f%%".format(it * 100) } ?: "unknown"))
+        // A mix whose match is low, with what is known now, is given another song when there is time and a better one: it must be a good mix.
+        if (chosen.match < options.minMatch && rechosenFor != itemId && remaining > RECHOOSE_MS && rechoose(a, summaryOut, chosen.match, ringOut.rate)) {
+            rechosenFor = itemId
+            abort("a better song")
+            attempted = null
+            return
+        }
         var found: MixPlan? = null
         if (chosen.kind == MixKind.BEAT) {
             // Two loud songs get a loop roll before the swap.
@@ -568,7 +604,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             if (found == null && !short) return
         }
         if (found == null) {
-            chosen = MixDecision(MixKind.SOFT, 1.0, chosen.keyScore, chosen.bpmOutgoing, chosen.bpmIncoming, chosen.energyOutgoing, chosen.energyIncoming, chosen.energyScore, 0.2, 16)
+            // The songs are as alike as they were: a mix that did not fit on the beat is soft, but its match is not lowered.
+            chosen = MixDecision(MixKind.SOFT, 1.0, chosen.keyScore, chosen.bpmOutgoing, chosen.bpmIncoming, chosen.energyOutgoing, chosen.energyIncoming, chosen.energyScore, chosen.tempoScore, 16, chosen.grooveScore)
             found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, echo = options.echo) ?: return
         } else {
             found = lockKicks(found, summaryOut.beat!!, summaryIn.beat!!, ringOut, ringIn)
@@ -694,11 +731,11 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
     private companion object {
         const val TICK_MS = 200L
-        const val PREROLL_MS = 62_000L
+        const val PREROLL_MS = 75_000L
         const val MIN_REMAINING_MS = 34_000L
         const val MIN_TRACK_MS = 90_000L
         const val SOFT_FALLBACK_MS = 38_000L
-        const val READ_SECONDS = 14f
+        const val READ_SECONDS = 18f
         const val END_BIAS_SECONDS = 0.4
         /** A crossfade starts the next track this long before the blend begins. */
         const val CROSSFADE_PREROLL_MS = 9_000L
@@ -721,11 +758,16 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         const val DROP_LEAD_MS = 16_000L
         /** A plan that cannot enter at the drop yet is put off until the outgoing song has this little time left. */
         const val DROP_WAIT_MS = 35_000L
+        /** A mix whose match turns out low is given another song only while the outgoing song has this much time left. */
+        const val RECHOOSE_MS = 48_000L
+        /** The song that replaces a next song with a low match must go at least this much better. */
+        const val RECHOOSE_GAIN = 0.05
         const val DEFAULT_BPM = 124.0
         /** Both songs need this much energy, on the scale of 1 to 10, for a roll. */
         const val ROLL_ENERGY = 5.0
         private const val PROVISIONAL_RATE = 44_100
-        private const val PROFILE_VERSION = "v1"
+        /** The version of the profile file. Version 2 follows the kick for the tempo, so tempos that were kept at double or half are read again. */
+        private const val PROFILE_VERSION = "v2"
         const val MAX_KICK_SHIFT = 0.03
     }
 }

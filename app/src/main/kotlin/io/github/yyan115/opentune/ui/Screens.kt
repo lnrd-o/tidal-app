@@ -396,6 +396,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             { onOpenPage(SettingsPage.Repeats) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.Timer, stringResource(R.string.settings_crossfade), if (settings.crossfadeSeconds == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_crossfade_value, settings.crossfadeSeconds),
             { crossfade = true }) }
+        item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.settings_adapt_color), settings.adaptColor, { value -> vm.settings { it.copy(adaptColor = value) } }, stringResource(R.string.settings_adapt_color_text)) }
         item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.settings_online), stringResource(ONLINE_MODES[settings.onlineData.coerceIn(0, 2)]), { onlineOpen = true }) }
         item { SettingRow(OpenTuneIcons.Download, stringResource(R.string.settings_cache),
             if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }

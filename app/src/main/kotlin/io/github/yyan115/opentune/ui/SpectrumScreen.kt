@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -26,6 +28,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import io.github.yyan115.opentune.R
 
 /**
@@ -33,7 +38,7 @@ import io.github.yyan115.opentune.R
  * Landscape gives a wide, dense analyzer with the track at its side. The screen stays on while it is open, and a swipe down or the back button closes it.
  */
 @Composable
-fun SpectrumScreen(state: AppState, onClose: () -> Unit) {
+fun SpectrumScreen(state: AppState, accent: Color = Color.White, onClose: () -> Unit) {
     val track = state.playback.track
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val window = (LocalView.current.parent as DialogWindowProvider).window
@@ -51,14 +56,20 @@ fun SpectrumScreen(state: AppState, onClose: () -> Unit) {
         }) {
             val landscape = maxWidth > maxHeight
             if (landscape) Row(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                Column(Modifier.width(210.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                // The cover takes the room that the text leaves under it, as a square that is as big as it can be.
+                Column(Modifier.width(220.dp).fillMaxHeight()) {
                     Header(state, track?.title, track?.artist, onClose)
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.BottomStart) {
+                        val side = minOf(maxWidth, maxHeight)
+                        if (!track?.artwork.isNullOrBlank() && side >= 72.dp) AsyncImage(ImageRequest.Builder(LocalContext.current).data(track?.artwork).crossfade(false).build(), null,
+                            Modifier.size(side).testTag("spectrum-artwork"), contentScale = ContentScale.Crop)
+                    }
                 }
-                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxHeight(), columns = 96, rows = 26, fill = true, showScale = true)
+                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxHeight(), color = accent, columns = 96, rows = 26, fill = true, showScale = true)
             } else Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Header(state, track?.title, track?.artist, onClose)
                 Spacer(Modifier.height(24.dp))
-                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxWidth(), columns = 40, rows = 44, fill = true, showScale = true)
+                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxWidth(), color = accent, columns = 40, rows = 44, fill = true, showScale = true)
             }
         }
     }

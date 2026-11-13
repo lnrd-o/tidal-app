@@ -83,9 +83,9 @@ import kotlin.math.absoluteValue
 
 /** The play and pause button: a white square. */
 @Composable
-fun PlayControl(playing: Boolean, buffering: Boolean = false, size: Dp = 72.dp, onClick: () -> Unit) {
+fun PlayControl(playing: Boolean, buffering: Boolean = false, size: Dp = 72.dp, tint: Color = Color.White, onClick: () -> Unit) {
     val description = stringResource(if (playing) R.string.player_pause else R.string.player_play)
-    Box(Modifier.size(size).background(Color.White).clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button }, contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).background(tint).clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button }, contentAlignment = Alignment.Center) {
         if (buffering) CircularProgressIndicator(Modifier.size(size * .35f), color = Color.Black, strokeWidth = 2.dp)
         else Icon(if (playing) OpenTuneIcons.PauseSolid else OpenTuneIcons.PlaySolid, null, Modifier.size(size * .42f), tint = Color.Black)
     }
@@ -171,6 +171,8 @@ fun NowPlayingScreen(
     val haptic = LocalHapticFeedback.current
     val playing = state.playback.playing
     val saved = state.favorites.any { it.id == track.id }
+    // The main colour of the cover, when the listener chose it: it tints the backdrop, the play button, the seek line and the spectrum.
+    val accent = rememberArtworkAccent(track.artwork, state.settings.adaptColor)
 
     fun poke() {}
 
@@ -202,6 +204,7 @@ fun NowPlayingScreen(
                     Modifier.fillMaxSize().blur(60.dp).graphicsLayer { alpha = .5f; scaleX = 1.4f; scaleY = 1.4f }, contentScale = ContentScale.Crop)
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0xAA000000), Color(0xF0090909)))))
+            if (state.settings.adaptColor) Box(Modifier.fillMaxSize().background(accent.copy(alpha = .14f)))
 
             BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                 val landscape = maxWidth > maxHeight && maxWidth >= 480.dp
@@ -260,11 +263,11 @@ fun NowPlayingScreen(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            SeekLine(vm, track.id, state.playback.duration) { poke() }
+                            SeekLine(vm, track.id, state.playback.duration, accent) { poke() }
                             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 ToggleIcon(OpenTuneIcons.Shuffle, stringResource(R.string.player_shuffle), state.playback.shuffle) { vm.toggleShuffle(); poke() }
                                 IconButton(onClick = { vm.previous(); poke() }, Modifier.size(52.dp)) { Icon(OpenTuneIcons.FastRewind, stringResource(R.string.player_previous), Modifier.size(30.dp), tint = Color.White) }
-                                PlayControl(playing, state.playback.buffering, 60.dp) { vm.togglePlay(); poke() }
+                                PlayControl(playing, state.playback.buffering, 60.dp, accent) { vm.togglePlay(); poke() }
                                 IconButton(onClick = { vm.next(); poke() }, Modifier.size(52.dp), enabled = state.playback.nextIndex >= 0) {
                                     Icon(OpenTuneIcons.FastForward, stringResource(R.string.player_next), Modifier.size(30.dp), tint = if (state.playback.nextIndex >= 0) Color.White else Color.White.copy(alpha = .3f))
                                 }
@@ -332,9 +335,9 @@ fun NowPlayingScreen(
         }
     }
 
-    if (path) SignalPathSheet(state.playback.quality, track, playing, onSpectrum = { path = false; spectrum = true },
+    if (path) SignalPathSheet(state.playback.quality, track, playing, accent = accent, onSpectrum = { path = false; spectrum = true },
         elzar = state.settings.takeIf { it.elzar }?.let { Triple(it.elzarGlue, it.elzarTape, it.elzarVinyl) }) { path = false }
-    if (spectrum) SpectrumScreen(state) { spectrum = false }
+    if (spectrum) SpectrumScreen(state, accent) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
     if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }
 }
@@ -404,13 +407,13 @@ private fun UpNext(state: AppState, vm: MainViewModel, onQueue: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
-private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, onTouch: () -> Unit) {
+private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent: Color = Color.White, onTouch: () -> Unit) {
     val position by LocalPlaybackPosition.current.collectAsStateWithLifecycle()
     var seeking by remember(trackId) { mutableStateOf<Float?>(null) }
-    val colors = SliderDefaults.colors(activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = .25f), thumbColor = Color.White)
+    val colors = SliderDefaults.colors(activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = .25f), thumbColor = accent)
     Slider(seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()), { seeking = it; onTouch() }, Modifier.fillMaxWidth().height(32.dp),
         enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
-        thumb = { Box(Modifier.size(10.dp, 14.dp).background(Color.White)) },
+        thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },
         track = { SliderDefaults.Track(it, Modifier.height(2.dp), colors = colors, thumbTrackGapSize = 0.dp, drawStopIndicator = null, trackInsideCornerSize = 0.dp) }, colors = colors)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(formatDuration(seeking?.toLong() ?: position), fontFamily = AppFonts.mono, fontSize = 11.sp, color = Color.White.copy(alpha = .7f))

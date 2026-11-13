@@ -172,7 +172,7 @@ private fun khz(hz: Int): String = (hz / 1000.0).let { if (abs(it - it.roundToIn
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
-fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onSpectrum: () -> Unit = {}, elzar: Triple<Int, Int, Int>? = null, onClose: () -> Unit) {
+fun SignalPathSheet(label: String, track: Track?, playing: Boolean, accent: Color = Color.White, onSpectrum: () -> Unit = {}, elzar: Triple<Int, Int, Int>? = null, onClose: () -> Unit) {
     val live by rememberLive()
     val output by rememberOutput()
     val source = SourceReadout.from(label)
@@ -253,7 +253,7 @@ fun SignalPathSheet(label: String, track: Track?, playing: Boolean, onSpectrum: 
                 Text(stringResource(R.string.path_fullscreen).uppercase(), Modifier.border(1.dp, Color.White.copy(alpha = .35f), RectangleShape).clickable(role = Role.Button) { onSpectrum() }.padding(horizontal = 8.dp, vertical = 4.dp),
                     fontFamily = AppFonts.body, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Medium, color = Color.White)
             }
-            SpectrumAnalyzer(playing, Modifier.fillMaxWidth())
+            SpectrumAnalyzer(playing, Modifier.fillMaxWidth(), color = accent)
         }
     }
 }

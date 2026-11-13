@@ -54,7 +54,7 @@ class ThemePreviewActivity : ComponentActivity() {
             "Where the evening hums and never stops" to 65_500L, "Hold the quiet, let the city fade" to 70_000L, "Night walk, night walk, all the way home" to 75_000L,
             "Streetlight stories, written in chalk" to 80_500L, "Footsteps keeping time on the stone" to 85_000L,
         ).map { LyricLine(it.second, it.first) }, "", "Example")
-        val state = AppState(signedIn = true, settings = Settings(welcomeDone = true, djai = page == "playerdjai" || page == "playeralbum"),
+        val state = AppState(signedIn = true, settings = Settings(welcomeDone = true, djai = page == "playerdjai" || page == "playeralbum", adaptColor = intent.getBooleanExtra("adapt", false)),
             recent = tracks.take(3), favorites = tracks, albums = albums,
             searchQuery = if (page == "search") "Harbour Lights" else "", search = SearchResult(tracks = listOf(tracks[0]), albums = listOf(albums[0])),
             playback = PlaybackState(queue = tracks, index = 0, nextIndex = 1, duration = tracks[0].durationMs, quality = "FLAC · 24-bit · 192 kHz"),

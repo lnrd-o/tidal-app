@@ -4,10 +4,36 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-12
+
+### Added
+
+- D'JAI, an automix: it listens to the songs ahead and mixes into the next one on the beat, matching tempo, key and energy, with a bass swap and a filter sweep. When the next song matches by less than 70 percent it picks a better one from the queue. Albums play as released.
+- Crossfade between songs, from 0 to 12 seconds, without D'JAI.
+- Tone Lab, for the sound: studio glue in seven flavors (also on the centre and the sides apart), console and tube saturation, four kinds of tape, air, a soft clip, and vinyl with its condition and speed. A switch compares with the original at the same loudness.
+- A signal path sheet, opened from the quality badge, and a full-screen spectrum analyzer in portrait and landscape. In landscape it shows the artwork.
+- An adjustable audio cache for the songs that were listened to, with its size, its use and a button to clear it. D'JAI remembers what it learned about songs between sessions.
+- Online song data: D'JAI can take the tempo and the key from TIDAL, and the tempo from Deezer, so that it can pick a better next song sooner.
+- A switch that colours the player and the spectrum with the main colour of the cover.
+- Twelve layouts for sharing a song to an Instagram story, three of them with the release date and the credits.
+- Swipe a song to the right to play it next, to the left to add it to the queue, and press it for the menu. The sleep timer fades out over twelve seconds. A press on the artwork shows the credits.
+- A layout for tablets and wide screens, and a report of the last crash that can be shared.
+
 ### Changed
 
 - The update check ignores test versions, such as 0.7.1-rc1, so only a published release is offered.
 - When TIDAL stops accepting the app, a listener who is signed in sees that message at once and stays signed in, in place of a message about an expired session.
+- A new look: square corners, a dark monochrome theme, the DM Sans font and a player that is driven by gestures. The app is now called MyTidal.
+- The player in landscape keeps its text and controls under the top bar and scrolls when the D'JAI strip is open.
+- The page title is left out in landscape, to leave room for the list.
+
+### Fixed
+
+- The app no longer crashes on Settings and on the library on phones that report no locale, such as some that run Android apps through HarmonyOS.
+
+### Removed
+
+- Adding audio files from the device. Downloads from TIDAL stay.
 
 ## [0.7.0] - 2026-11-08
 

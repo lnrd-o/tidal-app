@@ -1,0 +1,2 @@
+- D'JAI, an automix: it listens to the songs ahead and mixes into the next one on the beat, matching tempo, key and energy, with a bass swap and a filter sweep. When the next song matches by less than 70 percent it picks a better one from the queue. Albums play as released.
+- Crossfade between songs, from 0 to 12 seconds, without D'JAI.

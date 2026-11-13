@@ -65,7 +65,6 @@ fun SpectrumAnalyzer(
                     System.arraycopy(fresh, 0, target, 0, columns)
                     if (styleNow != SpectrumStyle.Blocks) {
                         System.arraycopy(samples, samples.size - data.wave.size, data.wave, 0, data.wave.size)
-                        AudioSpectrum.latestStereo(data.left, data.right, data.wave.size)
                     }
                     // The highest bin clearly above the noise floor, held for a moment so that the readout does not flicker.
                     var top = 0

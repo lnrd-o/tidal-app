@@ -160,7 +160,7 @@ class DjOutput {
             track.play()
             while (running) {
                 DjMix.mixer.render(buffer, chunk)
-                if (AudioSpectrum.enabled) for (i in 0 until chunk) { AudioSpectrum.write((buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f, rate); AudioSpectrum.writeStereo(buffer[i * 2], buffer[i * 2 + 1]) }
+                if (AudioSpectrum.enabled) for (i in 0 until chunk) AudioSpectrum.write((buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f, rate)
                 if (track.write(buffer, 0, buffer.size, AudioTrack.WRITE_BLOCKING) < 0) break
             }
         } finally {

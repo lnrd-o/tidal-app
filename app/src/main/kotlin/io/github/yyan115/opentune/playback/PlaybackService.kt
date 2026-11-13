@@ -623,4 +623,6 @@ private fun io.github.yyan115.opentune.data.Settings.toElZarConfig() = io.github
     vinylCondition = io.github.yyan115.opentune.core.dj.VinylCondition.entries.getOrElse(elzarVinylCondition) { io.github.yyan115.opentune.core.dj.VinylCondition.WORN },
     vinylFast = elzarVinylFast, console = elzarConsole / 100f, tube = elzarTube / 100f, air = elzarAir / 100f, clip = elzarClip / 100f,
     midSide = elzarMidSide, bypass = elzarBypass,
+    voice = if (elzarFlavor == 0) io.github.yyan115.opentune.core.dj.Voice.entries.getOrElse(elzarVoice) { io.github.yyan115.opentune.core.dj.Voice.ORIGINAL } else io.github.yyan115.opentune.core.dj.Voice.ORIGINAL,
+    voiceA = elzarVoiceValues.getOrElse(elzarVoice * 3 - 3) { 0 } / 100f, voiceB = elzarVoiceValues.getOrElse(elzarVoice * 3 - 2) { 0 } / 100f, voiceC = elzarVoiceValues.getOrElse(elzarVoice * 3 - 1) { 0 } / 100f,
 )

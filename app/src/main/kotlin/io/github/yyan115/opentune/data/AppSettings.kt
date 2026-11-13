@@ -63,6 +63,9 @@ data class Settings(
     val elzarAir: Int = 0,
     val elzarClip: Int = 0,
     val elzarMidSide: Boolean = false,
+    /** The voice of the studio bus (0 is the original) and the three amounts of each voice, from 0 to 100. */
+    val elzarVoice: Int = 0,
+    val elzarVoiceValues: List<Int> = listOf(40, 50, 60, 40, 40, 30, 50, 50, 30),
     /** Plays the original at the loudness of the processed sound. */
     val elzarBypass: Boolean = false,
     /** Downloads a track when it is saved with the heart button. At most one of [downloadSaved] and [downloadPlayed] is on. */
@@ -107,6 +110,8 @@ class AppSettings(context: Context) {
         elzarVinylFast = preferences.getBoolean("elzarVinylFast", false), elzarConsole = preferences.getInt("elzarConsole", 0).coerceIn(0, 100),
         elzarTube = preferences.getInt("elzarTube", 0).coerceIn(0, 100), elzarAir = preferences.getInt("elzarAir", 0).coerceIn(0, 100),
         elzarClip = preferences.getInt("elzarClip", 0).coerceIn(0, 100), elzarMidSide = preferences.getBoolean("elzarMidSide", false),
+        elzarVoice = preferences.getInt("elzarVoice", 0).coerceIn(0, 3),
+        elzarVoiceValues = (preferences.getString("elzarVoiceValues", null)?.split(",")?.mapNotNull { it.toIntOrNull()?.coerceIn(0, 100) }?.takeIf { it.size == 9 } ?: listOf(40, 50, 60, 40, 40, 30, 50, 50, 30)),
         elzarBypass = preferences.getBoolean("elzarBypass", false),
         // The option that kept saved tracks offline became the download of saved tracks.
         downloadSaved = preferences.getBoolean("downloadSaved", preferences.getBoolean("keepFavoritesOffline", false)),
@@ -126,7 +131,7 @@ class AppSettings(context: Context) {
             .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putString("appTheme", next.appTheme).putString("lyricStyle", next.lyricStyle).putString("spectrumStyle", next.spectrumStyle).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
             .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)
             .putInt("elzarConsole", next.elzarConsole).putInt("elzarTube", next.elzarTube).putInt("elzarAir", next.elzarAir).putInt("elzarClip", next.elzarClip)
-            .putBoolean("elzarMidSide", next.elzarMidSide).putBoolean("elzarBypass", next.elzarBypass)
+            .putBoolean("elzarMidSide", next.elzarMidSide).putInt("elzarVoice", next.elzarVoice).putString("elzarVoiceValues", next.elzarVoiceValues.joinToString(",")).putBoolean("elzarBypass", next.elzarBypass)
             .putBoolean("downloadSaved", next.downloadSaved).putBoolean("downloadPlayed", next.downloadPlayed).remove("keepFavoritesOffline").putBoolean("scrobble", next.scrobble)
             .putString("scrobbleServer", next.scrobbleServer).putBoolean("welcomeDone", next.welcomeDone).putBoolean("autoplay", next.autoplay)
             .putInt("avoidRepeatHours", next.avoidRepeatHours).putBoolean("checkUpdates", next.checkUpdates).putBoolean("setupPending", next.setupPending).apply()

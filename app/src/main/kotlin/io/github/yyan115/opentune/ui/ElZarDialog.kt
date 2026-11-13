@@ -41,7 +41,13 @@ fun ElZarDialog(settings: Settings, onChange: ((Settings) -> Settings) -> Unit, 
             Toggle(R.string.elzar_bypass, R.string.elzar_bypass_text, settings.elzarBypass, settings.elzar) { value -> onChange { it.copy(elzarBypass = value) } }
 
             Chips(R.string.elzar_flavor, flavorNames, flavorHints, settings.elzarFlavor, settings.elzar) { value -> onChange { it.copy(elzarFlavor = value) } }
+            // The voices belong to the studio bus. One that is not the original opens its own settings.
+            if (settings.elzarFlavor == 0) {
+                Chips(R.string.elzar_voice, voiceNames, voiceHints, settings.elzarVoice, settings.elzar) { value -> onChange { it.copy(elzarVoice = value) } }
+                androidx.compose.animation.AnimatedVisibility(settings.elzarVoice != 0) { VoicePanel(settings, onChange) }
+            }
             Stage(R.string.elzar_glue, R.string.elzar_glue_text, settings.elzarGlue, settings.elzar) { value -> onChange { it.copy(elzarGlue = value) } }
+            if (settings.elzar && settings.elzarGlue > 0) KneePlot(io.github.yyan115.opentune.core.dj.Flavor.entries.getOrElse(settings.elzarFlavor) { io.github.yyan115.opentune.core.dj.Flavor.STUDIO }, settings.elzarGlue / 100f)
             Toggle(R.string.elzar_midside, R.string.elzar_midside_text, settings.elzarMidSide, settings.elzar) { value -> onChange { it.copy(elzarMidSide = value) } }
             Stage(R.string.elzar_console, R.string.elzar_console_text, settings.elzarConsole, settings.elzar) { value -> onChange { it.copy(elzarConsole = value) } }
             Stage(R.string.elzar_tube, R.string.elzar_tube_text, settings.elzarTube, settings.elzar) { value -> onChange { it.copy(elzarTube = value) } }
@@ -82,11 +88,37 @@ private fun Stage(title: Int, hint: Int, value: Int, enabled: Boolean, onValue: 
 
 private val flavorNames = intArrayOf(R.string.flavor_studio, R.string.flavor_opto, R.string.flavor_fet, R.string.flavor_vca, R.string.flavor_varimu, R.string.flavor_diode, R.string.flavor_parallel)
 private val flavorHints = intArrayOf(R.string.flavor_studio_text, R.string.flavor_opto_text, R.string.flavor_fet_text, R.string.flavor_vca_text, R.string.flavor_varimu_text, R.string.flavor_diode_text, R.string.flavor_parallel_text)
+private val voiceNames = intArrayOf(R.string.voice_original, R.string.voice_space, R.string.voice_ambience, R.string.voice_wide)
+private val voiceHints = intArrayOf(R.string.voice_original_text, R.string.voice_space_text, R.string.voice_ambience_text, R.string.voice_wide_text)
+private val voiceTitles = intArrayOf(0, R.string.voice_space_settings, R.string.voice_ambience_settings, R.string.voice_wide_settings)
+/** The names and the hints of the three amounts of each voice. */
+private val voiceControls = arrayOf(
+    emptyArray(),
+    arrayOf(R.string.voice_space_a to R.string.voice_space_a_text, R.string.voice_space_b to R.string.voice_space_b_text, R.string.voice_space_c to R.string.voice_space_c_text),
+    arrayOf(R.string.voice_amb_a to R.string.voice_amb_a_text, R.string.voice_amb_b to R.string.voice_amb_b_text, R.string.voice_amb_c to R.string.voice_amb_c_text),
+    arrayOf(R.string.voice_wide_a to R.string.voice_wide_a_text, R.string.voice_wide_b to R.string.voice_wide_b_text, R.string.voice_wide_c to R.string.voice_wide_c_text),
+)
 private val tapeNames = intArrayOf(R.string.tape_studio, R.string.tape_vintage, R.string.tape_cassette, R.string.tape_worn)
 private val tapeHints = intArrayOf(R.string.tape_studio_text, R.string.tape_vintage_text, R.string.tape_cassette_text, R.string.tape_worn_text)
 private val vinylNames = intArrayOf(R.string.vinyl_new, R.string.vinyl_worn, R.string.vinyl_dusty)
 private val vinylHints = intArrayOf(R.string.vinyl_new_text, R.string.vinyl_worn_text, R.string.vinyl_dusty_text)
 private val speedNames = intArrayOf(R.string.vinyl_33, R.string.vinyl_45)
+
+/** The settings of the voice that is chosen, in a panel of their own that opens under the choice. */
+@Composable
+private fun VoicePanel(settings: Settings, onChange: ((Settings) -> Settings) -> Unit) {
+    val voice = settings.elzarVoice.coerceIn(1, 3)
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, Color.White.copy(alpha = .18f)).padding(12.dp)) {
+        Text(stringResource(voiceTitles[voice]).uppercase(), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.4.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        for (i in 0 until 3) {
+            val (title, hint) = voiceControls[voice][i]
+            val at = (voice - 1) * 3 + i
+            Stage(title, hint, settings.elzarVoiceValues.getOrElse(at) { 0 }, settings.elzar) { value ->
+                onChange { s -> s.copy(elzarVoiceValues = s.elzarVoiceValues.toMutableList().also { list -> list[at] = value }) }
+            }
+        }
+    }
+}
 
 /** A choice as square chips, with a line that says how the chosen one sounds. */
 @OptIn(ExperimentalLayoutApi::class)

@@ -67,6 +67,9 @@ data class ElZarConfig(
     val midSide: Boolean = false,
     /** Hear the music without the processing, at the same loudness. */
     val bypass: Boolean = false,
+    /** The voice of the studio bus and its three amounts, from 0 to 1. */
+    val voice: Voice = Voice.ORIGINAL,
+    val voiceA: Float = 0f, val voiceB: Float = 0f, val voiceC: Float = 0f,
 )
 
 /**
@@ -99,17 +102,24 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
     var midSide = false
     var bypass = false
 
-    val active: Boolean get() = on && (glue > 0f || tape > 0f || vinyl > 0f || console > 0f || tube > 0f || air > 0f || clip > 0f)
+    private val voicing = Voicing(rate)
+
+    val active: Boolean get() = on && (voicing.engaged || glue > 0f || tape > 0f || vinyl > 0f || console > 0f || tube > 0f || air > 0f || clip > 0f)
 
     fun apply(c: ElZarConfig) {
         on = c.on; glue = c.glue; tape = c.tape; vinyl = c.vinyl; flavor = c.flavor; tapeType = c.tapeType
         vinylCondition = c.vinylCondition; vinylFast = c.vinylFast; console = c.console; tube = c.tube; air = c.air; clip = c.clip
         midSide = c.midSide; bypass = c.bypass
+        voicing.configure(c.voice, c.voiceA, c.voiceB, c.voiceC)
         if (!c.on) reset()
     }
 
     /** How much the compressor turns the music down now, in decibels. Read by the screen. */
     @Volatile var reductionDb = 0f
+        private set
+
+    /** The level that the glue reads now, in decibels, for the plot of its knee. */
+    @Volatile var levelDb = -100f
         private set
 
     private var noise = seed or 1
@@ -180,7 +190,7 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
     private var matchTick = 0
 
     fun reset() {
-        glueMain.reset(); glueSide.reset()
+        glueMain.reset(); glueSide.reset(); voicing.clear(); levelDb = -100f
         delayLeft.fill(0f); delayRight.fill(0f); write = 0
         lowLeft = 0.0; lowRight = 0.0; rollLeft = 0.0; rollRight = 0.0; popLeft = 0; reductionDb = 0f; dropLeft = 0
         consoleLowLeft = 0.0; consoleLowRight = 0.0; dcLeft = 0.0; dcRight = 0.0; airLeft = 0.0; airRight = 0.0
@@ -209,6 +219,7 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
                     l = centre + sides; r = centre - sides
                 } else { compress(l, r, glueSettings, glueMain, 0.0); l = outLeft; r = outRight }
             }
+            if (voicing.engaged) { voicing.process(l, r); l = voicing.outLeft; r = voicing.outRight }
             if (console > 0f) { console(l, r); l = outLeft; r = outRight }
             if (tube > 0f) { tube(l, r); l = outLeft; r = outRight }
             if (tape > 0f) { tape(l, r); l = outLeft; r = outRight }
@@ -237,20 +248,7 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
     }
 
     /** The gain reduction in decibels (zero or above) that a level of [levelDb] calls for. */
-    internal fun reductionFor(levelDb: Double, s: GlueSettings): Double {
-        val over = levelDb - s.threshold
-        val slope = 1.0 - 1.0 / s.ratio
-        if (s.variableMu) {
-            // The ratio starts at one and grows with the level, over a width of 18 dB: the knee of a variable-gain tube.
-            val width = 18.0
-            return when { over <= 0.0 -> 0.0; over < width -> 0.5 * slope * over * over / width; else -> slope * (over - width / 2) }
-        }
-        return when {
-            over <= -s.knee / 2 -> 0.0
-            s.knee > 0.0 && over < s.knee / 2 -> slope * (over + s.knee / 2).pow(2) / (2 * s.knee)
-            else -> slope * over
-        }
-    }
+    internal fun reductionFor(levelDb: Double, s: GlueSettings): Double = s.reductionAt(levelDb)
 
     private fun compress(l: Float, r: Float, s: GlueSettings, st: GlueState, boostDb: Double) {
         val peak = max(abs(l), abs(r))
@@ -260,6 +258,7 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
             // The level is read at a control rate, 16 samples at a time. RMS gets 3 dB added, so that a sine reads as its peak.
             val level = (if (s.rms) 10.0 * log10(max(st.power, 1e-12)) + 3.0 else 20.0 * log10(max(st.peakWindow.toDouble(), 1e-6))) + boostDb
             st.peakWindow = 0f
+            if (st === glueMain) levelDb = level.toFloat()
             val target = reductionFor(level, s)
             val tick = 16.0 / rate
             if (target > st.reduction) st.reduction += (target - st.reduction) * (1 - exp(-tick / s.attack))
@@ -269,7 +268,7 @@ class ElZar(private val rate: Int, seed: Int = 0x2A5F) {
                 st.reduction += (target - st.reduction) * (1 - exp(-tick / release))
             }
             // The makeup gain restores the level of ordinary music, so that the effect is felt as glue and not as a drop in volume.
-            val makeup = if (s.makeupFixed >= 0.0) s.makeupFixed else (reductionFor(s.reference, s) * 0.9).coerceIn(0.0, 8.0)
+            val makeup = s.makeupDb()
             st.gainTarget = 10.0.pow((makeup - st.reduction) / 20.0)
             reductionDb = max(glueMain.reduction, if (midSide) glueSide.reduction else 0.0).toFloat()
         }
@@ -489,6 +488,29 @@ internal class GlueSettings(
     /** A fixed makeup gain in decibels, or a negative number to restore the level of ordinary music. */
     val makeupFixed: Double = -1.0,
 ) {
+    /** The gain reduction in decibels (zero or above) that a level of [levelDb] calls for. */
+    fun reductionAt(levelDb: Double): Double {
+        val over = levelDb - threshold
+        val slope = 1.0 - 1.0 / ratio
+        if (variableMu) {
+            // The ratio starts at one and grows with the level, over a width of 18 dB: the knee of a variable-gain tube.
+            val width = 18.0
+            return when { over <= 0.0 -> 0.0; over < width -> 0.5 * slope * over * over / width; else -> slope * (over - width / 2) }
+        }
+        return when {
+            over <= -knee / 2 -> 0.0
+            knee > 0.0 && over < knee / 2 -> slope * (over + knee / 2).pow(2) / (2 * knee)
+            else -> slope * over
+        }
+    }
+
+    /** The makeup gain in decibels. */
+    fun makeupDb(): Double = if (makeupFixed >= 0.0) makeupFixed else (reductionAt(reference) * 0.9).coerceIn(0.0, 8.0)
+
+    /** The level out for a level in, with the blend of wet and dry counted. */
+    fun outputDb(levelDb: Double, reductionDb: Double): Double =
+        levelDb + 20.0 * log10(max((1 - mix) + mix * 10.0.pow((makeupDb() - reductionDb) / 20.0), 1e-6))
+
     companion object {
         fun of(flavor: Flavor, g: Float): GlueSettings {
             val a = g.toDouble()
@@ -503,4 +525,32 @@ internal class GlueSettings(
             }
         }
     }
+}
+
+/** The curve of the glue of a flavor, for a given amount from 0 to 1, for a screen that plots it. */
+fun kneeOf(flavor: Flavor, glue: Float) = KneeCurve(GlueSettings.of(flavor, glue))
+
+/**
+ * The transfer curve of the glue as the listener hears it: the level that comes out for a level that goes in, with the wet and dry sound and the
+ * makeup gain counted. [thresholdDb], [ratio] and [kneeDb] describe the line above the knee, and [angleDegrees] is its slope on a plot with the same
+ * scale on both axes, where 45 degrees is no compression at all.
+ */
+class KneeCurve internal constructor(private val s: GlueSettings) {
+    val thresholdDb: Double get() = s.threshold
+    val ratio: Double get() = s.ratio
+    val kneeDb: Double get() = if (s.variableMu) 18.0 else s.knee
+    val variableMu: Boolean get() = s.variableMu
+    /** Share of the processed sound in the blend, from 0 to 1. */
+    val mix: Double get() = s.mix
+    val makeupDb: Double get() = s.makeupDb()
+    val angleDegrees: Double get() = Math.toDegrees(Math.atan(1.0 / s.ratio))
+
+    /** The gain reduction in decibels that the glue settles at for [inDb]. */
+    fun reductionDb(inDb: Double): Double = s.reductionAt(inDb)
+
+    /** The level that comes out when [inDb] goes in and the glue has settled. */
+    fun outputDb(inDb: Double): Double = s.outputDb(inDb, s.reductionAt(inDb))
+
+    /** The level that comes out for [inDb] when the glue is turning the sound down by [reductionDb] now, which can differ from the settled value in an attack or a release. */
+    fun liveOutputDb(inDb: Double, reductionDb: Double): Double = s.outputDb(inDb, reductionDb)
 }

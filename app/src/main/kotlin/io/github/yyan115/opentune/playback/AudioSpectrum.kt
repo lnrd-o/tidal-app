@@ -48,29 +48,7 @@ object AudioSpectrum {
         return true
     }
 
-    private val left = FloatArray(STEREO)
-    private val right = FloatArray(STEREO)
-    @Volatile private var writtenStereo = 0L
-
-    /** The two channels of one sample, for the views that show where the sound comes from. */
-    internal fun writeStereo(l: Float, r: Float) {
-        val index = writtenStereo
-        val at = (index % STEREO).toInt()
-        left[at] = l; right[at] = r
-        writtenStereo = index + 1
-    }
-
-    /** Copies the latest [count] samples of the left and the right channel. Returns false when fewer have arrived. */
-    fun latestStereo(l: FloatArray, r: FloatArray, count: Int): Boolean {
-        val end = writtenStereo
-        if (end < count) return false
-        for (i in 0 until count) { val at = ((end - count + i) % STEREO).toInt(); l[i] = left[at]; r[i] = right[at] }
-        return true
-    }
-
-    fun clear() { written = 0; writtenStereo = 0 }
-
-    private const val STEREO = 2048
+    fun clear() { written = 0 }
 
     /** The format that the tap was last configured for, for reports of an analyzer that stays empty. */
     @Volatile var configuration = "never configured"
@@ -112,8 +90,6 @@ class SpectrumProcessor(private val slot: Int = 0) : BaseAudioProcessor() {
     private var step = 1
     private var rate = 44_100
     private var sum = 0f
-    private var sumLeft = 0f
-    private var sumRight = 0f
     private var count = 0
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
@@ -125,7 +101,7 @@ class SpectrumProcessor(private val slot: Int = 0) : BaseAudioProcessor() {
         }, inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT, inputAudioFormat.channelCount)
         encoding = inputAudioFormat.encoding; channels = inputAudioFormat.channelCount.coerceAtLeast(1)
         step = (inputAudioFormat.sampleRate / 48_000).coerceAtLeast(1); rate = inputAudioFormat.sampleRate / step
-        sum = 0f; sumLeft = 0f; sumRight = 0f; count = 0
+        sum = 0f; count = 0
         return inputAudioFormat
     }
 
@@ -143,7 +119,7 @@ class SpectrumProcessor(private val slot: Int = 0) : BaseAudioProcessor() {
         var position = buffer.position()
         val scale = 1f / channels
         while (frames-- > 0) {
-            var mixed = 0f; var l = 0f; var r = 0f
+            var mixed = 0f
             for (channel in 0 until channels) {
                 val value = when (encoding) {
                     C.ENCODING_PCM_16BIT -> buffer.getShort(position) * (1f / 32768f)
@@ -152,12 +128,10 @@ class SpectrumProcessor(private val slot: Int = 0) : BaseAudioProcessor() {
                     else -> buffer.getFloat(position)
                 }
                 mixed += value
-                if (channel == 0) l = value; if (channel == 1) r = value
                 position += bytes
             }
-            if (channels == 1) r = l
-            sum += mixed * scale; sumLeft += l; sumRight += r
-            if (++count == step) { AudioSpectrum.write(sum / step, rate); AudioSpectrum.writeStereo(sumLeft / step, sumRight / step); sum = 0f; sumLeft = 0f; sumRight = 0f; count = 0 }
+            sum += mixed * scale
+            if (++count == step) { AudioSpectrum.write(sum / step, rate); sum = 0f; count = 0 }
         }
     }
 

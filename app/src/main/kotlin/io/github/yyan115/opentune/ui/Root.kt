@@ -1,5 +1,6 @@
 package io.github.yyan115.opentune.ui
 
+import androidx.compose.ui.graphics.Color
 import io.github.yyan115.opentune.R
 import androidx.compose.ui.res.stringResource
 import android.content.Intent
@@ -102,7 +103,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     else if (setup) SetupScreen(onContinue = vm::finishSetup)
     else Row(Modifier.fillMaxSize().then(if (landscape) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start)) else Modifier)) {
     if (rail && navigation) OpenTuneRail(destinations, destination, select)
-    Scaffold(modifier = Modifier.weight(1f),
+    Scaffold(modifier = Modifier.weight(1f), containerColor = if (LocalAppTheme.current.look == ThemeLook.Flat) MaterialTheme.colorScheme.background else Color.Transparent,
         topBar = {
             val title = if (settings) stringResource(settingsPageOpen?.title ?: R.string.nav_settings) else state.detail?.let {
                 when (it.type) { ReleaseType.ALBUM -> stringResource(R.string.type_album); ReleaseType.ARTIST -> stringResource(R.string.type_artist); ReleaseType.PLAYLIST -> stringResource(R.string.type_playlist); ReleaseType.MIX -> stringResource(R.string.type_mix); ReleaseType.VIDEO -> stringResource(R.string.type_video); ReleaseType.FOLDER -> stringResource(R.string.type_folder) }
@@ -158,6 +159,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                 settings -> when (settingsPageOpen) {
                     SettingsPage.Repeats -> AvoidRepeatsPage(state, vm)
                     SettingsPage.Djai -> DjaiPage(state, vm)
+                    SettingsPage.Look -> LookPage(state, vm)
                     SettingsPage.Statistics -> StatisticsPage(vm)
                     SettingsPage.Licenses -> LicencesPage { settingsPage = it.name }
                     SettingsPage.Apache, SettingsPage.DmSans, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)

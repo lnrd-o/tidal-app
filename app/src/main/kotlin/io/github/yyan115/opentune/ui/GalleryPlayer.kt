@@ -346,7 +346,7 @@ fun NowPlayingScreen(
 
     if (path) SignalPathSheet(state.playback.quality, track, playing, accent = accent, onSpectrum = { path = false; spectrum = true },
         elzar = state.settings.takeIf { it.elzar }?.let { Triple(it.elzarGlue, it.elzarTape, it.elzarVinyl) }) { path = false }
-    if (spectrum) SpectrumScreen(state, accent) { spectrum = false }
+    if (spectrum) SpectrumScreen(state, accent, onStyle = { next -> vm.settings { it.copy(spectrumStyle = next.id) } }) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
     if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }
 }

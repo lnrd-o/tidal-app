@@ -41,6 +41,10 @@ data class Settings(
     val djListenAhead: Int = 12,
     /** When the song is changed by hand, the whole queue is checked again for a better song to mix with the one that plays. */
     val djRevalidate: Boolean = true,
+    /** The look of the app, of the lyrics and of the spectrum, by id. */
+    val appTheme: String = "dark",
+    val lyricStyle: String = "classic",
+    val spectrumStyle: String = "blocks",
     /** Songs that mix on the beat are ranked first, and the ones that only blend softly go last. */
     val djBeatFirst: Boolean = true,
     /** Shows the tempo, key and energy that D'JAI kept for a song in the lists. A mark shows in any case. */
@@ -97,7 +101,8 @@ class AppSettings(context: Context) {
         elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6), cacheMb = preferences.getInt("cacheMb", 256).coerceIn(0, 8192), adaptColor = preferences.getBoolean("adaptColor", false), djRoll = preferences.getBoolean("djRoll", preferences.getBoolean("djEffects", true)),
         djCues = preferences.getBoolean("djCues", preferences.getBoolean("djEffects", true)), djEcho = preferences.getBoolean("djEcho", preferences.getBoolean("djEffects", true)),
         djFilters = preferences.getBoolean("djFilters", true), djGroove = preferences.getBoolean("djGroove", true), djArc = preferences.getBoolean("djArc", true),
-        djMinMatch = preferences.getInt("djMinMatch", 70).coerceIn(50, 90), djListenAhead = preferences.getInt("djListenAhead", 12).coerceIn(4, 16), djRevalidate = preferences.getBoolean("djRevalidate", true), djBeatFirst = preferences.getBoolean("djBeatFirst", true), showDjData = preferences.getBoolean("showDjData", true), djPulse = preferences.getBoolean("djPulse", true), onlineData = preferences.getInt("onlineData", 1).coerceIn(0, 2),
+        djMinMatch = preferences.getInt("djMinMatch", 70).coerceIn(50, 90), djListenAhead = preferences.getInt("djListenAhead", 12).coerceIn(4, 16), djRevalidate = preferences.getBoolean("djRevalidate", true), djBeatFirst = preferences.getBoolean("djBeatFirst", true),
+        appTheme = preferences.getString("appTheme", "dark") ?: "dark", lyricStyle = preferences.getString("lyricStyle", "classic") ?: "classic", spectrumStyle = preferences.getString("spectrumStyle", "blocks") ?: "blocks", showDjData = preferences.getBoolean("showDjData", true), djPulse = preferences.getBoolean("djPulse", true), onlineData = preferences.getInt("onlineData", 1).coerceIn(0, 2),
         elzarTapeType = preferences.getInt("elzarTapeType", 0).coerceIn(0, 3), elzarVinylCondition = preferences.getInt("elzarVinylCondition", 1).coerceIn(0, 2),
         elzarVinylFast = preferences.getBoolean("elzarVinylFast", false), elzarConsole = preferences.getInt("elzarConsole", 0).coerceIn(0, 100),
         elzarTube = preferences.getInt("elzarTube", 0).coerceIn(0, 100), elzarAir = preferences.getInt("elzarAir", 0).coerceIn(0, 100),
@@ -118,7 +123,7 @@ class AppSettings(context: Context) {
             .remove("theme").remove("colorTheme").remove("equalizer").remove("equalizerLevels").remove("equalizerCustom").remove("equalizerUsesCustom").remove("visualizer")
             .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
             .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor).putInt("cacheMb", next.cacheMb).putBoolean("adaptColor", next.adaptColor).putBoolean("djRoll", next.djRoll).putBoolean("djCues", next.djCues).putBoolean("djEcho", next.djEcho).putBoolean("djFilters", next.djFilters)
-            .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
+            .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putString("appTheme", next.appTheme).putString("lyricStyle", next.lyricStyle).putString("spectrumStyle", next.spectrumStyle).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
             .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)
             .putInt("elzarConsole", next.elzarConsole).putInt("elzarTube", next.elzarTube).putInt("elzarAir", next.elzarAir).putInt("elzarClip", next.elzarClip)
             .putBoolean("elzarMidSide", next.elzarMidSide).putBoolean("elzarBypass", next.elzarBypass)

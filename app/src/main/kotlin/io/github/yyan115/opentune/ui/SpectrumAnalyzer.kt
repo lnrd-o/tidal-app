@@ -42,10 +42,13 @@ fun SpectrumAnalyzer(
     rows: Int = 16,
     fill: Boolean = false,
     showScale: Boolean = false,
+    style: SpectrumStyle = SpectrumStyle.Blocks,
 ) {
+    val styleNow by rememberUpdatedState(style)
     val shown = remember(columns) { FloatArray(columns) }
     val target = remember(columns) { FloatArray(columns) }
     val peaks = remember(columns) { FloatArray(columns) }
+    val data = remember(columns) { VisualData(columns, shown, peaks) }
     var frame by remember { mutableIntStateOf(0) }
     var nyquist by remember { mutableIntStateOf(22_050) }
     var content by remember { mutableIntStateOf(0) }
@@ -60,6 +63,10 @@ fun SpectrumAnalyzer(
                     val rate = AudioSpectrum.sampleRate
                     Spectrum.bands(samples, rate, fresh, columns, LOW_HZ, rate / 2f, re, im, power)
                     System.arraycopy(fresh, 0, target, 0, columns)
+                    if (styleNow != SpectrumStyle.Blocks) {
+                        System.arraycopy(samples, samples.size - data.wave.size, data.wave, 0, data.wave.size)
+                        AudioSpectrum.latestStereo(data.left, data.right, data.wave.size)
+                    }
                     // The highest bin clearly above the noise floor, held for a moment so that the readout does not flicker.
                     var top = 0
                     for (bin in power.size - 1 downTo 1) if (Spectrum.level(power[bin]) > .1f) { top = bin; break }
@@ -73,7 +80,11 @@ fun SpectrumAnalyzer(
         }
     }
     LaunchedEffect(columns) {
-        while (isActive) withFrameNanos {
+        var last = 0L
+        while (isActive) withFrameNanos { now ->
+            val dt = if (last == 0L) 0f else ((now - last) / 1_000_000_000f).coerceAtMost(.1f)
+            last = now
+            if (styleNow != SpectrumStyle.Blocks) data.step(dt)
             for (i in 0 until columns) {
                 val t = target[i]
                 shown[i] = if (t > shown[i]) shown[i] + (t - shown[i]) * .6f else shown[i] - minOf(shown[i] - t, .018f)
@@ -84,9 +95,10 @@ fun SpectrumAnalyzer(
     }
     Column(modifier) {
         Row(if (fill) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth()) {
-            if (showScale) DecibelScale(color, Modifier.width(34.dp).fillMaxHeight())
+            if (showScale && style == SpectrumStyle.Blocks) DecibelScale(color, Modifier.width(34.dp).fillMaxHeight())
             Canvas((if (fill) Modifier.weight(1f).fillMaxHeight() else Modifier.weight(1f).aspectRatio(columns / rows.toFloat())).testTag("spectrum")) {
                 frame // Reading the frame here redraws the canvas on each frame without recomposing anything.
+                if (style != SpectrumStyle.Blocks) { drawVisual(style, data, color); return@Canvas }
                 val pitch = size.width / columns
                 val gap = (pitch * .16f).coerceAtLeast(1f)
                 val cell = pitch - gap
@@ -104,7 +116,7 @@ fun SpectrumAnalyzer(
             }
         }
         // The frequency axis: each label sits where its frequency falls on the logarithmic scale of the columns.
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(start = if (showScale) 34.dp else 0.dp).padding(top = 6.dp).height(14.dp)) {
+        if (style.axis) BoxWithConstraints(Modifier.fillMaxWidth().padding(start = if (showScale) 34.dp else 0.dp).padding(top = 6.dp).height(14.dp)) {
             listOf(50f, 100f, 200f, 500f, 1000f, 2000f, 5000f, 10000f, 20000f).filter { it < nyquist }.forEach { hz ->
                 val fraction = (ln(hz / LOW_HZ) / ln(nyquist / LOW_HZ)).coerceIn(0f, 1f)
                 Text(if (hz >= 1000) "${(hz / 1000).toInt()}k" else hz.toInt().toString(), Modifier.offset(x = maxWidth * fraction - 8.dp), fontFamily = AppFonts.mono, fontSize = 9.sp, color = color.copy(alpha = .5f))

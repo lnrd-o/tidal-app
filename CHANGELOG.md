@@ -6,6 +6,7 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ### Added
 
+- Appearance page in Settings with three choices. App themes: the original square Dark, Glass (blurred colour and frosted panels), Analog (black steel, green glow, technical type) and Gold (black and gold with a serif title). Seven lyric styles, bigger than before: Classic, Mist (lines come out of the mist and vanish into it), Typewriter (each line is written as it is sung), Karaoke, Word by word, Glow and Focus. Fourteen spectrum styles: Blocks, Bars, Wave, Multiwave, Terrain 3D, Stereo field 3D (where the sound comes from), Oscilloscope, Radial, Rings, Ambience, Fireworks, Flower, VU meters and Dots. A tap on the full-screen spectrum goes to the next style.
 - When you skip or jump to another song, D'JAI checks the whole queue again (up to 30 songs) against the new song and moves the one that mixes clearly better to the next place. A song that you put next yourself is not moved. Switch on the D'JAI page.
 - Beat mixes first, soft blends last: D'JAI ranks the songs of the queue by how they mix, songs that can be mixed on the beat first and from the best match down, and songs that only blend softly at the end. Switch on the D'JAI page.
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.

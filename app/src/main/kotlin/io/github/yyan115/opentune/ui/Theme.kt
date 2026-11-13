@@ -1,7 +1,11 @@
 package io.github.yyan115.opentune.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -13,10 +17,14 @@ val LocalAppTheme = staticCompositionLocalOf { appThemes.first { it.id == "dark"
 
 /** Applies the one theme of the app. */
 @Composable
-fun OpenTuneTheme(content: @Composable () -> Unit) {
-    val theme = appThemes.first()
+fun OpenTuneTheme(themeId: String = "dark", content: @Composable () -> Unit) {
+    val theme = themeFor(themeId, true)
     CompositionLocalProvider(LocalAppTheme provides theme, LocalThemeFonts provides theme.fonts) {
-        MaterialTheme(colorScheme = theme.scheme, typography = themeTypography(theme.fonts), shapes = theme.shapes, content = content)
+        MaterialTheme(colorScheme = theme.scheme, typography = themeTypography(theme.fonts), shapes = theme.shapes) {
+            // The backdrop of the theme is painted once, behind everything: the screens above it are clear in the themes that have one.
+            val base = theme.scheme.background
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().drawBehind { drawBackdrop(theme.look, base) }) { content() }
+        }
     }
 }
 

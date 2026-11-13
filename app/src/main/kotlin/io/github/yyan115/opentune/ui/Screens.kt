@@ -400,6 +400,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }
         item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
             if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }
+        item { SettingRow(OpenTuneIcons.Tune, stringResource(R.string.look_title), stringResource(themeFor(settings.appTheme, true).nameRes), { onOpenPage(SettingsPage.Look) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.djai_name), djaiSummary(settings), { onOpenPage(SettingsPage.Djai) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         // These settings change how TIDAL is streamed and downloaded, so they appear once an account is connected.
         if (state.signedIn) {

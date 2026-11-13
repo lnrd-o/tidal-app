@@ -44,7 +44,7 @@ fun LyricsPanel(state: AppState, vm: MainViewModel, modifier: Modifier = Modifie
         val lyrics = state.lyrics
         when {
             state.lyricsStatus == LyricsStatus.Loading || state.lyricsStatus == LyricsStatus.Idle -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 1.5.dp)
-            state.lyricsStatus == LyricsStatus.Ready && lyrics != null -> if (lyrics.synced) SyncedLyrics(lyrics, vm::seek) else PlainLyrics(lyrics)
+            state.lyricsStatus == LyricsStatus.Ready && lyrics != null -> if (lyrics.synced) SyncedLyrics(lyrics, LyricStyle.of(state.settings.lyricStyle), vm::seek) else PlainLyrics(lyrics)
             else -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                 Text(when (state.lyricsStatus) {
                     LyricsStatus.Offline -> stringResource(R.string.lyrics_offline)
@@ -58,7 +58,8 @@ fun LyricsPanel(state: AppState, vm: MainViewModel, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun SyncedLyrics(lyrics: Lyrics, onSeek: (Long) -> Unit) {
+private fun SyncedLyrics(lyrics: Lyrics, style: LyricStyle, onSeek: (Long) -> Unit) {
+    val smooth = rememberSmoothPosition()
     val position = LocalPlaybackPosition.current.collectAsStateWithLifecycle()
     // The view changes only when the line changes, not each time the position does.
     val current by remember(lyrics) { derivedStateOf { lyrics.lineAt(position.value + LEAD_MS) } }
@@ -76,15 +77,8 @@ private fun SyncedLyrics(lyrics: Lyrics, onSeek: (Long) -> Unit) {
         CompositionLocalProvider(LocalLayoutDirection provides if (lyrics.rightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = maxHeight * 0.3f, bottom = maxHeight * 0.6f, start = 8.dp, end = 8.dp)) {
                 itemsIndexed(lyrics.lines, key = { index, line -> "$index:${line.timeMs}" }) { index, line ->
-                    val active = index == current
-                    // Lines fade with their distance from the line that sings, and the active line springs up to full size.
-                    val distance = if (current < 0) 3 else kotlin.math.abs(index - current)
-                    val alpha by animateFloatAsState(if (active) 1f else (.55f - distance * .1f).coerceAtLeast(.2f), tween(220), label = "line-alpha")
-                    val scale by animateFloatAsState(if (active) 1f else .84f, spring(dampingRatio = .7f, stiffness = 500f), label = "line-scale")
-                    val lift by animateFloatAsState(if (active) 0f else 6f, spring(stiffness = 500f), label = "line-lift")
-                    Text(line.text.ifBlank { "♪" }, Modifier.fillMaxWidth().clickable { onSeek(line.timeMs) }.padding(vertical = 9.dp)
-                        .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift; this.alpha = alpha; transformOrigin = TransformOrigin(if (lyrics.rightToLeft) 1f else 0f, .5f) },
-                        style = AppFonts.title(28, 34), color = MaterialTheme.colorScheme.onSurface)
+                    val end = lyrics.lines.getOrNull(index + 1)?.timeMs ?: (line.timeMs + 5_000L)
+                    LyricLineView(style, line.text, line.timeMs, end, index, current, lyrics.rightToLeft, smooth) { onSeek(line.timeMs) }
                 }
                 item(key = "credit") { Attribution(lyrics) }
             }

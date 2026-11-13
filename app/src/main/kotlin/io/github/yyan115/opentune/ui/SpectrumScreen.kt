@@ -1,5 +1,11 @@
 package io.github.yyan115.opentune.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.animation.AnimatedVisibility
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -38,8 +44,13 @@ import io.github.yyan115.opentune.R
  * Landscape gives a wide, dense analyzer with the track at its side. The screen stays on while it is open, and a swipe down or the back button closes it.
  */
 @Composable
-fun SpectrumScreen(state: AppState, accent: Color = Color.White, onClose: () -> Unit) {
+fun SpectrumScreen(state: AppState, accent: Color = Color.White, onStyle: (SpectrumStyle) -> Unit = {}, onClose: () -> Unit) {
     val track = state.playback.track
+    val style = SpectrumStyle.of(state.settings.spectrumStyle)
+    // A tap goes to the next style, and the name of the style shows for a moment.
+    var nameVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(style) { nameVisible = true; kotlinx.coroutines.delay(1_600); nameVisible = false }
+    val next = { onStyle(style.next()) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val window = (LocalView.current.parent as DialogWindowProvider).window
         LaunchedEffect(Unit) {
@@ -55,6 +66,9 @@ fun SpectrumScreen(state: AppState, accent: Color = Color.White, onClose: () -> 
             detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total > 150f) onClose() }) { _, amount -> total += amount }
         }) {
             val landscape = maxWidth > maxHeight
+            androidx.compose.animation.AnimatedVisibility(nameVisible, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp), enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
+                Text(stringResource(style.nameRes).uppercase(), fontFamily = AppFonts.mono, fontSize = 12.sp, letterSpacing = 2.sp, color = Color.White.copy(alpha = .7f))
+            }
             if (landscape) Row(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 // The cover takes the room that the text leaves under it, as a square that is as big as it can be.
                 Column(Modifier.width(220.dp).fillMaxHeight()) {
@@ -65,11 +79,11 @@ fun SpectrumScreen(state: AppState, accent: Color = Color.White, onClose: () -> 
                             Modifier.size(side).testTag("spectrum-artwork"), contentScale = ContentScale.Crop)
                     }
                 }
-                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxHeight(), color = accent, columns = 96, rows = 26, fill = true, showScale = true)
+                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxHeight().clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = next), color = accent, columns = 96, rows = 26, fill = true, showScale = true, style = style)
             } else Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Header(state, track?.title, track?.artist, onClose)
                 Spacer(Modifier.height(24.dp))
-                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxWidth(), color = accent, columns = 40, rows = 44, fill = true, showScale = true)
+                SpectrumAnalyzer(state.playback.playing, Modifier.weight(1f).fillMaxWidth().clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = next), color = accent, columns = 40, rows = 44, fill = true, showScale = true, style = style)
             }
         }
     }

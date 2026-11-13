@@ -37,6 +37,10 @@ class OnsetEnvelope(val rate: Int) {
     /** Called with the power spectrum of each frame, for other analyses that share the transform. */
     var onFrame: ((FloatArray) -> Unit)? = null
 
+    /** The onset strength of the frame that [onFrame] is handed now. */
+    var lastFlux = 0f
+        private set
+
     fun reset(start: Long) {
         startSample = start; consumed = 0; hopFill = 0; count = 0; dropped = 0
         window.fill(0f); previous.fill(0f)
@@ -72,6 +76,7 @@ class OnsetEnvelope(val rate: Int) {
             else values = values.copyOf(values.size * 2)
         }
         values[count++] = flux
+        lastFlux = flux
         onFrame?.invoke(power)
     }
 

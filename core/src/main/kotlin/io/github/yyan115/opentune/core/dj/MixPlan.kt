@@ -4,6 +4,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -34,8 +35,21 @@ data class MixPlan(
     val blendBeats: Int,
     val tailBeats: Int,
     val swap: Double,
+    /** A loop roll on the outgoing deck just before the swap, or null. */
+    val roll: RollPlan? = null,
+    /** True when the incoming track enters so that its drop falls on the swap. */
+    val dropEntry: Boolean = false,
 ) {
     val beats: Int get() = blendBeats + tailBeats
+}
+
+/**
+ * A loop roll: over the two beats that end at [endFrame] (frames of the outgoing ring), the outgoing track repeats its first half beat twice, then its
+ * next quarter beat twice, then the eighth beat after that four times, while its own time keeps running underneath. At [endFrame] it is back where
+ * it should be. [beatFrames] is the length of a beat in frames of the outgoing ring.
+ */
+class RollPlan(val endFrame: Double, val beatFrames: Double) {
+    val startFrame: Double get() = endFrame - 2 * beatFrames
 }
 
 /**
@@ -105,7 +119,11 @@ object MixCurves {
  * What is known about a track for the decision to mix: its tempo grid, where its first phrase begins, its key and its energy.
  * For the outgoing track the energy is that of its end, for the incoming track that of its start.
  */
-class TrackSummary(val beat: BeatAnalysis?, val camelot: String?, val energy: Double? = null, val origin: Double? = null)
+class TrackSummary(
+    val beat: BeatAnalysis?, val camelot: String?, val energy: Double? = null, val origin: Double? = null,
+    /** The cue points that are known, as frames of the ring of the deck that plays the track. */
+    val cues: List<CueMark> = emptyList(),
+)
 
 class MixDecision(
     val kind: MixKind,
@@ -187,6 +205,8 @@ object MixScheduler {
     const val SOFT_SECONDS = 8.0
     const val PHRASE_BEATS = 32
     const val TAIL_BEATS = 16
+    /** An incoming drop is only used when its entry has been decoded this many seconds before the mix reads it. */
+    const val DROP_MARGIN_SECONDS = 3.0
 
     /**
      * [posOutgoing] is where the output reads the outgoing ring now, [endOutgoing] is the estimated frame at which the outgoing track ends,
@@ -195,11 +215,16 @@ object MixScheduler {
      * The swap is placed on a phrase boundary of the outgoing track, 32 beats after the previous one, counted from the first drum hit
      * ([TrackSummary.origin]). The incoming track enters at its own first drum hit [blendBeats] before the swap, so that its first phrase
      * begins with the blend and the swap falls 16 or 32 beats into it. When no phrase origin is known, any downbeat is a boundary.
+     *
+     * Cue points refine this. When the outgoing track has an OUTRO cue ahead, the blend starts there and not at the first moment that fits.
+     * When the incoming track has a DROP cue that it can be entered before, it enters at the drop minus the blend, so that its drop falls on the swap.
+     * With [roll] the plan also rolls the outgoing track over the two beats before the swap.
      * Returns null when the transition does not fit before the outgoing track ends.
      */
     fun schedule(
         outgoing: Int, incoming: Int, decision: MixDecision, a: TrackSummary, b: TrackSummary, rateOutgoing: Int, rateIncoming: Int, outRate: Int,
         posOutgoing: Double, endOutgoing: Double, firstIncoming: Double,
+        roll: Boolean = false, writtenIncoming: Double = Double.POSITIVE_INFINITY,
     ): MixPlan? {
         val earliest = posOutgoing + LEAD_SECONDS * rateOutgoing
         val latestEnd = endOutgoing - TAIL_SECONDS * rateOutgoing
@@ -211,21 +236,29 @@ object MixScheduler {
             val perBar = gridA.beatsPerBar
             val tail = TAIL_BEATS * perBar / 4
             val blends = (if (decision.blendBeats >= 32) listOf(32, 16) else listOf(16)).map { it * perBar / 4 }
-            for (blend in blends) {
+            val outro = a.cues.firstOrNull { it.kind == CueKind.OUTRO && it.frame >= posOutgoing }
+            val dropIn = b.cues.firstOrNull { it.kind == CueKind.DROP }
+            // The outro is tried first, and the first moment that fits comes after it.
+            for (anchored in if (outro != null) listOf(true, false) else listOf(false)) for (blend in blends) {
                 val total = blend + tail
                 val lengthOut = (total * beatOut).roundToInt()
+                val from = if (anchored) max(earliest, outro!!.frame - period) else earliest
                 // The first boundary that leaves room for the blend before it and the tail after it.
-                val boundary = nextBoundary(gridA, a.origin, earliest + blend * period)
-                val swapFrame = boundary
+                val swapFrame = nextBoundary(gridA, a.origin, from + blend * period)
                 val start = swapFrame - blend * period
                 val end = start + lengthOut.toDouble() * rateOutgoing / outRate
-                if (start < earliest || end > latestEnd) {
-                    // A later boundary leaves less room, so only the first one can fit.
-                    continue
+                if (start < earliest || end > latestEnd) continue
+                // The incoming track enters where its drop falls on the swap, when that is a frame that it will have decoded by then.
+                var enter = b.origin ?: gridB.nextDownbeat(firstIncoming)
+                var dropEntry = false
+                if (dropIn != null) {
+                    val candidate = dropIn.frame - blend * gridB.periodSamples
+                    val decodedByStart = writtenIncoming + (start - posOutgoing) * rateIncoming / rateOutgoing
+                    if (candidate >= firstIncoming && candidate + DROP_MARGIN_SECONDS * rateIncoming <= decodedByStart) { enter = candidate; dropEntry = true }
                 }
-                val enter = b.origin ?: gridB.nextDownbeat(firstIncoming)
                 if (enter < firstIncoming) continue
-                return MixPlan(outgoing, incoming, start, enter, lengthOut, decision.speedIncoming, MixKind.BEAT, blend, tail, blend.toDouble() / total)
+                val rolled = if (roll && blend >= 16 * perBar / 4) RollPlan(swapFrame, period) else null
+                return MixPlan(outgoing, incoming, start, enter, lengthOut, decision.speedIncoming, MixKind.BEAT, blend, tail, blend.toDouble() / total, rolled, dropEntry)
             }
             return null
         }

@@ -27,6 +27,16 @@ class DjMixer(val outRate: Int = 48_000) {
         var starving = true
         /** How much of the deck is heard through the equalizer, from 0 (as it is) to 1. It moves slowly, so that no step is heard at the edges of a mix. */
         var eqBlend = 0f
+        /** A loop: while [loopLen] is above zero the deck repeats the frames from [loopStart] to [loopEnd], and [shadow] is the position that it would have without it. */
+        var loopStart = 0.0
+        var loopEnd = 0.0
+        var loopLen = 0.0
+        var shadow = 0.0
+        /** A jump is faded: the position that the deck left, and how many frames of the fade remain. */
+        var fadeOld = 0.0
+        var fadeLeft = 0
+        /** The stage of the roll that the deck is in, or -1 before it. */
+        var rollStage = -1
     }
 
     private val decks = arrayOf(Deck(), Deck())
@@ -77,9 +87,40 @@ class DjMixer(val outRate: Int = 48_000) {
     fun setSource(slot: Int, source: RingSource?) = post { val d = decks[slot]; d.source = source; if (source == null) { d.ring = null; d.level = 0f; d.starving = true } }
     fun setGain(slot: Int, gain: Float) = post { decks[slot].gain = gain }
     fun setPrimary(slot: Int) = post { primary = slot }
-    fun setPlan(next: MixPlan?) = post { plan = next; mixFrame = -1; mixing = false; progress = 0f }
+    fun setPlan(next: MixPlan?) = post { plan = next; mixFrame = -1; mixing = false; progress = 0f; clearLoops() }
+
+    /** Repeats [lengthFrames] frames of the ring of [slot] from [startFrame], for as long as it takes to call [endLoop]. */
+    fun setLoop(slot: Int, startFrame: Double, lengthFrames: Double) = post { beginLoop(decks[slot], startFrame, lengthFrames) }
+
+    /** Ends the loop of [slot]. With [toShadow] the deck goes to where it would be without the loop, and without it to the next frame. */
+    fun endLoop(slot: Int, toShadow: Boolean) = post { endLoop(decks[slot], toShadow) }
+
+    private fun clearLoops() { for (d in decks) { d.loopLen = 0.0; d.fadeLeft = 0; d.rollStage = -1 } }
+
+    private fun timeline(d: Deck) = if (d.loopLen > 0.0) d.shadow else d.pos
+
+    /** Moves the deck to [target]. The sound that it was about to play fades out over a few milliseconds while the new one fades in. */
+    private fun jump(d: Deck, target: Double) {
+        d.fadeOld = d.pos; d.fadeLeft = FADE_FRAMES
+        d.pos = target
+    }
+
+    private fun beginLoop(d: Deck, start: Double, length: Double) {
+        if (length < 1.0) return
+        val now = timeline(d)
+        if (d.loopLen <= 0.0) d.shadow = d.pos
+        d.loopStart = start; d.loopEnd = start + length; d.loopLen = length
+        val offset = ((now - start) % length + length) % length
+        jump(d, start + offset)
+    }
+
+    private fun endLoop(d: Deck, toShadow: Boolean) {
+        if (d.loopLen <= 0.0) return
+        if (toShadow) jump(d, d.shadow)
+        d.loopLen = 0.0
+    }
     /** Ends the plan without finishing it. The deck [primarySlot] is heard afterwards. */
-    fun cancel(primarySlot: Int) = post { plan = null; mixFrame = -1; mixing = false; progress = 0f; primary = primarySlot }
+    fun cancel(primarySlot: Int) = post { plan = null; mixFrame = -1; mixing = false; progress = 0f; primary = primarySlot; clearLoops() }
 
     fun render(out: FloatArray, frames: Int) {
         while (true) { (commands.poll() ?: break).run() }
@@ -97,7 +138,10 @@ class DjMixer(val outRate: Int = 48_000) {
                 }
             }
             val running = plan
-            if (running != null && mixFrame >= 0) n = min(n, running.lengthOut - mixFrame)
+            if (running != null && mixFrame >= 0) {
+                n = min(n, running.lengthOut - mixFrame)
+                n = min(n, framesToRollBoundary(running, n))
+            }
             renderBlock(out, done * 2, n)
             done += n
         }
@@ -133,20 +177,73 @@ class DjMixer(val outRate: Int = 48_000) {
         return if (d.starving) avail >= need + CUSHION_SECONDS * r.rate else avail >= need
     }
 
-    /** Reads [n] frames at [step] ring frames per output frame with cubic interpolation. */
+    /** The frames until the roll of [p] next changes stage, at most [n]. */
+    private fun framesToRollBoundary(p: MixPlan, n: Int): Int {
+        val roll = p.roll ?: return n
+        val d = decks[p.outgoing]
+        val ring = d.ring ?: return n
+        val step = ring.rate.toDouble() / outRate
+        val t = timeline(d)
+        val beat = roll.beatFrames
+        val boundaries = doubleArrayOf(roll.startFrame, roll.startFrame + beat, roll.startFrame + 1.5 * beat, roll.endFrame)
+        val next = boundaries.firstOrNull { it > t } ?: return n
+        return min(n, max(1, ceil((next - t) / step).toInt()))
+    }
+
+    /** Puts the outgoing deck in the stage of the roll that its time calls for. */
+    private fun applyRoll(roll: RollPlan, d: Deck) {
+        val t = timeline(d)
+        val beat = roll.beatFrames
+        val stage = when {
+            t >= roll.endFrame -> 3
+            t >= roll.startFrame + 1.5 * beat -> 2
+            t >= roll.startFrame + beat -> 1
+            t >= roll.startFrame -> 0
+            else -> -1
+        }
+        if (stage == d.rollStage) return
+        d.rollStage = stage
+        when (stage) {
+            0 -> beginLoop(d, roll.startFrame, beat / 2)
+            1 -> beginLoop(d, roll.startFrame + beat, beat / 4)
+            2 -> beginLoop(d, roll.startFrame + 1.5 * beat, beat / 8)
+            3 -> endLoop(d, true)
+        }
+    }
+
+    /** Reads [n] frames at [step] ring frames per output frame with cubic interpolation, repeating a loop and fading a jump. */
     private fun fetch(d: Deck, r: PcmRing, step: Double, n: Int, buf: FloatArray) {
         var pos = d.pos
+        val looping = d.loopLen > 0.0
         for (i in 0 until n) {
-            val base = floor(pos).toLong()
-            val t = (pos - base).toFloat()
-            val i0 = if (base > 0) base - 1 else 0L
-            val l0 = r.left(i0); val l1 = r.left(base); val l2 = r.left(base + 1); val l3 = r.left(base + 2)
-            val r0 = r.right(i0); val r1 = r.right(base); val r2 = r.right(base + 1); val r3 = r.right(base + 2)
-            buf[i * 2] = cubic(l0, l1, l2, l3, t)
-            buf[i * 2 + 1] = cubic(r0, r1, r2, r3, t)
+            if (looping && pos >= d.loopEnd) {
+                // The loop wraps: the frames after its end fade out while its start fades in.
+                d.fadeOld = pos; d.fadeLeft = FADE_FRAMES
+                pos -= d.loopLen
+            }
+            var l = sampleLeft(r, pos); var rr = sampleRight(r, pos)
+            if (d.fadeLeft > 0) {
+                val w = d.fadeLeft.toFloat() / FADE_FRAMES
+                l = l * (1 - w) + sampleLeft(r, d.fadeOld) * w
+                rr = rr * (1 - w) + sampleRight(r, d.fadeOld) * w
+                d.fadeOld += step; d.fadeLeft--
+            }
+            buf[i * 2] = l
+            buf[i * 2 + 1] = rr
             pos += step
         }
         d.pos = pos
+        if (looping) d.shadow += n * step
+    }
+
+    private fun sampleLeft(r: PcmRing, pos: Double): Float {
+        val base = floor(pos).toLong(); val t = (pos - base).toFloat()
+        return cubic(r.left(if (base > 0) base - 1 else 0L), r.left(base), r.left(base + 1), r.left(base + 2), t)
+    }
+
+    private fun sampleRight(r: PcmRing, pos: Double): Float {
+        val base = floor(pos).toLong(); val t = (pos - base).toFloat()
+        return cubic(r.right(if (base > 0) base - 1 else 0L), r.right(base), r.right(base + 1), r.right(base + 2), t)
     }
 
     private fun cubic(p0: Float, p1: Float, p2: Float, p3: Float, t: Float): Float {
@@ -172,6 +269,7 @@ class DjMixer(val outRate: Int = 48_000) {
         }
         val stepB = if (ringB != null) ringB.rate.toDouble() / outRate * speed else 1.0
 
+        if (running && ringA != null) p!!.roll?.let { applyRoll(it, first) }
         var okA = ringA != null && ready(first, ringA, stepA, n)
         var okB = true
         if (running) {
@@ -251,7 +349,7 @@ class DjMixer(val outRate: Int = 48_000) {
             progress = (mixFrame.toDouble() / p!!.lengthOut).toFloat().coerceIn(0f, 1f)
             if (mixFrame >= p.lengthOut) {
                 primary = p.incoming; plan = null; mixFrame = -1; mixing = false; progress = 1f
-                decks[p.outgoing].level = 0f; decks[p.outgoing].eqBlend = 0f
+                decks[p.outgoing].level = 0f; decks[p.outgoing].eqBlend = 0f; clearLoops()
                 eq[p.outgoing].reset(); sweepOut.reset(); sweepIn.reset()
                 finishedSeq++
             }
@@ -274,6 +372,8 @@ class DjMixer(val outRate: Int = 48_000) {
         const val CUSHION_SECONDS = 0.12
         const val WARM_SECONDS = 4.0
         private const val SMOOTH = 0.004f
+        /** A jump or the wrap of a loop is faded over about 5 ms at 48 kHz. */
+        private const val FADE_FRAMES = 240
         /** The equalizer is moved into or out of in about 20 ms at 48 kHz. */
         private const val EQ_FADE = 1f / 1024f
         private const val KNEE = 0.98f

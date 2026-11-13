@@ -66,6 +66,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import io.github.yyan115.opentune.core.dj.Cue
+import io.github.yyan115.opentune.core.dj.CueKind
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -173,6 +178,10 @@ fun NowPlayingScreen(
     val saved = state.favorites.any { it.id == track.id }
     // The main colour of the cover, when the listener chose it: it tints the backdrop, the play button, the seek line and the spectrum.
     val accent = rememberArtworkAccent(track.artwork, state.settings.adaptColor)
+    // The cue points that D'JAI found in this song, shown as pins on the seek line.
+    val cueRevision by vm.app.library.cueChanges.collectAsStateWithLifecycle()
+    var cues by remember(track.id) { mutableStateOf(emptyList<Cue>()) }
+    LaunchedEffect(track.id, cueRevision) { cues = vm.cuesOf(track.id) }
 
     fun poke() {}
 
@@ -263,7 +272,7 @@ fun NowPlayingScreen(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            SeekLine(vm, track.id, state.playback.duration, accent) { poke() }
+                            SeekLine(vm, track.id, state.playback.duration, accent, cues) { poke() }
                             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 ToggleIcon(OpenTuneIcons.Shuffle, stringResource(R.string.player_shuffle), state.playback.shuffle) { vm.toggleShuffle(); poke() }
                                 IconButton(onClick = { vm.previous(); poke() }, Modifier.size(52.dp)) { Icon(OpenTuneIcons.FastRewind, stringResource(R.string.player_previous), Modifier.size(30.dp), tint = Color.White) }
@@ -407,14 +416,27 @@ private fun UpNext(state: AppState, vm: MainViewModel, onQueue: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
-private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent: Color = Color.White, onTouch: () -> Unit) {
+private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent: Color = Color.White, cues: List<Cue> = emptyList(), onTouch: () -> Unit) {
     val position by LocalPlaybackPosition.current.collectAsStateWithLifecycle()
     var seeking by remember(trackId) { mutableStateOf<Float?>(null) }
     val colors = SliderDefaults.colors(activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = .25f), thumbColor = accent)
-    Slider(seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()), { seeking = it; onTouch() }, Modifier.fillMaxWidth().height(32.dp),
-        enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
-        thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },
-        track = { SliderDefaults.Track(it, Modifier.height(2.dp), colors = colors, thumbTrackGapSize = 0.dp, drawStopIndicator = null, trackInsideCornerSize = 0.dp) }, colors = colors)
+    Box(Modifier.fillMaxWidth().height(32.dp)) {
+        Slider(seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()), { seeking = it; onTouch() }, Modifier.fillMaxWidth().height(32.dp),
+            enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
+            thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },
+            track = { SliderDefaults.Track(it, Modifier.height(2.dp), colors = colors, thumbTrackGapSize = 0.dp, drawStopIndicator = null, trackInsideCornerSize = 0.dp) }, colors = colors)
+        // Pins above the line: a small square on a thin stem for each cue point. A drop is white, the others are fainter.
+        if (cues.isNotEmpty() && duration > 0) Canvas(Modifier.matchParentSize()) {
+            val edge = 5.dp.toPx()
+            val span = size.width - 2 * edge
+            for (cue in cues) {
+                val x = edge + (cue.atMs.toFloat() / duration).coerceIn(0f, 1f) * span
+                val color = if (cue.kind == CueKind.DROP) accent else Color.White.copy(alpha = .55f)
+                drawRect(color, Offset(x - .5.dp.toPx(), 5.dp.toPx()), Size(1.dp.toPx(), 7.dp.toPx()))
+                drawRect(color, Offset(x - 2.dp.toPx(), 2.dp.toPx()), Size(4.dp.toPx(), 4.dp.toPx()))
+            }
+        }
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(formatDuration(seeking?.toLong() ?: position), fontFamily = AppFonts.mono, fontSize = 11.sp, color = Color.White.copy(alpha = .7f))
         Text(formatDuration(duration), fontFamily = AppFonts.mono, fontSize = 11.sp, color = Color.White.copy(alpha = .7f))

@@ -91,6 +91,15 @@ data class AppState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val app = application as OpenTuneApp
 
+    /** The cue points that D'JAI found in the song with [id]. */
+    suspend fun cuesOf(id: String): List<io.github.yyan115.opentune.core.dj.Cue> = withContext(Dispatchers.IO) {
+        runCatching {
+            app.library.cues(id).mapNotNull { (kind, at) ->
+                runCatching { io.github.yyan115.opentune.core.dj.CueKind.valueOf(kind) }.getOrNull()?.let { io.github.yyan115.opentune.core.dj.Cue(it, at) }
+            }
+        }.getOrDefault(emptyList())
+    }
+
     /** The bytes held by the cache of listened songs. */
     suspend fun cacheBytes(): Long = withContext(Dispatchers.IO) { app.sources.cacheBytes() }
 

@@ -288,8 +288,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             if (key in profiles || !asked.add(key)) continue
             scope.launch { host.onlineHint(item)?.let { online[key] = it } }
         }
+        // The listening starts at once, also right after the listener changed the song: it does not wait for the song that plays to be analysed.
         val slot = DjMix.sessionSlot
-        if (analyzers[slot].beat == null) return
         val scoutSlot = 1 - slot
         val s = scout
         if (s != null) {
@@ -318,6 +318,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         // The mixer never reads this deck. It only decodes, so that the analyzer can listen.
         DjMix.mixer.setSource(scoutSlot, null)
         b.setMediaItem(item)
+        // Nobody hears this deck, so it plays at the fastest speed that the player allows. The tap sits before the speed change, so the analyzer still sees
+        // every frame of the song at its own speed: twenty seconds of it are read in a few seconds.
+        b.setPlaybackParameters(androidx.media3.common.PlaybackParameters(SCOUT_SPEED))
         b.playWhenReady = true
         b.prepare()
         analyzers[scoutSlot].stop(); analyzers[scoutSlot].start()
@@ -630,9 +633,14 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         /** A crossfade starts the next track this long before the blend begins. */
         const val CROSSFADE_PREROLL_MS = 9_000L
         /** How many of the next songs are listened to, how long each is listened to, and how long before the last minute the best match is chosen. */
-        const val SCOUT_COUNT = 6
-        const val SCOUT_SECONDS = 15f
-        const val SCOUT_TIMEOUT_MS = 45_000L
+        /** How many of the songs ahead are listened to, in the order that they will play. */
+        const val SCOUT_COUNT = 12
+        /** The seconds of each song that are listened to. */
+        const val SCOUT_SECONDS = 20f
+        /** A song that is not read in this time is skipped. At 8 times the speed it takes a few seconds. */
+        const val SCOUT_TIMEOUT_MS = 30_000L
+        /** The speed of the player that listens, the fastest that the audio chain allows. */
+        const val SCOUT_SPEED = 8f
         const val CHOOSE_MS = 6_000L
         const val MAX_PROFILES = 1500
         /** A drop further into the song than this is reached by starting the song later. */

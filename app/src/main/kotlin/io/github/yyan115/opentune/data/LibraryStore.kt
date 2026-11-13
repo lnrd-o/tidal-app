@@ -18,6 +18,9 @@ import java.util.UUID
 class LibraryStore(context: Context, databaseName: String = "library.db") : SQLiteOpenHelper(context, databaseName, null, 8) {
     private val revision = MutableStateFlow(0L)
     val changes = revision.asStateFlow()
+    private val cueRevision = MutableStateFlow(0L)
+    /** Counts the times that the cue points of a song were saved, so that the player can show the new ones. */
+    val cueChanges = cueRevision.asStateFlow()
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE tracks (id TEXT PRIMARY KEY, payload TEXT NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, played INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE playlists (id TEXT PRIMARY KEY, title TEXT NOT NULL)")
@@ -82,6 +85,7 @@ class LibraryStore(context: Context, databaseName: String = "library.db") : SQLi
             for ((kind, at) in cues) db.insertWithOnConflict("cue_points", null, ContentValues().apply { put("track_id", trackId); put("at_ms", at); put("kind", kind) }, SQLiteDatabase.CONFLICT_REPLACE)
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+        cueRevision.value++
     }
 
     private fun createDownloadFileTables(db: SQLiteDatabase) {

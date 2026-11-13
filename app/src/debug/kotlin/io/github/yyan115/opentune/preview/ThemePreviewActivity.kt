@@ -47,6 +47,13 @@ class ThemePreviewActivity : ComponentActivity() {
         val albums = listOf(Release("preview:late-hours", "Late Hours", "Harbour Lights", lateHours),
             Release("preview:salt-and-glass", "Salt and Glass", "Maren Vale", saltAndGlass))
         val page = intent.getStringExtra("page")
+        if (page?.startsWith("player") == true) {
+            val kinds = io.github.yyan115.opentune.core.dj.CueKind.entries
+            runCatching {
+                (application as io.github.yyan115.opentune.OpenTuneApp).library.saveCues("preview:night-walk", listOf(
+                    kinds[0].name to 4_000L, kinds[1].name to 38_000L, kinds[2].name to 52_000L, kinds[3].name to 100_000L, kinds[2].name to 124_000L, kinds[4].name to 160_000L))
+            }
+        }
         if (page == "stories") { renderStories(); return }
         val lyrics = intent.getBooleanExtra("lyrics", false)
         val sampleLyrics = Lyrics(listOf(

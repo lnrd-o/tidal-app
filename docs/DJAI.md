@@ -93,3 +93,6 @@ D'JAI uses these by itself. There is no pad and nothing to press.
 - **Setting.** "D'JAI effects" (default on). The strip shows ROLL, DROP and OUTRO while a plan uses them.
 - **Limits.** Cues exist only for songs that were heard from their start with D'JAI on, so the first play of a song is mixed as before. Chorus labels are not made. A loop that extends a song that ends too soon is not built yet.
 
+## 10. Listening ahead at 8 times the speed
+The songs ahead are listened to by a hidden player that nobody hears (`DjEngine.startScout`). It used to play in real time, so each song took 17 to 20 seconds and six songs took about two minutes. Now it plays at the player's top speed of 8x (`SCOUT_SPEED`). The tap (`DeckTapProcessor`) sits before the speed change in the audio chain, so the ring still holds the song at its own speed and the analyzers need no change. Twenty seconds of a song (`SCOUT_SECONDS`) are read in a few seconds, and twelve songs ahead (`SCOUT_COUNT`) are covered. The listening starts right after a manual change of song, without waiting for the song that plays to be analysed. What was learned is kept (`djai_profiles.tsv`), so a song is listened to once.
+

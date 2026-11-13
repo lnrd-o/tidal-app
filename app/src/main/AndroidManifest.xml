@@ -50,8 +50,10 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/now_playing_widget_info" />
         </receiver>
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
+        <!-- The small mark that Android Auto shows next to what plays: the bars of a spectrum, tinted by the car. -->
+        <meta-data android:name="androidx.car.app.TintableAttributionIcon" android:resource="@drawable/ic_car_spectrum" />
         <!-- MediaSession checks controller identity before granting commands. -->
-        <service android:name=".playback.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback" tools:ignore="ExportedService">
+        <service android:name=".playback.PlaybackService" android:icon="@drawable/ic_car_spectrum" android:exported="true" android:foregroundServiceType="mediaPlayback" tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="androidx.media3.session.MediaSessionService" />

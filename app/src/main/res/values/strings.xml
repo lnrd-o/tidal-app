@@ -668,6 +668,9 @@
     <string name="crash_title">The app closed unexpectedly</string>
     <string name="crash_text">This report has the app version, the model of the phone, its Android version and what went wrong. It has nothing else. Share it so that the fault can be found.</string>
     <string name="crash_share">Share the report</string>
+    <string name="car_tab_library">Library</string>
+    <string name="car_djai_on">D\'JAI is on</string>
+    <string name="car_djai_off">D\'JAI is off</string>
     <string name="track_analyze">Analyze for D\'JAI</string>
     <string name="djai_analyzing">Analyzing %1$s for D\'JAI. It takes about a minute.</string>
     <string name="djai_analyzed">%1$s is ready: %2$s BPM, key %3$s, %4$d cue points</string>

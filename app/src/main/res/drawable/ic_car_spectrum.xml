@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Five square bars of a spectrum: the mark of the app in the car. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M2.5,13h3v8h-3z M7,7h3v14h-3z M11.5,3h3v18h-3z M16,10h3v11h-3z M20.5,15h1.5v6h-1.5z" />
+</vector>

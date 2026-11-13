@@ -25,6 +25,8 @@ import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.CommandButton
+import io.github.yyan115.opentune.R
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
@@ -58,6 +60,11 @@ object PlaybackCommands {
     val SleepTimer = SessionCommand("opentune.sleep", Bundle.EMPTY)
     /** Shuffles the tracks after the current one, as when shuffle is turned on. Sent after a new queue was set while shuffle is on. */
     val Reshuffle = SessionCommand("opentune.reshuffle", Bundle.EMPTY)
+    /** The buttons that a car and the notification show next to play and skip. */
+    val Favorite = SessionCommand("opentune.favorite", Bundle.EMPTY)
+    val Shuffle = SessionCommand("opentune.shuffle", Bundle.EMPTY)
+    val Repeat = SessionCommand("opentune.repeat", Bundle.EMPTY)
+    val Djai = SessionCommand("opentune.djai", Bundle.EMPTY)
     const val ARG_MINUTES = "minutes"
     const val ARG_END_OF_TRACK = "endOfTrack"
     const val EXTRA_ENDS_AT = "sleepEndsAt"
@@ -210,8 +217,9 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private val playerListener = object : Player.Listener {
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) shuffleUpcoming() else restoreOrder() }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { onItemStarted(mediaItem); engine.onTrackChanged() }
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) shuffleUpcoming() else restoreOrder(); updateButtons() }
+        override fun onRepeatModeChanged(repeatMode: Int) { updateButtons() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { onItemStarted(mediaItem); engine.onTrackChanged(); updateButtons() }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) playingSince = SystemClock.elapsedRealtime()
             else if (playingSince != 0L) { listenedMs += SystemClock.elapsedRealtime() - playingSince; playingSince = 0 }
@@ -241,7 +249,7 @@ class PlaybackService : MediaLibraryService() {
         player = buildPlayer(0, true)
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
-        scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+        scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.yyan115.opentune.playback.dj.DjOptions(roll = it.djRoll, cues = it.djCues, echo = it.djEcho, filters = it.djFilters, groove = it.djGroove,
                     arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
@@ -265,7 +273,8 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 if (controller.packageName != packageName && !controller.isTrusted) return MediaSession.ConnectionResult.reject()
-                val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(PlaybackCommands.SleepTimer).add(PlaybackCommands.Reshuffle).build()
+                val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(PlaybackCommands.SleepTimer).add(PlaybackCommands.Reshuffle)
+                    .add(PlaybackCommands.Favorite).add(PlaybackCommands.Shuffle).add(PlaybackCommands.Repeat).add(PlaybackCommands.Djai).build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
             }
 
@@ -273,13 +282,20 @@ class PlaybackService : MediaLibraryService() {
                 when (customCommand.customAction) {
                     PlaybackCommands.SleepTimer.customAction -> setSleepTimer(args.getInt(PlaybackCommands.ARG_MINUTES, 0), args.getBoolean(PlaybackCommands.ARG_END_OF_TRACK, false))
                     PlaybackCommands.Reshuffle.customAction -> shuffleUpcoming()
+                    PlaybackCommands.Favorite.customAction -> toggleFavorite()
+                    PlaybackCommands.Shuffle.customAction -> player.shuffleModeEnabled = !player.shuffleModeEnabled
+                    PlaybackCommands.Repeat.customAction -> player.repeatMode = when (player.repeatMode) {
+                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF
+                    }
+                    PlaybackCommands.Djai.customAction -> app.settings.update { it.copy(djai = !it.djai) }
                     else -> return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED))
                 }
+                updateButtons()
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
             override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
-                Futures.immediateFuture(LibraryResult.ofItem(tree.root(), params))
+                Futures.immediateFuture(LibraryResult.ofItem(tree.root(), LibraryParams.Builder().setExtras(BrowseTree.rootExtras()).build()))
 
             override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String): ListenableFuture<LibraryResult<MediaItem>> =
                 Futures.immediateFuture(tree.item(mediaId)?.let { LibraryResult.ofItem(it, null) } ?: LibraryResult.ofError(androidx.media3.session.SessionError.ERROR_BAD_VALUE))
@@ -327,6 +343,47 @@ class PlaybackService : MediaLibraryService() {
                 return result
             }
         }).setSessionActivity(activity).build()
+        updateButtons()
+    }
+
+    /**
+     * The buttons beside play and skip, in the car and in the notification: save the song, shuffle, repeat and D'JAI. They go in the overflow, so that play
+     * and skip keep their places, and each shows its state.
+     */
+    private fun updateButtons() {
+        val current = session ?: return
+        val id = player.currentMediaItem?.mediaId
+        val saved = id != null && runCatching { app.library.isFavorite(id) }.getOrDefault(false)
+        val djai = app.settings.state.value.djai
+        val buttons = listOf(
+            CommandButton.Builder(if (saved) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
+                .setDisplayName(getString(if (saved) R.string.track_unsave else R.string.track_save)).setSessionCommand(PlaybackCommands.Favorite)
+                .setSlots(CommandButton.SLOT_OVERFLOW).build(),
+            CommandButton.Builder(if (player.shuffleModeEnabled) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
+                .setDisplayName(getString(R.string.player_shuffle)).setSessionCommand(PlaybackCommands.Shuffle).setSlots(CommandButton.SLOT_OVERFLOW).build(),
+            CommandButton.Builder(when (player.repeatMode) { Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE; Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL; else -> CommandButton.ICON_REPEAT_OFF })
+                .setDisplayName(getString(R.string.player_repeat_all)).setSessionCommand(PlaybackCommands.Repeat).setSlots(CommandButton.SLOT_OVERFLOW).build(),
+            CommandButton.Builder(CommandButton.ICON_UNDEFINED).setCustomIconResId(R.drawable.ic_car_spectrum)
+                .setDisplayName(getString(if (djai) R.string.car_djai_on else R.string.car_djai_off)).setSessionCommand(PlaybackCommands.Djai).setSlots(CommandButton.SLOT_OVERFLOW).build(),
+        )
+        current.setMediaButtonPreferences(buttons)
+    }
+
+    /** Saves the song that plays, or takes it out of the saved songs. The app sends the change to TIDAL when it next can. */
+    private fun toggleFavorite() {
+        val item = player.currentMediaItem ?: return
+        val track = item.mediaMetadata.extras?.getString("track")?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(JSONObject(it)) }.getOrNull() }
+            ?: app.library.get(item.mediaId) ?: return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val saved = app.library.isFavorite(track.id)
+                    app.library.setFavorite(track, !saved)
+                    if (!track.isFile) app.library.queueFavorite(app.tidal.accountId, track.id, !saved)
+                }
+            }
+            updateButtons()
+        }
     }
 
     /** Puts the tracks after the current one in random order. The tracks before it and the current one stay where they are. */

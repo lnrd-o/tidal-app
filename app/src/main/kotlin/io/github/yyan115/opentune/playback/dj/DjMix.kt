@@ -75,7 +75,13 @@ object DjMix {
     const val RING_SECONDS = 50
     const val OUT_RATE = 48_000
 
-    val streams = arrayOf(Stream(), Stream())
+    /** The two decks of the mixer and, last, the hidden deck that prepares songs ([ANALYSIS_SLOT]). */
+    val streams = arrayOf(Stream(), Stream(), Stream())
+    const val ANALYSIS_SLOT = 2
+
+    /** Songs that the listener asked to prepare, and what came of them. The screen sends the first and reads the second. */
+    val preprocess = kotlinx.coroutines.flow.MutableSharedFlow<PreprocessRequest>(extraBufferCapacity = 64)
+    val preprocessResults = kotlinx.coroutines.flow.MutableSharedFlow<PreprocessResult>(extraBufferCapacity = 64)
     val mixer = DjMixer(OUT_RATE)
 
     /** True while the mixer plays instead of the players: the decks then decode into the rings and output silence. */

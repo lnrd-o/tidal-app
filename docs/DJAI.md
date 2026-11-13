@@ -96,3 +96,11 @@ D'JAI uses these by itself. There is no pad and nothing to press.
 ## 10. Listening ahead at 8 times the speed
 The songs ahead are listened to by a hidden player that nobody hears (`DjEngine.startScout`). It used to play in real time, so each song took 17 to 20 seconds and six songs took about two minutes. Now it plays at the player's top speed of 8x (`SCOUT_SPEED`). The tap (`DeckTapProcessor`) sits before the speed change in the audio chain, so the ring still holds the song at its own speed and the analyzers need no change. Twenty seconds of a song (`SCOUT_SECONDS`) are read in a few seconds, and twelve songs ahead (`SCOUT_COUNT`) are covered. The listening starts right after a manual change of song, without waiting for the song that plays to be analysed. What was learned is kept (`djai_profiles.tsv`), so a song is listened to once.
 
+## 11. Analyze for D'JAI, and what is kept
+The menu of a song has an Analyze for D'JAI button. `Preprocessor` reads the whole song with a hidden player on a deck of its own (`DjMix.ANALYSIS_SLOT`, whose tap always copies and whose sound is never heard) at four times its speed, with a full estimate every 20 s of audio so that the analyzer keeps up. It ends with the tempo, key, energy and cue points, which go to `DjEngine.learn` (the profile) and `LibraryStore.saveCues`.
+
+What is kept, and where:
+- **Profile** (tempo, period, confidence, beats per bar, key, energy, rate): `djai_profiles.tsv`, up to 1500 songs, written at most once every 3 s and all together. A song with a profile is never listened to again by the listening ahead, and an analyzed song replaces its short profile.
+- **Cue points**: `cue_points` in the library database. A song whose cue points are kept is not analyzed again (the button says so), and the swap does not find them again.
+- Not kept: the online hints (TIDAL, Deezer), which are cheap to ask again. Two recordings of the same song under different track ids are analyzed twice; keying by ISRC would join them.
+

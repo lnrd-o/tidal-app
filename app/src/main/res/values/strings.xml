@@ -668,6 +668,11 @@
     <string name="crash_title">The app closed unexpectedly</string>
     <string name="crash_text">This report has the app version, the model of the phone, its Android version and what went wrong. It has nothing else. Share it so that the fault can be found.</string>
     <string name="crash_share">Share the report</string>
+    <string name="track_analyze">Analyze for D\'JAI</string>
+    <string name="djai_analyzing">Analyzing %1$s for D\'JAI. It takes about a minute.</string>
+    <string name="djai_analyzed">%1$s is ready: %2$s BPM, key %3$s, %4$d cue points</string>
+    <string name="djai_already">%1$s was analyzed already</string>
+    <string name="djai_analyze_failed">Could not analyze %1$s</string>
     <string name="settings_dj_effects">D\'JAI effects</string>
     <string name="settings_dj_effects_text">D\'JAI rolls a loop before the swap and uses the drops and outros that it found in songs it has heard. It does this by itself.</string>
     <string name="djai_effects">%1$s</string>

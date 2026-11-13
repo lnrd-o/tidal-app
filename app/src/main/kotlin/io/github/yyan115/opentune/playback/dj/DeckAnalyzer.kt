@@ -23,7 +23,19 @@ import kotlinx.coroutines.launch
  * Reads the ring of one deck while it plays and works out its tempo grid, where its first phrase begins, its key and its energy.
  * It runs on a background thread, takes new frames every quarter of a second, and estimates from the last 20 seconds every two.
  */
-class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope, private val songMs: () -> Long = { -1L }) {
+class DeckAnalyzer(
+    private val slot: Int, private val scope: CoroutineScope, private val songMs: () -> Long = { -1L },
+    /** A full estimate is made every so many seconds of audio. A deck that is read fast makes them less often. */
+    private val estimateEvery: Float = 2f,
+) {
+    /** Counts the full estimates made, so that a caller can wait for the next one. */
+    @Volatile var estimates = 0
+        private set
+    @Volatile private var estimateNow = false
+
+    /** Makes a full estimate at the next opportunity, whatever the pace. */
+    fun requestEstimate() { estimateNow = true }
+
     @Volatile var beat: BeatAnalysis? = null
         private set
     @Volatile var key: KeyResult? = null
@@ -104,7 +116,8 @@ class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope, pri
                 read += n
             }
             seconds = ((read - e.startSample).toFloat() / ring.rate)
-            if (seconds >= 10f && seconds - lastEstimate >= 2f) {
+            if (seconds >= 10f && (seconds - lastEstimate >= estimateEvery || estimateNow)) {
+                estimateNow = false
                 lastEstimate = seconds
                 estimate(ring, e, keys!!, read)
             }
@@ -113,6 +126,10 @@ class DeckAnalyzer(private val slot: Int, private val scope: CoroutineScope, pri
     }
 
     private fun estimate(ring: PcmRing, e: OnsetEnvelope, keys: KeyDetector, read: Long) {
+        try { estimateOnce(ring, e, keys, read) } finally { estimates++ }
+    }
+
+    private fun estimateOnce(ring: PcmRing, e: OnsetEnvelope, keys: KeyDetector, read: Long) {
         val fps = ring.rate.toDouble() / OnsetEnvelope.HOP
         val (tail, first) = e.tail((fps * 20).toInt())
         BeatTracker.analyze(tail, e.timeOf(first), ring.rate)?.let { tracked ->

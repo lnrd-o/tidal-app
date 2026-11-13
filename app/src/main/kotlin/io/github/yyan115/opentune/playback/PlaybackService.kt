@@ -37,6 +37,7 @@ import io.github.yyan115.opentune.playback.dj.DeckTapProcessor
 import io.github.yyan115.opentune.playback.dj.DjEngine
 import io.github.yyan115.opentune.playback.dj.DjHost
 import io.github.yyan115.opentune.playback.dj.DjMix
+import io.github.yyan115.opentune.playback.dj.Preprocessor
 import io.github.yyan115.opentune.data.DownloadRequests
 import io.github.yyan115.opentune.core.JsonCodec
 import io.github.yyan115.opentune.core.Normalization
@@ -102,12 +103,14 @@ class PlaybackService : MediaLibraryService() {
      * Builds a player. The renderers pass the audio through the tap of the deck [slot] and the processor that lets the analyzer see it.
      * Without D'JAI the audio itself does not change.
      */
-    private fun buildPlayer(slot: Int, focus: Boolean): ExoPlayer {
+    private fun buildPlayer(slot: Int, focus: Boolean, analysis: Boolean = false): ExoPlayer {
         val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink {
-                AudioSpectrum.sinks++
+                // The hidden deck that prepares songs only taps, and always: nothing of it may ever be heard.
+                val chain = if (analysis) arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot, always = true))
+                    else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot)) }
                 return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(arrayOf(DeckTapProcessor(slot), SpectrumProcessor(slot))).build()
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
             }
         }
         val built = ExoPlayer.Builder(this, renderers)
@@ -189,6 +192,9 @@ class PlaybackService : MediaLibraryService() {
         return albumResult
     }
     private val engine by lazy { DjEngine(djHost, scope) }
+    private val preprocessor by lazy {
+        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, djHost::saveCues)
+    }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */
     private fun onItemStarted(mediaItem: MediaItem?) {
@@ -237,6 +243,7 @@ class PlaybackService : MediaLibraryService() {
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
         scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar, it.djEffects); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
+        scope.launch { DjMix.preprocess.collect { preprocessor.add(it) } }
         scope.launch { runCatching { app.scrobbler.flush() } }
         if (Build.VERSION.SDK_INT >= 23) audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback, Handler(Looper.getMainLooper())) }

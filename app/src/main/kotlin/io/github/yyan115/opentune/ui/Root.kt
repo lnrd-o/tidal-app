@@ -231,6 +231,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                 if (!track.isFile) SettingRow(OpenTuneIcons.Share, stringResource(R.string.share_story_button), onClick = {
                     storyTrack = track; trackMenu = null
                 })
+                if (track.onDevice || (state.signedIn && !state.settings.offline)) SettingRow(OpenTuneIcons.Waves, stringResource(R.string.track_analyze), onClick = { vm.analyzeForDjai(track); trackMenu = null })
                 val stored = state.local.firstOrNull { it.id == track.id } ?: track.takeIf(Track::onDevice)
                 if (stored != null) SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.track_remove_local), onClick = { removeTrack = stored; trackMenu = null })
             }

@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The file in which what the listening ahead learned about songs is kept between sessions, in the files folder. */
 const val DJAI_PROFILE_FILE = "djai_profiles.tsv"
@@ -68,7 +69,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     private enum class State { OFF, IDLE, PREPARING, READY, MIXING }
 
     private val output = DjOutput()
-    private val analyzers = arrayOf(DeckAnalyzer(0, scope) { songPosition(0) }, DeckAnalyzer(1, scope) { songPosition(1) })
+    private val analyzers = arrayOf(DeckAnalyzer(0, scope, songMs = { songPosition(0) }), DeckAnalyzer(1, scope, songMs = { songPosition(1) }))
 
     /**
      * The position of the song of a deck in milliseconds, as the last tick saw it. A player may only be asked on the main thread, and the analyzers
@@ -356,7 +357,21 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         }
     }
 
+    private var saveJob: Job? = null
+
+    /**
+     * Writes the profiles to the file. Several songs are often learned within seconds of each other, so the write waits a moment and then writes them all
+     * at once, and not one file for each song.
+     */
     private fun saveProfiles() {
+        if (saveJob?.isActive == true) return
+        saveJob = scope.launch {
+            delay(SAVE_DELAY_MS)
+            writeProfiles()
+        }
+    }
+
+    private suspend fun writeProfiles() {
         val lines = ArrayList<String>(profiles.size + 1)
         lines.add(PROFILE_VERSION)
         for ((id, p) in profiles) {
@@ -365,7 +380,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
                 b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString()).joinToString("\t"))
         }
         val file = host.profileFile()
-        scope.launch(Dispatchers.IO) { runCatching { synchronized(this@DjEngine) { file.writeText(lines.joinToString("\n")) } } }
+        withContext(Dispatchers.IO) { runCatching { synchronized(this@DjEngine) { file.writeText(lines.joinToString("\n")) } } }
     }
 
     /** Forgets what was learned about songs. */
@@ -378,6 +393,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val beat = bpm?.let { BeatAnalysis(it, 60.0 / it * PROVISIONAL_RATE, 0.0, 0, 0.6f) }
         return Profile(TrackSummary(beat, hint.camelot, null, null), PROVISIONAL_RATE)
     }
+
+    /** Keeps what a song that was prepared on request taught: it replaces what the short listening found. */
+    fun learn(id: String, summary: TrackSummary, rate: Int) { remember(id, Profile(summary, rate)) }
 
     private fun remember(id: String, profile: Profile) {
         profiles.remove(id)
@@ -549,7 +567,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         a.removeListener(watcher); a.removeListener(mirrorOut)
         // The outgoing song has been heard from its start: its cue points are found now and kept for the next time it plays.
         val heardId = itemId
-        if (heardId != null && djai) {
+        if (heardId != null && djai && host.cuesOf(heardId).isEmpty()) {
             val found = analyzers[outSlot].cues(a.duration)
             if (found.isNotEmpty()) {
                 host.saveCues(heardId, found)
@@ -643,6 +661,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         const val SCOUT_SPEED = 8f
         const val CHOOSE_MS = 6_000L
         const val MAX_PROFILES = 1500
+        /** The profiles are written this long after the first change, and all together. */
+        const val SAVE_DELAY_MS = 3_000L
         /** A drop further into the song than this is reached by starting the song later. */
         const val DROP_FAR_MS = 40_000L
         /** How much of the song before the blend into the drop is decoded first, enough for the tempo to be read. */

@@ -29,6 +29,7 @@ import io.github.yyan115.opentune.data.Settings
 import io.github.yyan115.opentune.playback.PlaybackCommands
 import io.github.yyan115.opentune.playback.PlaybackService
 import kotlinx.coroutines.CancellationException
+import io.github.yyan115.opentune.playback.dj.DjMix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -91,6 +92,22 @@ data class AppState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val app = application as OpenTuneApp
 
+    /** Asks D'JAI to prepare [track]: its tempo, key, energy and cue points, without playing it. The result comes as a message. */
+    fun analyzeForDjai(track: Track) {
+        if (track.isFile && track.localUri == null) return
+        viewModelScope.launch {
+            // A song whose cue points are kept was read to the end already: it is not read again.
+            if (cuesOf(track.id).isNotEmpty()) { notify(app.getString(R.string.djai_already, track.title)); return@launch }
+            DjMix.preprocess.tryEmit(io.github.yyan115.opentune.playback.dj.PreprocessRequest(track.id, track.title, app.sources.unresolved(track), track.durationMs))
+            notify(app.getString(R.string.djai_analyzing, track.title))
+        }
+    }
+
+    private fun announce(result: io.github.yyan115.opentune.playback.dj.PreprocessResult) {
+        if (!result.ok) { notify(app.getString(R.string.djai_analyze_failed, result.title)); return }
+        notify(app.getString(R.string.djai_analyzed, result.title, result.bpm?.let { "%.0f".format(it) } ?: "?", result.key ?: "?", result.cues.size))
+    }
+
     /** The cue points that D'JAI found in the song with [id]. */
     suspend fun cuesOf(id: String): List<io.github.yyan115.opentune.core.dj.Cue> = withContext(Dispatchers.IO) {
         runCatching {
@@ -143,6 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        viewModelScope.launch { DjMix.preprocessResults.collect { announce(it) } }
         controllerFuture.addListener({
             try {
                 val player = controllerFuture.get()

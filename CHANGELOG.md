@@ -7,6 +7,7 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 ### Added
 
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- An "Analyze for D'JAI" button in the menu of a song (long press or the three dots) reads the whole song at four times its speed, without playing it, and keeps its tempo, key, energy and cue points. A song that was analyzed is not read again.
 - The cue points that D'JAI found in a song are shown as small pins above the seek line of the player. A drop is marked in white, the others fainter.
 - D'JAI listens to the songs ahead at eight times the speed, to twelve songs instead of six, and starts at once after a song is changed by hand.
 - D'JAI rolls a loop over the last two beats before the swap when both songs are loud, and the song comes back in time. A switch, D'JAI effects, turns the roll and the cue points off.

@@ -14,7 +14,7 @@ import java.nio.ByteOrder
  * A rate above 48 kHz is brought down by whole steps, and a flush (a seek, or a new track) marks the ring so that stale audio is never read.
  */
 @UnstableApi
-class DeckTapProcessor(private val slot: Int) : BaseAudioProcessor() {
+class DeckTapProcessor(private val slot: Int, private val always: Boolean = false) : BaseAudioProcessor() {
     private var encoding = C.ENCODING_INVALID
     private var channels = 2
     private var step = 1
@@ -43,7 +43,7 @@ class DeckTapProcessor(private val slot: Int) : BaseAudioProcessor() {
         val size = inputBuffer.remaining()
         if (size == 0) return
         val out = replaceOutputBuffer(size)
-        if (DjMix.routing) {
+        if (always || DjMix.routing) {
             tap(inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN))
             inputBuffer.position(inputBuffer.limit())
             var left = size

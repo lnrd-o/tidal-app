@@ -80,4 +80,39 @@ class TempoOctaveTest {
         assertTrue(without != null && with != null)
         assertEquals(without!!.bpm, with!!.bpm, without.bpm * 0.03)
     }
+
+    private fun analyzeWithHint(samples: FloatArray, hint: Double?): BeatAnalysis? {
+        val env = OnsetEnvelope(rate); env.reset(0)
+        env.feed(samples, samples.size)
+        val (tail, first) = env.tail(172 * 20)
+        return BeatTracker.analyze(tail, env.timeOf(first), rate, kick = env.lowTail(172 * 20), hintBpm = hint)
+    }
+
+    @Test fun aCatalogueTempoSettlesTheOctaveWhenThereIsNoKickToFollow() {
+        // Hats on every sixteenth and a snare, and no kick: the whole band can read this at double.
+        val samples = groove(90.0, 30.0, emptySet(), setOf(1, 3), hatsPerBeat = 4)
+        val alone = analyzeWithHint(samples, null)!!.bpm
+        val withCatalogue = analyzeWithHint(samples, 90.0)!!.bpm
+        println("no kick, 90 bpm: alone $alone, with the catalogue $withCatalogue")
+        assertEquals("with the catalogue", 90.0, withCatalogue, 1.5)
+    }
+
+    @Test fun aCatalogueThatIsFarFromTheMusicIsNotBelieved() {
+        val samples = groove(126.0, 30.0, setOf(0, 1, 2, 3), setOf(1, 3), hatsPerBeat = 2)
+        // The catalogue says 90, which is no octave of 126: the music wins.
+        assertEquals(126.0, analyzeWithHint(samples, 90.0)!!.bpm, 126.0 * 0.01)
+        // A catalogue that agrees changes nothing.
+        assertEquals(126.0, analyzeWithHint(samples, 126.5)!!.bpm, 126.0 * 0.01)
+        // And a catalogue that names the double of a tempo that the kick supports does not move a song whose kick is clear.
+        assertEquals(126.0, analyzeWithHint(samples, 252.0)!!.bpm, 126.0 * 0.01)
+    }
+
+    @Test fun theTempoThatIsKeptIsAlwaysOneThatWasMeasured() {
+        val samples = groove(88.0, 30.0, setOf(0, 2), setOf(1, 3), hatsPerBeat = 2)
+        val result = analyzeWithHint(samples, 88.4)!!
+        assertEquals(88.0, result.bpm, 88.0 * 0.01)
+        // The result is not the catalogue's number but the tempo found in the sound, to a few thousandths.
+        assertTrue("${result.bpm}", abs(result.bpm - 88.4) > 0.05 || abs(result.bpm - 88.0) < 0.05)
+    }
 }
+

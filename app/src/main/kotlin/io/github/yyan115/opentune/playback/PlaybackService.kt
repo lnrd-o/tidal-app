@@ -180,6 +180,18 @@ class PlaybackService : MediaLibraryService() {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.saveCues(id, cues.map { it.kind.name to it.atMs }) } }
         }
 
+        override suspend fun lyricsOf(id: String): List<io.github.yyan115.opentune.core.LyricLine>? = withContext(Dispatchers.IO) {
+            if (id.startsWith("local:") || !id.all(Char::isDigit)) return@withContext null
+            val cached = app.library.cache("shared", "lyrics:$id")
+            if (!cached.isNullOrEmpty()) return@withContext runCatching { io.github.yyan115.opentune.core.LyricsCodec.decode(cached) }.getOrNull()?.lines?.takeIf { it.isNotEmpty() }
+            if (cached != null) return@withContext null
+            // Not known yet: the lyrics are fetched, when the app may use the network, and kept as the player keeps them.
+            if (app.settings.state.value.offline || !app.tidal.signedIn) return@withContext null
+            val lyrics = runCatching { app.tidal.lyrics(id) }.getOrNull()
+            runCatching { app.library.cache("shared", "lyrics:$id", lyrics?.let(io.github.yyan115.opentune.core.LyricsCodec::encode).orEmpty()) }
+            lyrics?.lines?.takeIf { it.isNotEmpty() }
+        }
+
         override fun rememberTrack(item: MediaItem) {
             val track = item.mediaMetadata.extras?.getString("track")?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(org.json.JSONObject(it)) }.getOrNull() } ?: return
             scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.saveAll(listOf(track)) } }
@@ -205,7 +217,7 @@ class PlaybackService : MediaLibraryService() {
     }
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
-        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai })
+        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf)
     }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */

@@ -7,6 +7,8 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 ### Added
 
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- D'JAI finds the verses, choruses and bridge of a song from its timed lyrics when it has them: the lines that come back are the chorus. It is more reliable than listening for it, and the music still gives the peak, drops and outro.
+- When TIDAL (or Deezer) gives the tempo of a song, D'JAI uses it to choose between a tempo and its double or half, and confirms it by listening. A tempo that the music does not support is not taken.
 - A Mixes tab, with playlists that D'JAI builds from the songs it has analysed, in an order that gives good transitions: a journey from calm to intense, mixes by energy, by tempo and by key.
 - A change of song by hand (skip, jump, a new queue) or a move inside the song makes D'JAI start again for the song that plays, also in the tail of a mix. Adding songs to the queue no longer cancels the transition that is prepared.
 - A song chosen in a search plays alone. With Autoplay on, songs like it (its artist and genre) follow; with Autoplay off nothing is queued.

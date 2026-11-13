@@ -32,6 +32,8 @@ class Preprocessor(
     private val saveCues: (String, List<Cue>) -> Unit,
     /** Whether D'JAI is on. While it is off nothing is prepared: a song that is being read is put back, and the queue waits. */
     private val enabled: () -> Boolean = { true },
+    /** The timed lyrics of a song, by its id, or null. */
+    private val lyrics: suspend (String) -> List<io.github.yyan115.opentune.core.LyricLine>? = { null },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
@@ -54,6 +56,7 @@ class Preprocessor(
     private suspend fun run(request: PreprocessRequest): PreprocessResult? {
         val failed = PreprocessResult(request.title, false, null, null, emptyList())
         val analyzer = DeckAnalyzer(DjMix.ANALYSIS_SLOT, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
+        analyzer.hintBpm = catalogBpm(request.item)
         DjMix.streams[DjMix.ANALYSIS_SLOT].clear()
         val player = runCatching { build() }.getOrNull() ?: return failed
         try {
@@ -79,7 +82,7 @@ class Preprocessor(
             val duration = if (request.durationMs > 0) request.durationMs else player.duration.coerceAtLeast(0L)
             val beat = analyzer.beat
             val key = analyzer.key
-            val cues = analyzer.cues(duration)
+            val cues = analyzer.sectionInput(duration)?.let { input -> detectCues(input, runCatching { lyrics(request.id) }.getOrNull()) }.orEmpty()
             val summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
             if (beat == null && key == null) return failed
             learn(request.id, summary, analyzer.rate)

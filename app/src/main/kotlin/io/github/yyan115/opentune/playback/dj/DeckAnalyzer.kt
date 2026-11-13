@@ -1,7 +1,9 @@
 package io.github.yyan115.opentune.playback.dj
 
 import io.github.yyan115.opentune.core.dj.BarFinder
+import io.github.yyan115.opentune.core.LyricLine
 import io.github.yyan115.opentune.core.dj.Cue
+import io.github.yyan115.opentune.core.dj.SliceFeatures
 import io.github.yyan115.opentune.core.dj.SectionAccumulator
 import io.github.yyan115.opentune.core.dj.SectionDetector
 import io.github.yyan115.opentune.core.dj.Swing
@@ -62,6 +64,10 @@ class DeckAnalyzer(
         private set
     private var swingTick = 0
 
+    /** The tempo that a catalogue gives for the song, which settles the octave of the tempo that is heard. Set by the engine for each song. */
+    @Volatile var hintBpm: Double? = null
+    private var hintLogged = false
+
     /** The whole playthrough in slices of half a second, from which the cue points are found. */
     private var sections: SectionAccumulator? = null
     /** The position of the song, in milliseconds, at which the analysis began, or -1 when it is not known. And the ring frame at that moment. */
@@ -82,7 +88,7 @@ class DeckAnalyzer(
     /** Starts the analysis again from [frame] of the ring, for a new track that began without a flush. */
     fun restart(frame: Long) { restartAt = frame }
 
-    private fun clearResults() { sections?.reset(); swing = null; swingTick = 0; firstHit = null; beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
+    private fun clearResults() { sections?.reset(); swing = null; swingTick = 0; hintLogged = false; firstHit = null; beat = null; key = null; origin = null; energyRecent = null; energyIntro = null; seconds = 0f }
 
     private suspend fun loop() {
         var attached: PcmRing? = null
@@ -138,13 +144,18 @@ class DeckAnalyzer(
     private fun estimateOnce(ring: PcmRing, e: OnsetEnvelope, keys: KeyDetector, read: Long) {
         val fps = ring.rate.toDouble() / OnsetEnvelope.HOP
         val (tail, first) = e.tail((fps * 20).toInt())
-        BeatTracker.analyze(tail, e.timeOf(first), ring.rate, kick = e.lowTail((fps * 20).toInt()))?.let { tracked ->
+        BeatTracker.analyze(tail, e.timeOf(first), ring.rate, kick = e.lowTail((fps * 20).toInt()), hintBpm = hintBpm)?.let { tracked ->
             // The first drum hit is found once. The grid is then moved onto the kick, and the bar is read from the kick and the snare, so that
             // the phrase starts on bar one and not on whatever drum came first.
             if (firstHit == null) e.head((fps * 24).toInt())?.let { head -> firstHit = PhraseOrigin.detect(head, e.timeOf(0), tracked, ring.rate) }
             val hit = firstHit
             val found = BarFinder.refine(ring, tracked, hit ?: ring.oldest().toDouble(), hit)
             beat = found
+            // The catalogue and the listening are compared: when they disagree by more than an octave can explain, the listening wins and the log says so.
+            hintBpm?.let { hint ->
+                val octave = listOf(0.5, 1.0, 2.0).minOf { kotlin.math.abs(found.bpm * it / hint - 1.0) }
+                if (!hintLogged && octave > 0.03) { hintLogged = true; android.util.Log.w("OpenTune", "D'JAI tempo: the catalogue says %.1f, the music says %.1f".format(hint, found.bpm)) }
+            }
             // The groove is read when it is not known, and now and then after that: it changes little within a song.
             if (swing == null || ++swingTick % 4 == 0) Swing.measure(ring, found, hit ?: ring.oldest().toDouble())?.let { swing = it }
             // The origin is kept on the newest grid, so that the blocks of 32 beats stay true. It waits for the bar to be known, but not for long.
@@ -163,16 +174,20 @@ class DeckAnalyzer(
     }
 
     /**
-     * The cue points of the song that this deck played, found from its whole playthrough, or an empty list when the playthrough is not whole: the analysis
-     * must have begun at the start of the song, with no seek since, and have heard all of it but its last [TAIL_MS] milliseconds.
+     * What it takes to find the cue points of the song that this deck played, or null when the playthrough is not whole: the analysis must have begun at the
+     * start of the song, with no seek since, and have heard all of it but its last [TAIL_MS] milliseconds. It is a copy, so that it can be used after the
+     * analysis has stopped, for example once the lyrics have been fetched.
      */
-    fun cues(durationMs: Long): List<Cue> {
-        val heard = sections ?: return emptyList()
-        val grid = beat ?: return emptyList()
-        if (startedAtMs !in 0..START_MS || durationMs <= 0 || heard.seconds * 1000 < durationMs - TAIL_MS) return emptyList()
+    fun sectionInput(durationMs: Long): SectionInput? {
+        val heard = sections ?: return null
+        val grid = beat ?: return null
+        if (startedAtMs !in 0..START_MS || durationMs <= 0 || heard.seconds * 1000 < durationMs - TAIL_MS) return null
         val origin = origin?.let { (it - startedAtFrame) / rate.toDouble() }?.coerceAtLeast(0.0) ?: 0.0
-        return SectionDetector.detect(heard.slices(), grid.bpm, origin, grid.beatsPerBar).map { Cue(it.kind, it.atMs + startedAtMs) }
+        return SectionInput(heard.slices().toList(), grid.bpm, origin, grid.beatsPerBar, startedAtMs)
     }
+
+    /** The cue points of the song that this deck played, or an empty list when the playthrough is not whole. With timed [lyrics] they follow the words. */
+    fun cues(durationMs: Long, lyrics: List<LyricLine>? = null): List<Cue> = sectionInput(durationMs)?.let { detectCues(it, lyrics) }.orEmpty()
 
     private companion object {
         /** A song counts as played from its start when the analysis began within this many milliseconds of it. */
@@ -181,3 +196,10 @@ class DeckAnalyzer(
         const val TAIL_MS = 100_000L
     }
 }
+
+/** The slices of a playthrough with the tempo, the first bar and the beats in a bar, and where in the song the playthrough began: all that the cue points need. */
+class SectionInput(val slices: List<SliceFeatures>, val bpm: Double, val originSeconds: Double, val beatsPerBar: Int, val startMs: Long)
+
+/** The cue points of a playthrough, in milliseconds of the song. With timed lyrics, the verses, choruses and bridge come from the words. */
+fun detectCues(input: SectionInput, lyrics: List<LyricLine>? = null): List<Cue> =
+    SectionDetector.detect(input.slices, input.bpm, input.originSeconds, input.beatsPerBar, lyrics).map { Cue(it.kind, it.atMs + input.startMs) }

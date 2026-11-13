@@ -42,6 +42,10 @@ class DjOptions(
     val listenAhead: Int = 12,
 )
 
+/** The tempo that TIDAL gave for the song of a media item, in its data, or null. */
+fun catalogBpm(item: MediaItem?): Double? =
+    item?.mediaMetadata?.extras?.getString("track")?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(org.json.JSONObject(it)).bpm }.getOrNull() }
+
 /** What the engine needs from the playback service. */
 @UnstableApi
 interface DjHost {
@@ -61,6 +65,8 @@ interface DjHost {
     fun cuesOf(id: String): List<Cue>
     /** Keeps the cue points that were found in the song with [id]. */
     fun saveCues(id: String, cues: List<Cue>)
+    /** The timed lyrics of the song with [id], from the device or, when it is allowed, from TIDAL, or null when it has none. */
+    suspend fun lyricsOf(id: String): List<io.github.yyan115.opentune.core.LyricLine>?
     /** Keeps the song of [item] in the library, so that lists that D'JAI builds can show it. */
     fun rememberTrack(item: MediaItem)
     /** The tempo and key of [item] from an online catalogue, or null. It may take a network request. */
@@ -213,6 +219,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         asked.clear()
         if (djai) {
             val slot = DjMix.sessionSlot
+            analyzers[slot].hintBpm = hintFor(host.player.currentMediaItem)
             DjMix.streams[slot].ring?.let { analyzers[slot].restart(maxOf(it.discontinuity, it.written - (0.3 * it.rate).toLong())) }
         }
         publish()
@@ -229,6 +236,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     fun onTrackChanged() {
         if (state != State.IDLE) return
         val slot = DjMix.sessionSlot
+        analyzers[slot].hintBpm = hintFor(host.player.currentMediaItem)
         DjMix.streams[slot].ring?.let { analyzers[slot].restart(maxOf(it.discontinuity, it.written - (0.3 * it.rate).toLong())) }
     }
 
@@ -274,6 +282,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         DjMix.mixer.setSource(1 - slot, null)
         DjMix.mixer.setGain(slot, host.gainFor(host.player.currentMediaItem))
         DjMix.routing = true
+        analyzers[slot].hintBpm = hintFor(host.player.currentMediaItem)
         if (djai) analyzers[slot].start()
         output.start()
     }
@@ -414,6 +423,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         // The mixer never reads this deck. It only decodes, so that the analyzer can listen.
         DjMix.mixer.setSource(scoutSlot, null)
         b.setMediaItem(item)
+        analyzers[scoutSlot].hintBpm = hintFor(item)
         // Nobody hears this deck, so it plays at the fastest speed that the player allows. The tap sits before the speed change, so the analyzer still sees
         // every frame of the song at its own speed: twenty seconds of it are read in a few seconds.
         b.setPlaybackParameters(androidx.media3.common.PlaybackParameters(SCOUT_SPEED))
@@ -513,6 +523,16 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         return Profile(TrackSummary(beat, hint.camelot, null, null), PROVISIONAL_RATE)
     }
 
+    /** The songs whose catalogue tempo was logged. */
+    private val hintLogged = HashSet<String>()
+
+    /** The tempo that a catalogue gives for the song of [item]: from TIDAL's data, or what was asked of the catalogues. The log says whether there is one. */
+    private fun hintFor(item: MediaItem?): Double? {
+        val bpm = catalogBpm(item) ?: item?.mediaId?.let { online[it]?.bpm }
+        item?.mediaId?.let { if (hintLogged.add(it)) android.util.Log.i("OpenTune", "D'JAI catalogue tempo of ${host.titleOf(item)}: ${bpm?.let { b -> "%.1f".format(b) } ?: "none"}") }
+        return bpm
+    }
+
     /** Keeps what a song that was prepared on request taught: it replaces what the short listening found. */
     fun learn(id: String, summary: TrackSummary, rate: Int) { remember(id, Profile(summary, rate)) }
 
@@ -585,6 +605,7 @@ val measured = profiles[key]
         incomingCues = if (options.cues && djai) host.cuesOf(items[next].mediaId) else emptyList()
         incomingStartMs = startForDrop(items[next].mediaId, incomingCues)
         b.setMediaItems(items, next, incomingStartMs)
+        analyzers[inSlot].hintBpm = hintFor(items[next])
         DjMix.streams[inSlot].clear()
         DjMix.mixer.setSource(inSlot, DjMix.streams[inSlot])
         DjMix.mixer.setGain(inSlot, host.gainFor(items[next]))
@@ -796,12 +817,27 @@ val measured = profiles[key]
         // The song that just played goes into the history of the set.
         (decision?.energyOutgoing ?: analyzers[outSlot].energyRecent)?.let { played.addLast(it); while (played.size > EnergyArc.MAX) played.removeFirst() }
         val heardId = itemId
-        if (heardId != null && djai && host.cuesOf(heardId).isEmpty()) {
-            val found = analyzers[outSlot].cues(a.duration)
-            if (found.isNotEmpty()) {
-                host.saveCues(heardId, found)
-                noteCues(heardId)
-                android.util.Log.i("OpenTune", "D'JAI cues of the song: " + found.joinToString { "${it.kind} ${it.atMs / 1000}s" })
+        if (heardId != null && djai) {
+            val input = analyzers[outSlot].sectionInput(a.duration)
+            if (input != null) {
+                if (host.cuesOf(heardId).isEmpty()) {
+                    val found = detectCues(input)
+                    if (found.isNotEmpty()) {
+                        host.saveCues(heardId, found)
+                        noteCues(heardId)
+                        android.util.Log.i("OpenTune", "D'JAI cues of the song: " + found.joinToString { "${it.kind} ${it.atMs / 1000}s" })
+                    }
+                }
+                // The words, when the song has timed lyrics, tell the verses, the choruses and the bridge better than the harmony: they replace those.
+                scope.launch {
+                    val lyrics = runCatching { host.lyricsOf(heardId) }.getOrNull() ?: return@launch
+                    val refined = detectCues(input, lyrics)
+                    if (refined.any { it.kind == CueKind.CHORUS }) {
+                        host.saveCues(heardId, refined)
+                        noteCues(heardId)
+                        android.util.Log.i("OpenTune", "D'JAI cues of the song from its words: " + refined.joinToString { "${it.kind} ${it.atMs / 1000}s" })
+                    }
+                }
             }
         }
         DjMix.sessionSlot = inSlot

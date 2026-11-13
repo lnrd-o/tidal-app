@@ -1,6 +1,7 @@
 package io.github.yyan115.opentune.core.dj
 
 import io.github.yyan115.opentune.core.Spectrum
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.ln
@@ -143,8 +144,10 @@ object BeatTracker {
     private const val KICK_MIN = 0.4
     private const val KICK_GAIN = 1.3
     private const val KICK_GAIN_THIRDS = 1.6
+    /** A catalogue and the music agree within this share of the tempo. */
+    private const val CATALOGUE_TOLERANCE = 0.06
 
-    fun analyze(envelope: FloatArray, firstSample: Double, rate: Int, minBpm: Double = 70.0, maxBpm: Double = 180.0, kick: FloatArray? = null): BeatAnalysis? {
+    fun analyze(envelope: FloatArray, firstSample: Double, rate: Int, minBpm: Double = 70.0, maxBpm: Double = 180.0, kick: FloatArray? = null, hintBpm: Double? = null): BeatAnalysis? {
         val n = envelope.size
         val fps = rate.toDouble() / OnsetEnvelope.HOP
         if (n < fps * 8) return null
@@ -163,7 +166,11 @@ object BeatTracker {
 
         // The beats of a song are where its kick falls. The hats and the snares divide a beat, and they can make the tempo look double (or half), so when the
         // kick is known its pattern decides between a tempo and its double and half.
-        if (kick != null && kick.size == envelope.size) bestBpm = followTheKick(prepare(kick, fps), bestBpm, fps, minBpm, maxBpm)
+        val kickPrepared = if (kick != null && kick.size == envelope.size) prepare(kick, fps) else null
+        if (kickPrepared != null) bestBpm = followTheKick(kickPrepared, bestBpm, fps, minBpm, maxBpm)
+        // A catalogue may give the tempo of the song. It settles which octave to take, and the listening confirms it: the tempo that is kept is always one that was
+        // measured, and a catalogue that is far from every octave of it is not believed.
+        if (hintBpm != null) bestBpm = followTheCatalogue(e, kickPrepared, bestBpm, hintBpm, fps, minBpm, maxBpm)
 
         // Fine: within 1.5 percent of the coarse tempo in steps of 0.02 percent, with a finer phase.
         var bpmFine = bestBpm; var phase = 0.0; var peak = -1.0
@@ -205,6 +212,21 @@ object BeatTracker {
         val period = 60.0 * fps / bpm
         val (phase, on) = bestPhase(kick, period, 1.0)
         return on - comb(kick, phase + period / 2, period)
+    }
+
+    /**
+     * The octave of [bpm] (itself, half or double) that is nearest to what a catalogue says, when it is within 6 percent of it, there is a pulse at that tempo
+     * in the music (at least half as strong as at [bpm]) and the kick does not rule it out (at least half the contrast). Otherwise [bpm] stays.
+     */
+    private fun followTheCatalogue(e: FloatArray, kick: FloatArray?, bpm: Double, hint: Double, fps: Double, minBpm: Double, maxBpm: Double): Double {
+        if (hint < 40.0 || hint > 250.0) return bpm
+        val target = doubleArrayOf(0.5, 1.0, 2.0).map { bpm * it }.filter { it in minBpm..maxBpm }.minByOrNull { abs(ln(it / hint)) } ?: return bpm
+        if (target == bpm || abs(target / hint - 1.0) > CATALOGUE_TOLERANCE) return bpm
+        val pulse = bestPhase(e, 60.0 * fps / target, 1.0).second
+        val own = bestPhase(e, 60.0 * fps / bpm, 1.0).second
+        if (pulse < 0.5 * own) return bpm
+        if (kick != null && kickContrast(kick, target, fps) < 0.5 * kickContrast(kick, bpm, fps)) return bpm
+        return target
     }
 
     /** The tempo, or its double, half or three to two, that the kick of the song marks the best. The one that is found stays unless another is clearly better. */

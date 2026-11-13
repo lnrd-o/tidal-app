@@ -138,7 +138,7 @@ object SectionDetector {
      * [originSeconds] is where the first bar begins, in seconds from the start of the slices. [beatsPerBar] is three or four.
      * The cues come back in time order, with their time in milliseconds from the start of the slices.
      */
-    fun detect(slices: List<SliceFeatures>, bpm: Double, originSeconds: Double, beatsPerBar: Int = 4): List<Cue> {
+    fun detect(slices: List<SliceFeatures>, bpm: Double, originSeconds: Double, beatsPerBar: Int = 4, lyrics: List<io.github.yyan115.opentune.core.LyricLine>? = null): List<Cue> {
         if (slices.isEmpty() || bpm < 50.0 || bpm > 220.0) return emptyList()
         val barSeconds = beatsPerBar * 60.0 / bpm
         val total = slices.size * SectionAccumulator.SLICE_SECONDS
@@ -149,8 +149,26 @@ object SectionDetector {
         val cues = ArrayList<Cue>()
         cues.add(intro)
         cues.addAll(energyCues(features, bars, barSeconds, originSeconds))
-        cues.addAll(structureCues(slices, features, bars, barSeconds, originSeconds))
+        // The words, when the song has timed lyrics with a chorus in them, say where the verses, the choruses and the bridge are better than the harmony does.
+        val words = lyrics?.let { LyricStructure.detect(it, (total * 1000).toLong()) }.orEmpty()
+        val heard = structureCues(slices, features, bars, barSeconds, originSeconds)
+        if (words.any { it.kind == CueKind.CHORUS }) {
+            // The peak is the music's: the words say nothing of how intense a part is. The rest comes from the words.
+            cues.addAll(heard.filter { it.kind == CueKind.PEAK })
+            cues.addAll(wordCues(words, barSeconds, originSeconds, cues))
+        } else cues.addAll(heard)
         return merge(cues)
+    }
+
+    /** The sections from the words as cues, on the bars of the song. A break from the words is left out where the music has found one already. */
+    private fun wordCues(words: List<LyricSection>, barSeconds: Double, originSeconds: Double, found: List<Cue>): List<Cue> {
+        val out = ArrayList<Cue>()
+        for (section in words) {
+            val at = LyricStructure.snapToBar(section.startMs, originSeconds, barSeconds)
+            if (section.kind == CueKind.BREAK && found.any { it.kind == CueKind.BREAK && abs(it.atMs - at) < 3 * barSeconds * 1000 }) continue
+            out.add(Cue(section.kind, at))
+        }
+        return out
     }
 
     /** The cues in time order, without the same kind twice at one moment. A drop and a chorus at the same moment are both kept. */

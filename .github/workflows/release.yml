@@ -60,7 +60,7 @@ jobs:
   build:
     name: Build and sign
     needs: check
-    if: ${{ !github.event.repository.fork && (github.ref == 'refs/heads/main' || inputs.dry_run) }}
+    if: ${{ github.ref == 'refs/heads/main' || inputs.dry_run }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

@@ -7,6 +7,10 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 ### Added
 
 - D'JAI finds the drop, breaks and outro of the songs it hears and keeps them. In the next mix it starts the blend at the outro of the song that ends and enters the song that follows so that its drop lands on the swap.
+- A Mixes tab, with playlists that D'JAI builds from the songs it has analysed, in an order that gives good transitions: a journey from calm to intense, mixes by energy, by tempo and by key.
+- A change of song by hand (skip, jump, a new queue) or a move inside the song makes D'JAI start again for the song that plays, also in the tail of a mix. Adding songs to the queue no longer cancels the transition that is prepared.
+- A song chosen in a search plays alone. With Autoplay on, songs like it (its artist and genre) follow; with Autoplay off nothing is queued.
+- A song is added to the queue once: a second swipe or menu action does not add it again, and Play next moves a song that is queued already.
 - Android Auto: the app shows as a spectrum mark, its library is four tabs with icons (recently played, saved songs, playlists, and a library with albums and downloads), albums and playlists show as a grid, search is offered, and the player has buttons to save the song, shuffle, repeat and turn D'JAI on or off. The phone's media controls get the same buttons.
 - D'JAI cues the next song as a DJ does: it parks it just before its entry and starts it right before the mix. Before, the next song ran on silently from its preparation, so the mix could enter it at a random place off the beat and time the next mix too early. The incoming song also stays at the matched tempo while the outgoing one can still be heard.
 - D'JAI follows the kick of a song to settle its tempo, so that busy hats and snares no longer make a song read at double, or at three to two. Tempos that were kept before are read again.

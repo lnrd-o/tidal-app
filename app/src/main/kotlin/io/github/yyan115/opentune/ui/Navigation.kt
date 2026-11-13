@@ -20,10 +20,10 @@ import androidx.compose.ui.unit.sp
 
 /** The places that the navigation offers. A listener who has not signed in has [Device] only, so the navigation is not shown. */
 enum class Destination(val tag: String, @androidx.annotation.StringRes val title: Int) {
-    Home("home", R.string.nav_home), Search("search", R.string.nav_search), Library("library", R.string.nav_library), Device("device", R.string.nav_device);
+    Home("home", R.string.nav_home), Search("search", R.string.nav_search), Library("library", R.string.nav_library), Mixes("mixes", R.string.nav_mixes), Device("device", R.string.nav_device);
 
     val icon: ImageVector get() = when (this) {
-        Home -> OpenTuneIcons.Headphones; Search -> OpenTuneIcons.Search; Library -> OpenTuneIcons.LibraryMusic; Device -> OpenTuneIcons.Device
+        Home -> OpenTuneIcons.Headphones; Search -> OpenTuneIcons.Search; Library -> OpenTuneIcons.LibraryMusic; Mixes -> OpenTuneIcons.Waves; Device -> OpenTuneIcons.Device
     }
 }
 

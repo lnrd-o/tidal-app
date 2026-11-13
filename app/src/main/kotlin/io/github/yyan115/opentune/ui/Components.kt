@@ -166,10 +166,15 @@ fun TrackRow(track: Track, playing: Boolean = false, onPlay: () -> Unit, onMenu:
     val known = LocalDjKnown.current[track.id]
     val showDjData = LocalShowDjData.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // The box can ask to confirm the same swipe more than once while it settles and springs back: one swipe is one action.
+    var lastSwipe by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+        val now = android.os.SystemClock.elapsedRealtime()
+        val fresh = now - lastSwipe > 900
+        if (value != SwipeToDismissBoxValue.Settled && fresh) lastSwipe = now
         when (value) {
-            SwipeToDismissBoxValue.StartToEnd -> { actions?.playNext?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
-            SwipeToDismissBoxValue.EndToStart -> { actions?.addToQueue?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            SwipeToDismissBoxValue.StartToEnd -> if (fresh) { actions?.playNext?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            SwipeToDismissBoxValue.EndToStart -> if (fresh) { actions?.addToQueue?.invoke(track); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
             SwipeToDismissBoxValue.Settled -> Unit
         }
         // The row never leaves: it springs back, so that the list stays as it is.

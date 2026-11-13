@@ -180,6 +180,11 @@ class PlaybackService : MediaLibraryService() {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.saveCues(id, cues.map { it.kind.name to it.atMs }) } }
         }
 
+        override fun rememberTrack(item: MediaItem) {
+            val track = item.mediaMetadata.extras?.getString("track")?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(org.json.JSONObject(it)) }.getOrNull() } ?: return
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.library.saveAll(listOf(track)) } }
+        }
+
         override fun profileFile(): java.io.File = java.io.File(filesDir, io.github.yyan115.opentune.playback.dj.DJAI_PROFILE_FILE)
     }
     private var albumKey: String? = null
@@ -219,7 +224,15 @@ class PlaybackService : MediaLibraryService() {
     private val playerListener = object : Player.Listener {
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { if (shuffleModeEnabled) shuffleUpcoming() else restoreOrder(); updateButtons() }
         override fun onRepeatModeChanged(repeatMode: Int) { updateButtons() }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { onItemStarted(mediaItem); engine.onTrackChanged(); updateButtons() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            onItemStarted(mediaItem)
+            // A change by hand (skip, jump, a new queue) starts D'JAI again for the song that plays; a song that follows by itself only restarts its analysis.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) engine.userChangedSong() else engine.onTrackChanged()
+            updateButtons()
+        }
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) engine.userSeeked()
+        }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) playingSince = SystemClock.elapsedRealtime()
             else if (playingSince != 0L) { listenedMs += SystemClock.elapsedRealtime() - playingSince; playingSince = 0 }

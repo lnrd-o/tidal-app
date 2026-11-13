@@ -94,6 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Asks D'JAI to prepare [track]: its tempo, key, energy and cue points, without playing it. The result comes as a message. */
     fun analyzeForDjai(track: Track) {
+        // The mixes list a song only when the library holds it.
+        viewModelScope.launch(Dispatchers.IO) { runCatching { app.library.saveAll(listOf(track)) } }
         if (track.isFile && track.localUri == null) return
         if (!app.settings.state.value.djai) { notify(app.getString(R.string.djai_analyze_needs_djai)); return }
         viewModelScope.launch {
@@ -446,6 +448,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (shuffled) player.sendCustomCommand(PlaybackCommands.Reshuffle, android.os.Bundle.EMPTY)
         player.prepare(); player.play()
     }
+    /**
+     * Plays one song from the results of a search: only that song. With Autoplay on, songs that resemble it (TIDAL's radio of the song, which follows its artist
+     * and genre) are added after it; with Autoplay off nothing is queued. The rest of the results never go into the queue.
+     */
+    fun playSearchResult(track: Track, source: String) {
+        play(listOf(track), 0, source, shuffle = false)
+        val state = ui.value
+        if (!state.settings.autoplay || !state.signedIn || state.settings.offline || track.isFile) return
+        viewModelScope.launch {
+            val similar = try { RepeatPolicy.dropRecent(app.tidal.trackRadio(track.id).filterNot { it.id == track.id }, Track::id, recentlyPlayed()).take(SIMILAR_AFTER_SEARCH) }
+            catch (error: Exception) { if (error is CancellationException) throw error; return@launch }
+            val player = controller ?: return@launch
+            // Only while that song is still the one that plays: another choice in the meantime has a queue of its own.
+            if (similar.isEmpty() || player.mediaItemCount != 1 || player.currentMediaItem?.mediaId != track.id) return@launch
+            player.addMediaItems(similar.map(app.sources::unresolved))
+        }
+    }
+
     fun togglePlay() {
         controller?.let { player ->
             // A player that wants to play but is buffering is playing for this button, as for the system: pressing it pauses.
@@ -484,6 +504,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun queue(track: Track, next: Boolean = false) {
         val player = controller ?: return
         if (player.mediaItemCount == 0) { play(listOf(track)); return }
+        // A song is queued once: it is not added again, whatever the way it was asked for (a swipe, the menu, a double swipe).
+        val current = player.currentMediaItemIndex
+        if (player.currentMediaItem?.mediaId == track.id) { notify(app.getString(R.string.notify_already_playing)); return }
+        val queued = (current + 1 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
+        if (queued != null) {
+            if (!next) { notify(app.getString(R.string.notify_already_queued)); return }
+            // Play next on a song that is queued already moves it to the next place.
+            if (queued == current + 1) notify(app.getString(R.string.notify_plays_next))
+            else { player.moveMediaItem(queued, current + 1); notify(app.getString(R.string.notify_plays_next)) }
+            return
+        }
         val index = if (next) player.currentMediaItemIndex + 1 else player.mediaItemCount
         player.addMediaItem(index, app.sources.unresolved(track))
         // Undo takes the song out again, if it is still where it was put.
@@ -734,6 +765,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** The ids of the tracks that played within the window of the avoid repeats setting. Empty when the setting is off. */
+    /** The auto mixes that can be built from the songs that D'JAI has analysed and that this device knows. */
+    suspend fun buildMixes(): List<MixCard> = withContext(Dispatchers.Default) {
+        val points = DjMix.known.value.mapNotNull { (id, info) ->
+            if (info.bpm == null && info.key == null && info.energy == null) null else io.github.yyan115.opentune.core.dj.SongPoint(id, info.bpm, info.key, info.energy)
+        }
+        val tracks = HashMap<String, Track>()
+        withContext(Dispatchers.IO) { for (point in points) app.library.get(point.id)?.let { tracks[point.id] = it } }
+        // Only songs that the library holds can be shown and played, so the mixes are built from those.
+        io.github.yyan115.opentune.core.dj.AutoMixes.build(points.filter { it.id in tracks }).map { mix -> MixCard(mix.kind, mix.ids.mapNotNull(tracks::get)) }
+            .filter { it.tracks.size >= io.github.yyan115.opentune.core.dj.AutoMixes.MIN_SONGS }
+    }
+
     private suspend fun recentlyPlayed(): Set<String> {
         val hours = ui.value.settings.avoidRepeatHours
         return if (hours <= 0) emptySet() else withContext(Dispatchers.IO) { app.library.playedSince(System.currentTimeMillis() - hours * 3_600_000L) }
@@ -1000,6 +1043,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun userMessage(error: Exception): String = app.problemText(error)
     private companion object {
         const val MISSING_LYRICS_MS = 7 * 24 * 3600_000L
+        /** The songs that follow a song chosen in a search, when Autoplay is on. */
+        const val SIMILAR_AFTER_SEARCH = 25
     }
 
     override fun onCleared() {

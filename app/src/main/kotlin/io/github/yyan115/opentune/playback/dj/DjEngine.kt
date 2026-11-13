@@ -61,6 +61,8 @@ interface DjHost {
     fun cuesOf(id: String): List<Cue>
     /** Keeps the cue points that were found in the song with [id]. */
     fun saveCues(id: String, cues: List<Cue>)
+    /** Keeps the song of [item] in the library, so that lists that D'JAI builds can show it. */
+    fun rememberTrack(item: MediaItem)
     /** The tempo and key of [item] from an online catalogue, or null. It may take a network request. */
     suspend fun onlineHint(item: MediaItem): OnlineHint?
 }
@@ -162,10 +164,31 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     @Volatile private var elzar = false
     private var albumNow = false
 
+    /**
+     * Watches the song that has taken over, until the transition has ended. The watcher of the outgoing song is gone at the swap, so without this a skip, a seek
+     * or a new queue in the tail of a mix left the mixer running the old plan over music that had changed.
+     */
+    private val tailWatcher = object : Player.Listener {
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (swapped && (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SKIP || reason == Player.DISCONTINUITY_REASON_REMOVE)) userChangedSong()
+        }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (swapped && (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)) userChangedSong()
+        }
+    }
+
     private val watcher = object : Player.Listener {
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) { if (!swapped) abort("discontinuity $reason") }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { if (!swapped) abort("transition $reason") }
-        override fun onTimelineChanged(timeline: Timeline, reason: Int) { if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && !swapped) abort("queue changed") }
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED || swapped) return
+            // Songs added to the queue, or moved after the next one, do not touch the transition that is prepared: they are carried over to the incoming deck at
+            // the swap. Only a change to the song that plays or to the one that comes in drops it.
+            val a = outgoing ?: return
+            val b = incoming ?: return
+            val stillSo = a.currentMediaItem?.mediaId == itemId && a.nextMediaItemIndex != C.INDEX_UNSET && a.getMediaItemAt(a.nextMediaItemIndex).mediaId == b.currentMediaItem?.mediaId
+            if (!stillSo) abort("queue changed")
+        }
     }
     private val mirrorOut = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!incomingHeld) incoming?.let { if (it.playWhenReady != playWhenReady) it.playWhenReady = playWhenReady } }
@@ -176,6 +199,33 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     /** A new track started on the session player without a flush (a gapless change). Its analysis starts again from just before now. */
+    /**
+     * The listener changed the song by hand (skip, jump, a new queue) or moved inside it. Everything that D'JAI had worked out for the song that was playing is
+     * dropped, and it starts again for the song that plays now: a transition that was prepared or running goes, the listening ahead ends and counts from nothing,
+     * the choice of the next song and what the strip showed about it are forgotten, and the analysis of the song begins again. What was learned about songs stays.
+     */
+    fun userChangedSong() {
+        if (state == State.OFF) return
+        if (state != State.IDLE) abort("changed by hand")
+        endScout()
+        chosenFor = null; attempted = null; rechosenFor = null; checkedFor = null
+        scouted = 0; scoutTotal = 0; changedTitle = null; changedMatch = null; planEffects = ""
+        asked.clear()
+        if (djai) {
+            val slot = DjMix.sessionSlot
+            DjMix.streams[slot].ring?.let { analyzers[slot].restart(maxOf(it.discontinuity, it.written - (0.3 * it.rate).toLong())) }
+        }
+        publish()
+    }
+
+    /** The listener moved inside the song: a transition that was planned for the old position is dropped, and the planning is open again. */
+    fun userSeeked() {
+        if (state == State.OFF) return
+        if (state != State.IDLE) abort("seek")
+        attempted = null; rechosenFor = null; checkedFor = null
+        publish()
+    }
+
     fun onTrackChanged() {
         if (state != State.IDLE) return
         val slot = DjMix.sessionSlot
@@ -331,6 +381,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             val item = a.getMediaItemAt(i)
             val key = item.mediaId
             if (key in profiles || !asked.add(key)) continue
+            host.rememberTrack(item)
             scope.launch { host.onlineHint(item)?.let { online[key] = it } }
         }
         // The listening starts at once, also right after the listener changed the song: it does not wait for the song that plays to be analysed.
@@ -720,6 +771,22 @@ val measured = profiles[key]
         if (DjMix.mixer.finishedSeq != finishedBase) finish()
     }
 
+    /**
+     * The incoming deck was given the queue as it was when the song was prepared. If the listener changed the queue since (added, moved or removed songs
+     * after the next one), the deck takes the queue of the song that is leaving, so that nothing that was added is lost when the deck becomes the player.
+     */
+    private fun syncQueue(a: ExoPlayer, b: ExoPlayer) {
+        val items = (0 until a.mediaItemCount).map(a::getMediaItemAt)
+        if (items.map { it.mediaId } == (0 until b.mediaItemCount).map { b.getMediaItemAt(it).mediaId }) return
+        val target = a.nextMediaItemIndex
+        val at = b.currentMediaItemIndex
+        if (target == C.INDEX_UNSET || items.getOrNull(target)?.mediaId != b.currentMediaItem?.mediaId) return
+        runCatching {
+            b.replaceMediaItems(at + 1, b.mediaItemCount, items.subList(target + 1, items.size))
+            if (at > 0) b.replaceMediaItems(0, at, items.subList(0, target))
+        }
+    }
+
     // The bass has changed hands: the second deck now carries the music, so its player becomes the one of the session.
     private fun swap() {
         val a = outgoing ?: return
@@ -738,11 +805,14 @@ val measured = profiles[key]
             }
         }
         DjMix.sessionSlot = inSlot
+        syncQueue(a, b)
         host.adopt(b)
         swapped = true
+        b.addListener(tailWatcher)
     }
 
     private fun finish() {
+        incoming?.removeListener(tailWatcher)
         val a = outgoing
         a?.let { it.removeListener(watcher); it.removeListener(mirrorOut); it.stop(); it.release() }
         incoming?.removeListener(mirrorIn)
@@ -762,6 +832,7 @@ val measured = profiles[key]
         val a = outgoing; val b = incoming
         if (swapped) {
             // The second deck is already the session player. The mixer hears it alone from now on.
+            b?.removeListener(tailWatcher)
             DjMix.mixer.cancel(inSlot)
             a?.let { it.removeListener(mirrorOut); it.stop(); it.release() }
             b?.removeListener(mirrorIn)

@@ -64,7 +64,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     // A screen at least 600 dp wide is a tablet, or an unfolded phone: it gets the rail in any orientation, and the content a limit to its width.
     val tablet = configuration.screenWidthDp >= 600
     val rail = (landscape || tablet) && !largeText
-    val destinations = listOf(Destination.Home, Destination.Search, Destination.Library, Destination.Device)
+    val destinations = listOf(Destination.Home, Destination.Search, Destination.Library, Destination.Mixes, Destination.Device)
     val destination = Destination.entries.firstOrNull { it.name == destinationName }?.takeIf { it in destinations } ?: destinations.first()
     val settingsPageOpen = SettingsPage.entries.firstOrNull { it.name == settingsPage }
     val closeSettings = { settings = false; settingsPage = null }
@@ -168,6 +168,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                 destination == Destination.Home -> ListenScreen(state, vm, openLogin, { filter -> libraryFilter = filter; destinationName = Destination.Library.name },
                     { destinationName = Destination.Device.name }, openTrackMenu, { nowPlaying = true })
                 destination == Destination.Search -> SearchScreen(state, vm, openLogin, openTrackMenu)
+                destination == Destination.Mixes -> MixesScreen(state, vm)
                 destination == Destination.Library -> LibraryScreen(state, vm, openLogin, { newPlaylistTrack = null; playlistTitle = ""; newPlaylist = true }, openTrackMenu,
                     libraryFilter, { libraryFilter = it })
                 else -> DownloadsScreen(state, vm, openLogin, openTrackMenu)

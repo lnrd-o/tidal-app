@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yyan115.opentune.R
 import io.github.yyan115.opentune.playback.dj.DjMix
 import kotlinx.coroutines.Dispatchers
@@ -50,10 +51,16 @@ fun HardwarePanel() {
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ProcessorRow(stringResource(R.string.hw_cpu, h.chip ?: stringResource(R.string.hw_unknown), h.cores), h.clusters, active = true, available = true)
         Text(stringResource(R.string.hw_usage, cpu?.let { "%.0f".format(it) } ?: "—", reading), fontFamily = AppFonts.mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+        val running = io.github.yyan115.opentune.playback.dj.neural.BeatModel.state.collectAsStateWithLifecycle().value.loaded
         ProcessorRow(stringResource(R.string.hw_gpu, h.gpu ?: stringResource(R.string.hw_none)),
-            if (h.gpu != null) stringResource(R.string.hw_gpu_text, if (h.vulkan) stringResource(R.string.hw_vulkan) else "") else null, active = false, available = h.gpu != null)
-        ProcessorRow(stringResource(R.string.hw_npu, h.npu ?: stringResource(R.string.hw_none)), if (h.npu != null) stringResource(R.string.hw_npu_text) else null, active = false, available = h.npu != null)
-        if (h.npu != null) Text(stringResource(R.string.hw_npu_usage), fontFamily = AppFonts.mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (h.gpu != null) stringResource(R.string.hw_gpu_text2, if (h.vulkan) stringResource(R.string.hw_vulkan) else "") else null,
+            active = running == io.github.yyan115.opentune.playback.dj.neural.Accelerator.GPU, available = h.gpu != null)
+        ProcessorRow(stringResource(R.string.hw_npu, h.npu ?: stringResource(R.string.hw_none)), if (h.npu != null) stringResource(R.string.hw_npu_text2) else null,
+            active = running == io.github.yyan115.opentune.playback.dj.neural.Accelerator.NPU, available = h.npu != null)
+        val model by io.github.yyan115.opentune.playback.dj.neural.BeatModel.state.collectAsStateWithLifecycle()
+        val on = model.loaded
+        Text(stringResource(R.string.hw_model_usage, on?.name ?: "—", "%.0f".format(model.busyPercent), model.lastWindowMs?.toString() ?: "—"),
+            fontFamily = AppFonts.mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

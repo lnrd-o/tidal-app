@@ -21,6 +21,8 @@ android {
         versionCode = versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
         versionName = releaseVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Phones and tablets only: the NPU libraries exist for arm64, and the emulators' x86 copies would double the size of the app.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     fun signingValue(name: String) = providers.environmentVariable("OPENTUNE_$name")
     val releaseKeyPath = signingValue("KEYSTORE").orNull
@@ -51,7 +53,11 @@ android {
     // The list of languages in the system settings follows the values-xx folders.
     androidResources { generateLocaleConfig = true }
     sourceSets.getByName("main").assets.srcDir(noticeAssets)
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // QNN loads its NPU libraries from files on disk, so the native libraries are unpacked at install.
+        jniLibs.useLegacyPackaging = true
+    }
     testOptions { animationsDisabled = true }
     // The small native engine that streams to a USB DAC with the app's own driver (app/src/main/cpp).
     ndkVersion = "28.2.13676358"
@@ -61,6 +67,8 @@ android {
 tasks.named("preBuild") { dependsOn(copyNotices) }
 kotlin { jvmToolchain(21) }
 dependencies {
+    // ONNX Runtime with Qualcomm's QNN back-ends: the Hexagon NPU, the Adreno GPU and the CPU, for the Beat This! rhythm model.
+    implementation(libs.onnxruntime.qnn)
     implementation(project(":core"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

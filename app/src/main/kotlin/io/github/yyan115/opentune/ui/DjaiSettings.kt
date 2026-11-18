@@ -81,6 +81,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
 
         item { SectionTitle(stringResource(R.string.djcfg_section_speed)) }
         item { HardwarePanel() }
+        item { NeuralPanel(settings) { f -> vm.settings(f) } }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_fast), settings.djFastAnalysis, { value -> vm.settings { it.copy(djFastAnalysis = value) } }, stringResource(R.string.djcfg_fast_text)) }
         item {
             ValueRow(stringResource(R.string.djcfg_workers, settings.djWorkers), stringResource(R.string.djcfg_workers_text, Runtime.getRuntime().availableProcessors()), settings.djWorkers, 1..3, 1) { value ->

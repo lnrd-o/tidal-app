@@ -37,6 +37,10 @@ class Preprocessor(
     private val lyrics: suspend (String) -> List<io.github.yyan115.opentune.core.LyricLine>? = { null },
     /** How many songs are prepared at once, each by its own player and analyzer, from 1 to [DjMix.MAX_WORKERS]. */
     private val workers: () -> Int = { 1 },
+    /** The app, for the rhythm model's files. */
+    private val context: android.content.Context? = null,
+    /** Where the rhythm model runs, or null when it is off. */
+    private val neural: () -> io.github.yyan115.opentune.playback.dj.neural.Accelerator? = { null },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
@@ -62,6 +66,8 @@ class Preprocessor(
     private suspend fun run(request: PreprocessRequest, slot: Int): PreprocessResult? {
         val failed = PreprocessResult(request.title, false, null, null, emptyList())
         val analyzer = DeckAnalyzer(slot, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
+        val accelerator = neural()
+        analyzer.collectAudio = accelerator != null && context != null
         analyzer.hintBpm = catalogBpm(request.item)
         DjMix.streams[slot].clear()
         val player = runCatching { build(slot) }.getOrNull() ?: return failed
@@ -89,7 +95,25 @@ class Preprocessor(
             val beat = analyzer.beat
             val key = analyzer.key
             val cues = analyzer.sectionInput(duration)?.let { input -> detectCues(input, runCatching { lyrics(request.id) }.getOrNull()) }.orEmpty()
-            val summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
+            var summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
+            // The rhythm model reads the whole song: its tempo is kept, and it settles the octave of the tempo that the listening found.
+            if (accelerator != null && context != null) analyzer.collected()?.let { audio ->
+                val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching { io.github.yyan115.opentune.playback.dj.neural.BeatModel.analyze(context, accelerator, audio, io.github.yyan115.opentune.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
+                }
+                if (found?.bpm != null) {
+                    val where = io.github.yyan115.opentune.playback.dj.neural.BeatModel.state.value.loaded?.name ?: accelerator.name
+                    io.github.yyan115.opentune.playback.dj.neural.RhythmStore.record(request.id, found, 0L, where, beat?.bpm, analyzer.hintBpm, analyzer.swing, summary.energy)
+                    val bpm = io.github.yyan115.opentune.playback.dj.neural.RhythmStore.bpmFor(request.id)
+                    if (bpm != null && beat != null) {
+                        val factor = beat.bpm / bpm
+                        if (kotlin.math.abs(factor - 1) > 0.04 && listOf(0.5, 2.0 / 3.0, 1.5, 2.0).any { kotlin.math.abs(factor / it - 1) < 0.05 }) {
+                            summary = summary.withBeat(beat.scaled(factor))
+                            android.util.Log.i("OpenTune", "D'JAI rhythm model: %s is %.1f BPM, the listening said %.1f".format(request.title, bpm, beat.bpm))
+                        }
+                    }
+                }
+            }
             if (beat == null && key == null) return failed
             val took = SystemClock.elapsedRealtime() - started
             android.util.Log.i("OpenTune", "D'JAI prepared %s on slot %d: %.0f s of music in %.1f s (%.1f times its speed)".format(request.title, slot, duration / 1000.0, took / 1000.0,

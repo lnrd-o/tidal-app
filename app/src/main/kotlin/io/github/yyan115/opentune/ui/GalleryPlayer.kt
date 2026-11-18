@@ -294,6 +294,8 @@ fun NowPlayingScreen(
                                 TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai) { vm.settings { it.copy(djai = !it.djai) }; poke() }
                             }
                             if (state.settings.djai) DjStrip(Modifier.padding(bottom = 8.dp))
+                            // The rhythm model asks whether it heard this song's tempo right; the answer trains it.
+                            if (state.settings.djai && state.settings.djNeural) RhythmConfirmCard(track.id, Modifier.padding(bottom = 8.dp))
                             UpNext(state, vm, onQueue)
                         }
                     }

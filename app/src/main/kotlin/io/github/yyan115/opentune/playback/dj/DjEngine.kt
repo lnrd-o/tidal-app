@@ -42,6 +42,8 @@ class DjOptions(
     val listenAhead: Int = 12,
     val revalidate: Boolean = true,
     val beatFirst: Boolean = true,
+    /** The rhythm model reads the songs ahead whole. */
+    val neural: Boolean = false,
 )
 
 /** The tempo that TIDAL gave for the song of a media item, in its data, or null. */
@@ -418,6 +420,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             if (done) {
                 val key = scoutId
                 if (key != null) remember(key, Profile(TrackSummary(result.beat, result.key?.camelot, result.energyIntro ?: result.energyRecent, result.origin, swing = result.swing), result.rate))
+                // With the rhythm model on, a song ahead is also read whole, so that the model can find its beats and bars.
+                val item = scout?.currentMediaItem
+                if (key != null && item != null && options.neural && io.github.yyan115.opentune.playback.dj.neural.RhythmStore.songs.value[key] == null)
+                    DjMix.preprocess.tryEmit(PreprocessRequest(key, host.titleOf(item) ?: key, item, s.duration.coerceAtLeast(0L)))
                 endScout()
             }
             return
@@ -579,7 +585,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
 
     /** The tempo that a catalogue gives for the song of [item]: from TIDAL's data, or what was asked of the catalogues. The log says whether there is one. */
     private fun hintFor(item: MediaItem?): Double? {
-        val bpm = catalogBpm(item) ?: item?.mediaId?.let { online[it]?.bpm }
+        val bpm = item?.mediaId?.let { io.github.yyan115.opentune.playback.dj.neural.RhythmStore.bpmFor(it) } ?: catalogBpm(item) ?: item?.mediaId?.let { online[it]?.bpm }
         item?.mediaId?.let { if (hintLogged.add(it)) android.util.Log.i("OpenTune", "D'JAI catalogue tempo of ${host.titleOf(item)}: ${bpm?.let { b -> "%.1f".format(b) } ?: "none"}") }
         return bpm
     }

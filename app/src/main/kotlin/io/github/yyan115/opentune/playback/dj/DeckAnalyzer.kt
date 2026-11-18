@@ -67,6 +67,13 @@ class DeckAnalyzer(
         private set
     private var swingTick = 0
 
+    /** Keep the whole song, brought to 22.05 kHz, for the rhythm model. Set before [start]. */
+    @Volatile var collectAudio = false
+    @Volatile private var collector: io.github.yyan115.opentune.core.dj.neural.StreamingResampler? = null
+
+    /** The song as it was heard, at 22.05 kHz, or null when nothing was kept. */
+    fun collected(): FloatArray? = collector?.let { it.finish(); it.result() }
+
     /** The tempo that a catalogue gives for the song, which settles the octave of the tempo that is heard. Set by the engine for each song. */
     @Volatile var hintBpm: Double? = null
     private var hintLogged = false
@@ -109,6 +116,7 @@ class DeckAnalyzer(
             if (request >= 0) { restartAt = -1; attached = null; forcedStart = request }
             if (ring !== attached || ring.discontinuity > read) {
                 attached = ring; rate = ring.rate
+                collector = if (collectAudio) io.github.yyan115.opentune.core.dj.neural.StreamingResampler(ring.rate) else null
                 read = if (forcedStart >= 0) maxOf(forcedStart, ring.oldest()) else ring.discontinuity
                 forcedStart = -1
                 startedAtMs = songMs(); startedAtFrame = read
@@ -128,6 +136,7 @@ class DeckAnalyzer(
                 val n = minOf((written - read).toInt(), mono.size)
                 for (i in 0 until n) mono[i] = (ring.left(read + i) + ring.right(read + i)) * 0.5f
                 e.feed(mono, n)
+                collector?.feed(mono, n)
                 read += n
             }
             DjMix.streams[slot].readMark = read

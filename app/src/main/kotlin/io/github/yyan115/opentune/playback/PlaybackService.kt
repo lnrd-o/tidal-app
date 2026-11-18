@@ -238,7 +238,8 @@ class PlaybackService : MediaLibraryService() {
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
         Preprocessor(scope, { slot -> buildPlayer(slot, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf,
-            workers = { app.settings.state.value.djWorkers })
+            workers = { app.settings.state.value.djWorkers }, context = this,
+            neural = { app.settings.state.value.let { s -> if (s.djNeural) io.github.yyan115.opentune.playback.dj.neural.Accelerator.entries.firstOrNull { it.name == s.djAccelerator } ?: io.github.yyan115.opentune.playback.dj.neural.Accelerator.AUTO else null } })
     }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */
@@ -296,10 +297,11 @@ class PlaybackService : MediaLibraryService() {
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
         io.github.yyan115.opentune.playback.usb.UsbDac.init(this)
+        io.github.yyan115.opentune.playback.dj.neural.RhythmStore.init(this)
         scope.launch { app.settings.state.collect { io.github.yyan115.opentune.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.yyan115.opentune.playback.dj.DjOptions(roll = it.djRoll, cues = it.djCues, echo = it.djEcho, filters = it.djFilters, groove = it.djGroove,
-                    arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
+                    arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { DjMix.preprocess.collect { preprocessor.add(it) } }
         scope.launch {
             DjMix.forgetRequests.collect {

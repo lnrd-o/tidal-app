@@ -32,7 +32,11 @@ object HardwareInfo {
 
     private fun chip(): String? =
         if (Build.VERSION.SDK_INT >= 31) listOf(Build.SOC_MANUFACTURER, Build.SOC_MODEL).filter { it.isNotBlank() && it != Build.UNKNOWN }.joinToString(" ").ifBlank { null }
-        else Build.HARDWARE.ifBlank { null }
+        else {
+            // Before Android 12 the chip is not named by the system. A Qualcomm chip names its platform in the files of the kernel.
+            val machine = runCatching { File("/sys/devices/soc0/machine").readText().trim() }.getOrNull()?.ifBlank { null }
+            if (Build.HARDWARE.equals("qcom", true)) "Qualcomm" + (machine?.let { " $it" } ?: "") else (machine ?: Build.HARDWARE.ifBlank { null })
+        }
 
     private fun clusters(): String? = runCatching {
         val freqs = (0 until Runtime.getRuntime().availableProcessors()).mapNotNull { File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq").takeIf(File::canRead)?.readText()?.trim()?.toLongOrNull() }
@@ -68,7 +72,7 @@ object HardwareInfo {
         val model = (if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE).uppercase()
         val maker = (if (Build.VERSION.SDK_INT >= 31) Build.SOC_MANUFACTURER else Build.MANUFACTURER).uppercase()
         return when {
-            maker.contains("QTI") || maker.contains("QUALCOMM") || model.startsWith("SM") || model.startsWith("QCS") ->
+            maker.contains("QTI") || maker.contains("QUALCOMM") || model.startsWith("SM") || model.startsWith("QCS") || Build.HARDWARE.equals("qcom", true) ->
                 if (Regex("SM8[4-9]\\d\\d").containsMatchIn(model)) "Qualcomm Hexagon NPU" else "Qualcomm Hexagon DSP"
             maker.contains("GOOGLE") || model.contains("TENSOR") || model.startsWith("GS") -> "Google TPU"
             maker.contains("MEDIATEK") || model.startsWith("MT") -> "MediaTek APU"

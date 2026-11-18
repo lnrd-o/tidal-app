@@ -72,6 +72,19 @@ class UsbAudioDescriptorsTest {
         assertTrue(info.settingsFor(96_000, 2, setOf(44_100, 48_000)).isEmpty())
     }
 
+    @Test fun onlyTheFirstConfigurationIsRead() {
+        // A second configuration, as a class 3 DAC adds after its class 2 one, with a 16-bit setting of its own: it must not show up.
+        val first = uac1()
+        val second = (bytes(9, 2, 0, 0, 2, 2, 0, 0x80, 50) + bytes(9, 4, 0, 0, 0, 1, 1, 0, 0) + bytes(9, 0x24, 1, 0x00, 0x01, 30, 0, 1, 1) +
+            bytes(9, 4, 1, 1, 1, 1, 2, 0, 0) + bytes(7, 0x24, 1, 1, 1, 0x01, 0x00) + bytes(11, 0x24, 2, 1, 2, 2, 16, 1, 0x80, 0xbb, 0x00) + bytes(9, 5, 0x01, 0x09, 0xc0, 0x00, 1, 0, 0)).toByteArray()
+        // The first configuration's total length, as a real device gives it: from its configuration descriptor to the end of its last descriptor.
+        val total = first.size - 18
+        first[20] = (total and 0xFF).toByte(); first[21] = (total shr 8).toByte()
+        val info = UsbAudioDescriptors.parse(first + second)!!
+        assertEquals(1, info.playback.size)
+        assertEquals(24, info.playback.single().bits)
+    }
+
     @Test fun somethingThatIsNotADacIsNotRead() {
         val keyboard = (bytes(18, 1, 0, 2, 0, 0, 0, 8, 1, 2, 3, 4, 0, 1, 1, 2, 0, 1) + bytes(9, 2, 0, 0, 1, 1, 0, 0x80, 50) + bytes(9, 4, 0, 0, 1, 3, 1, 1, 0)).toByteArray()
         assertNull(UsbAudioDescriptors.parse(keyboard))

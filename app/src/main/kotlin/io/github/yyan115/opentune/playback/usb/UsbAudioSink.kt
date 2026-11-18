@@ -159,10 +159,20 @@ class UsbRoutingSink(private val fallback: AudioSink) : AudioSink {
 
     private fun useUsb(format: Format) = UsbDac.ready && !DjMix.routing && usb.accepts(format)
 
+    /**
+     * Android's output is never offered floating point or 24-bit samples: with them its sink skips the audio processors, and the taps of D'JAI and the spectrum
+     * would hear nothing. The decoder then hands over 16 bits for Android, and the full depth only for the DAC.
+     */
+    private fun highResolution(format: Format) = MimeTypes.AUDIO_RAW == format.sampleMimeType && format.pcmEncoding != C.ENCODING_PCM_16BIT
+
     override fun setListener(listener: AudioSink.Listener) { this.listener = listener; fallback.setListener(listener); usb.setListener(listener) }
     override fun setPlayerId(playerId: PlayerId?) { fallback.setPlayerId(playerId); usb.setPlayerId(playerId) }
-    override fun supportsFormat(format: Format): Boolean = useUsb(format) || fallback.supportsFormat(format)
-    override fun getFormatSupport(format: Format): Int = if (useUsb(format)) AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY else fallback.getFormatSupport(format)
+    override fun supportsFormat(format: Format): Boolean = useUsb(format) || (!highResolution(format) && fallback.supportsFormat(format))
+    override fun getFormatSupport(format: Format): Int = when {
+        useUsb(format) -> AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
+        highResolution(format) -> AudioSink.SINK_FORMAT_UNSUPPORTED
+        else -> fallback.getFormatSupport(format)
+    }
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long = active.getCurrentPositionUs(sourceEnded)
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {

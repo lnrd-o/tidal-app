@@ -121,11 +121,12 @@ class PlaybackService : MediaLibraryService() {
                 val default = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
                 // With the app's own USB driver on, a song that the DAC can take goes to it untouched; the rest goes to Android as usual.
-                return if (!analysis && app.settings.state.value.usbDriver) io.github.yyan115.opentune.playback.usb.UsbRoutingSink(default) else default
+                return if (!analysis) io.github.yyan115.opentune.playback.usb.UsbRoutingSink(default) else default
             }
         }
-        // The decoder hands over 24-bit songs in full only as floating point samples, which carry 24 bits exactly; the USB driver needs them whole.
-        if (!analysis && app.settings.state.value.usbDriver) renderers.setEnableAudioFloatOutput(true)
+        // The decoder hands over 24-bit songs in full only as floating point samples, which carry 24 bits exactly; the USB driver needs them whole. The routing
+        // sink takes floating point only for the DAC, so every other song is still decoded as before and goes through the taps of D'JAI and the spectrum.
+        if (!analysis) renderers.setEnableAudioFloatOutput(true)
         val built = ExoPlayer.Builder(this, renderers)
             .setLoadControl(streamingLoadControl())
             .setMediaSourceFactory(OpenTuneSourceFactory(app))

@@ -50,6 +50,7 @@ data class UsbAudioInfo(
 
 /** Reads the descriptors that Android hands over ([android.hardware.usb.UsbDeviceConnection.getRawDescriptors]): device, then the active configuration. */
 object UsbAudioDescriptors {
+    private const val CONFIGURATION = 2
     private const val INTERFACE = 4
     private const val ENDPOINT = 5
     private const val CS_INTERFACE = 0x24
@@ -83,11 +84,20 @@ object UsbAudioDescriptors {
         fun u16(i: Int) = u8(i) or (u8(i + 1) shl 8)
         fun u24(i: Int) = u16(i) or (u8(i + 2) shl 16)
 
-        while (at + 2 <= raw.size) {
+        // Android hands over every configuration of the device, and it uses the first. A DAC may have more (a class 3 one after a class 2 one), whose
+        // descriptors look alike and would mix with the first's, so the reading stops at the end of the first.
+        var end = raw.size
+        var configurations = 0
+        while (at + 2 <= minOf(raw.size, end)) {
             val length = u8(at)
             if (length < 2 || at + length > raw.size) break
             val type = u8(at + 1)
             val d = at
+            if (type == CONFIGURATION) {
+                if (++configurations > 1) break
+                // A total length shorter than the descriptor itself is not to be trusted: the reading then goes to the next configuration or the end.
+                if (length >= 4 && u16(d + 2) >= length) end = minOf(raw.size, d + u16(d + 2))
+            }
             when (type) {
                 INTERFACE -> if (length >= 9) {
                     closeAlt()

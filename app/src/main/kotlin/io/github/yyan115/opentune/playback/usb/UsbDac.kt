@@ -253,23 +253,19 @@ object UsbDac {
         val intf = interfaceOf(d, setting.interfaceNumber, setting.alternate) ?: return null
         if (!c.claimInterface(intf, true)) { Log.w(TAG, "could not claim the streaming interface"); return null }
         claimed.add(intf)
+        val zero = interfaceOf(d, setting.interfaceNumber, 0)
+        // Some DACs only move their clock while they are not streaming, and some only once a format is chosen: the rate is set with the streaming interface
+        // off, then the format is chosen, then the rate is set again, and only then read back.
+        if (zero != null) c.setInterface(zero)
+        val first = setRate(c, i, setting, rate)
         if (!c.setInterface(intf)) { Log.w(TAG, "could not select alternate ${setting.alternate}"); return null }
-        // The rate: on the endpoint for class 1, on the clock of the terminal for class 2.
-        // The rate is read back: a DAC left at another rate would play the song too fast or too slow, so the stream is not started then.
-        val set: Int; val now: Int
-        if (i.uac2) {
-            val clock = i.clocks[setting.terminalLink] ?: i.clocks.values.firstOrNull() ?: return null
-            val index = (clock shl 8) or i.controlInterface
-            set = c.controlTransfer(0x21, 0x01, 0x0100, index, le(rate, 4), 4, 1000)
-            val back = ByteArray(4)
-            now = if (c.controlTransfer(0xA1, 0x01, 0x0100, index, back, 4, 1000) == 4) u32(back) else -1
-        } else {
-            set = c.controlTransfer(0x22, 0x01, 0x0100, setting.endpoint, le(rate, 3), 3, 1000)
-            val back = ByteArray(3)
-            now = if (c.controlTransfer(0xA2, 0x81, 0x0100, setting.endpoint, back, 3, 1000) == 3) (u32(back + byteArrayOf(0))) else -1
-        }
-        Log.i(TAG, "rate: asked $rate Hz (request answered $set), the DAC says $now Hz; alternate ${setting.alternate}, endpoint ${setting.endpoint}, ${setting.maxPacket} bytes a packet, interval ${setting.interval}, sync ${setting.syncType}, feedback ${setting.feedbackEndpoint}")
-        if (now > 0 && now != rate) { Log.w(TAG, "the DAC did not take $rate Hz"); interfaceOf(d, setting.interfaceNumber, 0)?.let { c.setInterface(it) }; return null }
+        val second = setRate(c, i, setting, rate)
+        val now = readRate(c, i, setting)
+        val valid = if (i.uac2) clockValid(c, i, setting) else null
+        Log.i(TAG, "rate: asked $rate Hz (answers $first before the format, $second after), the DAC says $now Hz, clock valid $valid; alternate ${setting.alternate}, " +
+            "endpoint ${setting.endpoint}, ${setting.maxPacket} bytes a packet, interval ${setting.interval}, sync ${setting.syncType}, feedback ${setting.feedbackEndpoint}")
+        if (now > 0 && now != rate) { Log.w(TAG, "the DAC did not take $rate Hz"); zero?.let { c.setInterface(it) }; return null }
+        if (valid == false) { Log.w(TAG, "the DAC's clock is not valid at $rate Hz"); zero?.let { c.setInterface(it) }; return null }
         val speed = UsbNative.speed(c.fileDescriptor)
         val high = speed >= 3
         val packetsPerSecond = (if (high) 8000 else 1000) / (1 shl (setting.interval - 1).coerceIn(0, 4))
@@ -305,6 +301,26 @@ object UsbDac {
         // The zero-bandwidth setting frees the bus.
         val d = device; val c = connection
         if (d != null && c != null) interfaceOf(d, s.setting.interfaceNumber, 0)?.let { c.setInterface(it) }
+    }
+
+    /** The index of the clock of a class 2 stream, for its requests: the clock in the high byte, the control interface in the low one. */
+    private fun clockIndex(i: UsbAudioInfo, s: UsbAltSetting): Int? = (i.clocks[s.terminalLink] ?: i.clocks.values.firstOrNull())?.let { (it shl 8) or i.controlInterface }
+
+    /** Sets the rate: on the clock for class 2, on the endpoint for class 1. Returns what the request answered (bytes sent, or a negative error). */
+    private fun setRate(c: UsbDeviceConnection, i: UsbAudioInfo, s: UsbAltSetting, rate: Int): Int =
+        if (i.uac2) clockIndex(i, s)?.let { c.controlTransfer(0x21, 0x01, 0x0100, it, le(rate, 4), 4, 1000) } ?: -1
+        else c.controlTransfer(0x22, 0x01, 0x0100, s.endpoint, le(rate, 3), 3, 1000)
+
+    /** The rate that the DAC says it runs at, or -1. */
+    private fun readRate(c: UsbDeviceConnection, i: UsbAudioInfo, s: UsbAltSetting): Int =
+        if (i.uac2) { val back = ByteArray(4); clockIndex(i, s)?.let { if (c.controlTransfer(0xA1, 0x01, 0x0100, it, back, 4, 1000) == 4) u32(back) else -1 } ?: -1 }
+        else { val back = ByteArray(3); if (c.controlTransfer(0xA2, 0x81, 0x0100, s.endpoint, back, 3, 1000) == 3) u32(back + byteArrayOf(0)) else -1 }
+
+    /** Whether a class 2 clock says that it runs at the rate it was given (its validity control), or null when it does not say. */
+    private fun clockValid(c: UsbDeviceConnection, i: UsbAudioInfo, s: UsbAltSetting): Boolean? {
+        val index = clockIndex(i, s) ?: return null
+        val back = ByteArray(1)
+        return if (c.controlTransfer(0xA1, 0x01, 0x0200, index, back, 1, 1000) == 1) back[0].toInt() != 0 else null
     }
 
     private fun u32(b: ByteArray) = (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8) or ((b[2].toInt() and 0xFF) shl 16) or ((b[3].toInt() and 0xFF) shl 24)

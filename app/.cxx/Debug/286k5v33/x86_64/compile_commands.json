@@ -1,7 +1,0 @@
-[
-{
-  "directory": "C:/Users/leonardorodriguez/Code/tidal-app/app/.cxx/Debug/286k5v33/x86_64",
-  "command": "C:\\Users\\leonardorodriguez\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe --target=x86_64-none-linux-android26 --sysroot=C:/Users/leonardorodriguez/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dusbaudio_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles\\usbaudio.dir\\usbaudio.c.o -c C:\\Users\\leonardorodriguez\\Code\\tidal-app\\app\\src\\main\\cpp\\usbaudio.c",
-  "file": "C:\\Users\\leonardorodriguez\\Code\\tidal-app\\app\\src\\main\\cpp\\usbaudio.c"
-}
-]

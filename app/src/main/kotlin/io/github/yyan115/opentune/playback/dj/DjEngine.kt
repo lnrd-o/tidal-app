@@ -54,6 +54,8 @@ interface DjHost {
     val player: ExoPlayer
     /** Builds a player with the same settings as the main one, bound to the deck [slot] and without audio focus. */
     fun buildDeck(slot: Int): ExoPlayer
+    /** Builds a hidden player that only feeds the ring of [slot]: nothing of it is heard, and it decodes as fast as the settings allow. */
+    fun buildAnalysis(slot: Int): ExoPlayer
     /** Makes [next] the player of the media session. */
     fun adopt(next: ExoPlayer)
     fun gainFor(item: MediaItem?): Float
@@ -89,6 +91,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
 
     private val output = DjOutput()
     private val analyzers = arrayOf(DeckAnalyzer(0, scope, songMs = { songPosition(0) }), DeckAnalyzer(1, scope, songMs = { songPosition(1) }))
+    /** The analyzer of the hidden deck that listens ahead. */
+    private val scoutAnalyzer = DeckAnalyzer(DjMix.SCOUT_SLOT, scope)
 
     /**
      * The position of the song of a deck in milliseconds, as the last tick saw it. A player may only be asked on the main thread, and the analyzers
@@ -406,11 +410,10 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             scope.launch { host.onlineHint(item)?.let { hint -> online[key] = hint; hint.genre?.let { learnGenre(key, it) } } }
         }
         // The listening starts at once, also right after the listener changed the song: it does not wait for the song that plays to be analysed.
-        val slot = DjMix.sessionSlot
-        val scoutSlot = 1 - slot
+        val scoutSlot = DjMix.SCOUT_SLOT
         val s = scout
         if (s != null) {
-            val result = analyzers[scoutSlot]
+            val result = scoutAnalyzer
             val done = result.seconds >= SCOUT_SECONDS || System.currentTimeMillis() - scoutSince > SCOUT_TIMEOUT_MS || s.playerError != null
             if (done) {
                 val key = scoutId
@@ -467,18 +470,17 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     }
 
     private fun startScout(item: MediaItem, scoutSlot: Int) {
-        val b = host.buildDeck(scoutSlot)
+        val b = host.buildAnalysis(scoutSlot)
         DjMix.streams[scoutSlot].clear()
         // The mixer never reads this deck. It only decodes, so that the analyzer can listen.
-        DjMix.mixer.setSource(scoutSlot, null)
         b.setMediaItem(item)
-        analyzers[scoutSlot].hintBpm = hintFor(item)
+        scoutAnalyzer.hintBpm = hintFor(item)
         // Nobody hears this deck, so it plays at the fastest speed that the player allows. The tap sits before the speed change, so the analyzer still sees
         // every frame of the song at its own speed: twenty seconds of it are read in a few seconds.
         b.setPlaybackParameters(androidx.media3.common.PlaybackParameters(SCOUT_SPEED))
         b.playWhenReady = true
         b.prepare()
-        analyzers[scoutSlot].stop(); analyzers[scoutSlot].start()
+        scoutAnalyzer.stop(); scoutAnalyzer.start()
         scout = b; scoutId = item.mediaId; scoutSince = System.currentTimeMillis()
     }
 
@@ -486,9 +488,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val s = scout ?: return
         scout = null; scoutId = null
         s.stop(); s.release()
-        val slot = 1 - DjMix.sessionSlot
-        analyzers[slot].stop()
-        DjMix.streams[slot].clear()
+        scoutAnalyzer.stop()
+        DjMix.streams[DjMix.SCOUT_SLOT].clear()
     }
 
     /**

@@ -61,6 +61,8 @@ object DjMix {
     class Stream : RingSource {
         @Volatile var ring: PcmRing? = null
         override fun ring(): PcmRing? = ring
+        /** The ring frame up to which the analyzer of this slot has read. The sink of a hidden player waits when it is far behind. */
+        @Volatile var readMark = 0L
 
         /** Makes sure that a ring of the given rate exists. A new one starts empty. */
         fun ensure(rate: Int): PcmRing {
@@ -69,15 +71,17 @@ object DjMix {
             return PcmRing(rate * RING_SECONDS, rate).also { ring = it }
         }
 
-        fun clear() { ring = null }
+        fun clear() { ring = null; readMark = 0L }
     }
 
     const val RING_SECONDS = 50
     const val OUT_RATE = 48_000
 
-    /** The two decks of the mixer and, last, the hidden deck that prepares songs ([ANALYSIS_SLOT]). */
-    val streams = arrayOf(Stream(), Stream(), Stream())
+    /** The two decks of the mixer, then the hidden decks that prepare songs (from [ANALYSIS_SLOT], [MAX_WORKERS] of them), and last the deck that listens ahead. */
     const val ANALYSIS_SLOT = 2
+    const val MAX_WORKERS = 3
+    const val SCOUT_SLOT = ANALYSIS_SLOT + MAX_WORKERS
+    val streams = Array(SCOUT_SLOT + 1) { Stream() }
 
     /** The beat grid of a deck: its first beat and the length of a beat, in frames of the ring of [slot]. */
     class LiveGrid(val slot: Int, val anchor: Double, val period: Double, val rate: Int)

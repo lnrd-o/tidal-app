@@ -79,6 +79,14 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
             }
         }
 
+        item { SectionTitle(stringResource(R.string.djcfg_section_speed)) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_fast), settings.djFastAnalysis, { value -> vm.settings { it.copy(djFastAnalysis = value) } }, stringResource(R.string.djcfg_fast_text)) }
+        item {
+            ValueRow(stringResource(R.string.djcfg_workers, settings.djWorkers), stringResource(R.string.djcfg_workers_text, Runtime.getRuntime().availableProcessors()), settings.djWorkers, 1..3, 1) { value ->
+                vm.settings { it.copy(djWorkers = value) }
+            }
+        }
+
         item { SectionTitle(stringResource(R.string.djcfg_section_songs)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_dj_data), settings.showDjData, { value -> vm.settings { it.copy(showDjData = value) } }, stringResource(R.string.settings_dj_data_text)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_pulse), settings.djPulse, { value -> vm.settings { it.copy(djPulse = value) } }, stringResource(R.string.djcfg_pulse_text)) }

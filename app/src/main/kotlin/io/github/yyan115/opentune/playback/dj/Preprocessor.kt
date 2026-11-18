@@ -27,23 +27,29 @@ class PreprocessResult(val title: String, val ok: Boolean, val bpm: Double?, val
 @UnstableApi
 class Preprocessor(
     private val scope: CoroutineScope,
-    private val build: () -> ExoPlayer,
+    /** Builds the hidden player of an analysis slot. */
+    private val build: (Int) -> ExoPlayer,
     private val learn: (String, TrackSummary, Int) -> Unit,
     private val saveCues: (String, List<Cue>) -> Unit,
     /** Whether D'JAI is on. While it is off nothing is prepared: a song that is being read is put back, and the queue waits. */
     private val enabled: () -> Boolean = { true },
     /** The timed lyrics of a song, by its id, or null. */
     private val lyrics: suspend (String) -> List<io.github.yyan115.opentune.core.LyricLine>? = { null },
+    /** How many songs are prepared at once, each by its own player and analyzer, from 1 to [DjMix.MAX_WORKERS]. */
+    private val workers: () -> Int = { 1 },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
     init {
-        scope.launch {
-            for (request in queue) {
+        // One worker for each slot. A worker past the number that the listener chose waits, so that the setting acts at once.
+        for (w in 0 until DjMix.MAX_WORKERS) scope.launch {
+            while (true) {
+                if (w >= workers().coerceIn(1, DjMix.MAX_WORKERS)) { delay(1_000); continue }
+                val request = queue.receive()
                 var result: PreprocessResult? = null
                 while (result == null) {
                     while (!enabled()) delay(1_000)
-                    result = run(request)
+                    result = run(request, DjMix.ANALYSIS_SLOT + w)
                 }
                 DjMix.preprocessResults.tryEmit(result)
             }
@@ -53,12 +59,12 @@ class Preprocessor(
     fun add(request: PreprocessRequest) { queue.trySend(request) }
 
     /** Reads the song and returns what came of it, or null when D'JAI was turned off on the way: the song is then read again later. */
-    private suspend fun run(request: PreprocessRequest): PreprocessResult? {
+    private suspend fun run(request: PreprocessRequest, slot: Int): PreprocessResult? {
         val failed = PreprocessResult(request.title, false, null, null, emptyList())
-        val analyzer = DeckAnalyzer(DjMix.ANALYSIS_SLOT, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
+        val analyzer = DeckAnalyzer(slot, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
         analyzer.hintBpm = catalogBpm(request.item)
-        DjMix.streams[DjMix.ANALYSIS_SLOT].clear()
-        val player = runCatching { build() }.getOrNull() ?: return failed
+        DjMix.streams[slot].clear()
+        val player = runCatching { build(slot) }.getOrNull() ?: return failed
         try {
             player.volume = 0f
             player.setPlaybackParameters(PlaybackParameters(SPEED))
@@ -85,13 +91,16 @@ class Preprocessor(
             val cues = analyzer.sectionInput(duration)?.let { input -> detectCues(input, runCatching { lyrics(request.id) }.getOrNull()) }.orEmpty()
             val summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
             if (beat == null && key == null) return failed
+            val took = SystemClock.elapsedRealtime() - started
+            android.util.Log.i("OpenTune", "D'JAI prepared %s on slot %d: %.0f s of music in %.1f s (%.1f times its speed)".format(request.title, slot, duration / 1000.0, took / 1000.0,
+                if (took > 0) duration.toDouble() / took else 0.0))
             learn(request.id, summary, analyzer.rate)
             if (cues.isNotEmpty()) saveCues(request.id, cues)
             return PreprocessResult(request.title, true, beat?.bpm, key?.camelot, cues)
         } finally {
             analyzer.stop()
             runCatching { player.release() }
-            DjMix.streams[DjMix.ANALYSIS_SLOT].clear()
+            DjMix.streams[slot].clear()
         }
     }
 

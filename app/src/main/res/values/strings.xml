@@ -719,6 +719,11 @@
     <string name="djcfg_echo_text">Washes out the song that leaves with an echo when two songs do not match.</string>
     <string name="djcfg_groove">Match the groove</string>
     <string name="djcfg_groove_text">Does not lock a straight song on a swung one, and counts the groove in the match.</string>
+    <string name="djcfg_section_speed">Speed</string>
+    <string name="djcfg_fast">Read songs at full speed</string>
+    <string name="djcfg_fast_text">The hidden players that listen ahead and prepare songs decode as fast as the phone and the network allow, without playing anything, instead of at four to eight times the speed of the music. Turn it off if the phone gets warm.</string>
+    <string name="djcfg_workers">Songs prepared at once: %1$d</string>
+    <string name="djcfg_workers_text">Each song is decoded and analysed on its own processor core. This device has %1$d cores. More is faster for long lists, and uses more battery and network.</string>
     <string name="djcfg_beatfirst">Beat mixes first, soft blends last</string>
     <string name="djcfg_beatfirst_text">D\'JAI ranks the songs in the queue by how well they mix with the one that plays: songs that can be mixed on the beat come first, from the best match down, and songs that can only blend softly come at the end.</string>
     <string name="djcfg_revalidate">Check the queue when I change the song</string>

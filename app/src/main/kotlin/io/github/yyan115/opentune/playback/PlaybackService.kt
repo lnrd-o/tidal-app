@@ -113,7 +113,9 @@ class PlaybackService : MediaLibraryService() {
     private fun buildPlayer(slot: Int, focus: Boolean, analysis: Boolean = false): ExoPlayer {
         val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink {
-                // The hidden deck that prepares songs only taps, and always: nothing of it may ever be heard.
+                // A hidden deck that prepares songs is never heard. At full speed it has a sink that plays nothing and takes the audio as fast as it is decoded.
+                if (analysis && app.settings.state.value.djFastAnalysis) return io.github.yyan115.opentune.playback.dj.FastAnalysisSink(slot)
+                // Else it only taps, and always, and plays silence at a fast speed.
                 val chain = if (analysis) arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot, always = true))
                     else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot)) }
                 return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
@@ -147,6 +149,7 @@ class PlaybackService : MediaLibraryService() {
     private val djHost = object : DjHost {
         override val player: ExoPlayer get() = this@PlaybackService.player
         override fun buildDeck(slot: Int): ExoPlayer = buildPlayer(slot, false)
+        override fun buildAnalysis(slot: Int): ExoPlayer = buildPlayer(slot, false, analysis = true).also { it.volume = 0f }
         override fun adopt(next: ExoPlayer) = this@PlaybackService.adopt(next)
         override fun gainFor(item: MediaItem?): Float = this@PlaybackService.gainFor(item)
         override fun titleOf(item: MediaItem?): String? = item?.let(::trackOf)?.title
@@ -229,7 +232,8 @@ class PlaybackService : MediaLibraryService() {
     }
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
-        Preprocessor(scope, { buildPlayer(DjMix.ANALYSIS_SLOT, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf)
+        Preprocessor(scope, { slot -> buildPlayer(slot, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf,
+            workers = { app.settings.state.value.djWorkers })
     }
 
     /** What the player does when a new track starts: the history, the listening time and the widget. */

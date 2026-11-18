@@ -36,8 +36,11 @@ class DeckAnalyzer(
         private set
     @Volatile private var estimateNow = false
 
-    /** Makes a full estimate at the next opportunity, whatever the pace. */
-    fun requestEstimate() { estimateNow = true }
+    /** The ring frame that the analysis must have read before the estimate that was asked for is made. */
+    @Volatile private var estimateAt = 0L
+
+    /** Makes a full estimate once everything that is in the ring now has been read, whatever the pace: the end of a song is part of it. */
+    fun requestEstimate() { estimateAt = DjMix.streams[slot].ring?.written ?: 0L; estimateNow = true }
 
     @Volatile var beat: BeatAnalysis? = null
         private set
@@ -127,13 +130,16 @@ class DeckAnalyzer(
                 e.feed(mono, n)
                 read += n
             }
+            DjMix.streams[slot].readMark = read
             seconds = ((read - e.startSample).toFloat() / ring.rate)
-            if (seconds >= 10f && (seconds - lastEstimate >= estimateEvery || estimateNow)) {
+            if (seconds >= 10f && (seconds - lastEstimate >= estimateEvery || (estimateNow && read >= estimateAt))) {
                 estimateNow = false
                 lastEstimate = seconds
                 estimate(ring, e, keys!!, read)
             }
-            if (read == began) delay(250) else delay(150)
+            // A deck that plays gives a few hundred milliseconds at a time. A hidden deck that decodes at full speed gives seconds: the analyzer then goes on
+            // at once, so that it keeps up, and only lets other work run.
+            if (read == began) delay(250) else if (read - began >= ring.rate) kotlinx.coroutines.yield() else delay(150)
         }
     }
 

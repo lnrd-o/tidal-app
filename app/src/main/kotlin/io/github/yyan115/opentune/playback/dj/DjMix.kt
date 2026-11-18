@@ -101,7 +101,7 @@ object DjMix {
     }
 
     /** What D'JAI has kept about a song: its tempo, key and energy when known, and whether its cue points are kept. */
-    class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean)
+    class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean, val genre: io.github.yyan115.opentune.core.dj.GenreFamily? = null)
 
     /** The id of the song that the listener chose to play next. D'JAI does not move it: it was asked for. */
     @Volatile var pinnedNext: String? = null

@@ -89,6 +89,19 @@ fun mixTitle(kind: AutoMixKind): String = when (kind) {
     is AutoMixKind.Energy -> stringResource(when (kind.level) { 0 -> R.string.mixes_calm; 1 -> R.string.mixes_groove; else -> R.string.mixes_peak })
     is AutoMixKind.Tempo -> stringResource(R.string.mixes_tempo, kind.from, kind.to)
     is AutoMixKind.Harmonic -> stringResource(R.string.mixes_keys, Camelot.noteName(kind.centre)?.let { "${kind.centre} $it" } ?: kind.centre)
+    is AutoMixKind.Genre -> stringResource(genreName(kind.family))
+}
+
+/** The name of a family of style, as the lists and the mixes show it. */
+fun genreName(family: io.github.yyan115.opentune.core.dj.GenreFamily): Int = when (family) {
+    io.github.yyan115.opentune.core.dj.GenreFamily.ELECTRONIC -> R.string.genre_electronic
+    io.github.yyan115.opentune.core.dj.GenreFamily.BASS -> R.string.genre_bass
+    io.github.yyan115.opentune.core.dj.GenreFamily.HIPHOP -> R.string.genre_hiphop
+    io.github.yyan115.opentune.core.dj.GenreFamily.LATIN -> R.string.genre_latin
+    io.github.yyan115.opentune.core.dj.GenreFamily.POP -> R.string.genre_pop
+    io.github.yyan115.opentune.core.dj.GenreFamily.ROCK -> R.string.genre_rock
+    io.github.yyan115.opentune.core.dj.GenreFamily.SOUL -> R.string.genre_soul
+    io.github.yyan115.opentune.core.dj.GenreFamily.CHILL -> R.string.genre_chill
 }
 
 private fun AutoMixKind.key(): String = when (this) {
@@ -96,4 +109,5 @@ private fun AutoMixKind.key(): String = when (this) {
     is AutoMixKind.Energy -> "energy$level"
     is AutoMixKind.Tempo -> "tempo$from"
     is AutoMixKind.Harmonic -> "keys$centre"
+    is AutoMixKind.Genre -> "genre${family.name}"
 }

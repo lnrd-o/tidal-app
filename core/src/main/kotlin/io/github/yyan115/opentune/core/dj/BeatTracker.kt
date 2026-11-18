@@ -136,6 +136,17 @@ class BeatAnalysis(
             j++
         }
     }
+
+    /**
+     * The same grid counted at [factor] times its beat: 2 reads a song at half time (two of its beats make one), 0.5 at double time. The grid keeps its
+     * downbeats where they are, so that a song mixed at half or double time still lands its bar on the bar of the other one.
+     */
+    fun scaled(factor: Double): BeatAnalysis {
+        if (factor == 1.0) return this
+        // A downbeat is the anchor of the new grid: every bar of the new grid starts on a bar of this one.
+        val downbeat = nextDownbeat(anchorSample)
+        return BeatAnalysis(bpm / factor, periodSamples * factor, downbeat, 0, confidence, beatsPerBar, barKnown)
+    }
 }
 
 /** Finds the tempo and the beat grid in an onset envelope with a comb filter: the grid that collects the most onset energy wins. */

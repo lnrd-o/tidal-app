@@ -31,6 +31,10 @@ enum class CueKind {
     BRIDGE,
     /** The most intense eight bars of the song. */
     PEAK,
+    /** Where the sound of the song begins, after any silence at the start of the file. */
+    START,
+    /** Where the sound of the song ends, before any silence at the end of the file. */
+    END,
 }
 
 /** A cue point at [atMs] milliseconds from the start of the song. */
@@ -121,6 +125,12 @@ class SectionAccumulator(private val rate: Int) {
  */
 object SectionDetector {
     private const val MIN_RUN_BARS = 4
+    /** A slice this far below the loudest one, or below the floor, is silence. */
+    private const val SILENCE_DB = 45.0
+    private const val ABSOLUTE_FLOOR_DB = -75.0
+    /** A fade at the end must last this many bars and lose this much of the scaled loudness to be taken for an outro. */
+    private const val FADE_BARS = 4
+    private const val FADE_DROP = 0.3
     private const val MIN_BARS = 24
     private const val MIN_SPREAD = 0.18
     private const val MIN_BASS_RISE = 0.2
@@ -144,7 +154,8 @@ object SectionDetector {
         val total = slices.size * SectionAccumulator.SLICE_SECONDS
         val bars = floor((total - originSeconds) / barSeconds).toInt()
         val intro = Cue(CueKind.INTRO, (originSeconds * 1000).roundToLong())
-        if (bars < MIN_BARS) return listOf(intro)
+        val edges = soundEdges(slices)
+        if (bars < MIN_BARS) return merge(listOf(intro) + edges)
         val features = barFeatures(slices, bars, barSeconds, originSeconds)
         val cues = ArrayList<Cue>()
         cues.add(intro)
@@ -157,7 +168,26 @@ object SectionDetector {
             cues.addAll(heard.filter { it.kind == CueKind.PEAK })
             cues.addAll(wordCues(words, barSeconds, originSeconds, cues))
         } else cues.addAll(heard)
+        cues.addAll(edges)
         return merge(cues)
+    }
+
+    /**
+     * Where the sound begins and ends: the first and the last slice that is within [SILENCE_DB] of the loudest one (and above an absolute floor). A start
+     * is only given when there is at least half a second of silence before it, and an end when there is at least a second after it.
+     */
+    fun soundEdges(slices: List<SliceFeatures>): List<Cue> {
+        if (slices.isEmpty()) return emptyList()
+        val loudest = slices.maxOf { it.loudDb }
+        val floor = max(loudest - SILENCE_DB, ABSOLUTE_FLOOR_DB)
+        val first = slices.indexOfFirst { it.loudDb > floor }
+        val last = slices.indexOfLast { it.loudDb > floor }
+        if (first < 0) return emptyList()
+        val slice = SectionAccumulator.SLICE_SECONDS
+        val out = ArrayList<Cue>(2)
+        if (first * slice >= 0.5) out.add(Cue(CueKind.START, (first * slice * 1000).roundToLong()))
+        if ((slices.size - 1 - last) * slice >= 1.0) out.add(Cue(CueKind.END, ((last + 1) * slice * 1000).roundToLong()))
+        return out
     }
 
     /** The sections from the words as cues, on the bars of the song. A break from the words is left out where the music has found one already. */
@@ -236,7 +266,26 @@ object SectionDetector {
                 else if (length >= MIN_RUN_BARS) cues.add(Cue(CueKind.BREAK, at(start)))
             }
         }
+        // Many songs end on a fade and not on a quiet section: the loudness slides down over the last bars. The fade is the outro, on the nearest block of four.
+        if (cues.none { it.kind == CueKind.OUTRO }) fadeStart(f.loudN, bars)?.let { cues.add(Cue(CueKind.OUTRO, at(it))) }
         return cues
+    }
+
+    /** The bar where a fade at the end of the song begins, or null when the song does not fade. */
+    private fun fadeStart(loud: DoubleArray, bars: Int): Int? {
+        val last = loud.indices.lastOrNull { loud[it] >= 0.55 } ?: return null
+        val from = last + 1
+        if (bars - from < FADE_BARS) return null
+        if (loud[bars - 1] > loud[last] - FADE_DROP) return null
+        // A fade slides down; a song that stops and leaves silence has fallen off a cliff, and that is not an outro to mix over.
+        if (loud[from] < loud[last] - 0.35) return null
+        // The level must fall all the way: no bar of the fade is louder than where it began.
+        if ((from until bars).any { loud[it] > loud[last] }) return null
+        // The slide begins before the level falls under the line: it is followed back while each bar is louder than the next.
+        var begin = from
+        while (begin - 1 > 0 && loud[begin - 1] > loud[begin] + 0.02) begin--
+        val block = (begin / 4.0).roundToInt() * 4
+        return if (abs(block - begin) <= 2 && block in 1 until bars) block else begin
     }
 
     // ---- the structure reading: verse, chorus, bridge and peak ----

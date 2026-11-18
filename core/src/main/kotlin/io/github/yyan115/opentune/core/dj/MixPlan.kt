@@ -134,9 +134,17 @@ class TrackSummary(
     val cues: List<CueMark> = emptyList(),
     /** Where the off-beat eighth falls in the beat (0.5 straight, up to 0.67 swung), or null when it is not known. See [Swing]. */
     val swing: Double? = null,
+    /** The family of the song's style, or null when it is not known. See [GenreFamily]. */
+    val genre: GenreFamily? = null,
 ) {
     /** The same song without its groove, for when the listener turned the matching of grooves off. */
-    fun withoutSwing() = if (swing == null) this else TrackSummary(beat, camelot, energy, origin, cues, null)
+    fun withoutSwing() = if (swing == null) this else TrackSummary(beat, camelot, energy, origin, cues, null, genre)
+
+    /** The same song with another beat grid, for a mix at half or double time. */
+    fun withBeat(grid: BeatAnalysis?) = TrackSummary(grid, camelot, energy, origin, cues, swing, genre)
+
+    /** The same song with its family of style. */
+    fun withGenre(family: GenreFamily?) = TrackSummary(beat, camelot, energy, origin, cues, swing, family)
 }
 
 class MixDecision(
@@ -153,14 +161,23 @@ class MixDecision(
     val blendBeats: Int = 16,
     /** How alike the grooves of the two tracks are, from 0 to 1, or null when one of them is not known. */
     val grooveScore: Double? = null,
+    /** How naturally the families of style of the two songs follow each other, from 0 to 1, or null when one is not known. */
+    val genreScore: Double? = null,
+    /**
+     * How the grid of the incoming song is read for a beat mix: 1 as it is, 2 at half time (two of its beats on one of the outgoing song), 0.5 at double
+     * time. A song at 170 meets one at 85 this way, beat on beat.
+     */
+    val gridFactor: Double = 1.0,
 ) {
     /**
      * How well the two tracks go together, from 0 to 1: tempo 40 percent, key 30 percent, energy 30 percent. When the grooves of both are known they
-     * count for 15 percent, and the rest is shared as 35, 25 and 25.
+     * count for 15 percent, and the rest is shared as 35, 25 and 25. When the families of style of both are known they count for 12 percent of the whole.
      */
-    val match: Double get() =
-        if (grooveScore == null) 0.4 * tempoScore + 0.3 * keyScore + 0.3 * energyScore
-        else 0.35 * tempoScore + 0.25 * keyScore + 0.25 * energyScore + 0.15 * grooveScore
+    val match: Double get() {
+        val sound = if (grooveScore == null) 0.4 * tempoScore + 0.3 * keyScore + 0.3 * energyScore
+            else 0.35 * tempoScore + 0.25 * keyScore + 0.25 * energyScore + 0.15 * grooveScore
+        return if (genreScore == null) sound else 0.88 * sound + 0.12 * genreScore
+    }
 }
 
 /**
@@ -188,6 +205,11 @@ object MixPlanner {
     const val MAX_ENERGY_GAP = 4.5
     /** Within this gap the long, 32-beat blend feels natural. */
     const val LONG_BLEND_GAP = 2.5
+    /** A mix at half or double time needs grids at least this sure, and its tempo counts for this share of a mix at the same tempo. */
+    const val OCTAVE_CONFIDENCE = 0.45f
+    const val OCTAVE_SCORE = 0.85
+    /** Families of style that follow each other at least this naturally may get the long blend. */
+    const val LONG_GENRE = 0.6
 
     /**
      * Picks the track to play next. The track at [nextIndex] stays when it matches [outgoing] by at least [MIN_MATCH]. When it does not,
@@ -242,13 +264,28 @@ object MixPlanner {
         // A straight groove and a swung one clash even at the same tempo.
         val swingGap = if (outgoing.swing != null && incoming.swing != null) abs(outgoing.swing - incoming.swing) else null
         val groove = Swing.score(outgoing.swing, incoming.swing)
+        val genre = GenreFamily.affinity(outgoing.genre, incoming.genre)
         if (a != null && b != null && a.confidence >= MIN_CONFIDENCE && b.confidence >= MIN_CONFIDENCE && a.beatsPerBar == b.beatsPerBar) {
             // The incoming track plays this much faster to bring its beats onto the grid of the outgoing one.
-            val speed = (b.periodSamples / rateIncoming) / (a.periodSamples / rateOutgoing)
-            val tempoScore = (1.0 - abs(speed - 1.0) / MAX_TEMPO_CHANGE).coerceIn(0.0, 1.0)
+            val plain = (b.periodSamples / rateIncoming) / (a.periodSamples / rateOutgoing)
+            // A song at twice or half the tempo of the other is mixed beat on beat too, read at half or double time: drum and bass over hip-hop, or 64 into 128.
+            // It must be a clear grid on both sides, as a wrong octave is worse than no beat mix at all.
+            val factor = when {
+                abs(plain - 1.0) <= MAX_TEMPO_CHANGE -> 1.0
+                // The incoming beats are half as long: it is the faster song, read at half time.
+                a.confidence >= OCTAVE_CONFIDENCE && b.confidence >= OCTAVE_CONFIDENCE && abs(plain * 2 - 1.0) <= MAX_TEMPO_CHANGE -> 2.0
+                // The incoming beats are twice as long: the slower song, read at double time.
+                a.confidence >= OCTAVE_CONFIDENCE && b.confidence >= OCTAVE_CONFIDENCE && abs(plain / 2 - 1.0) <= MAX_TEMPO_CHANGE -> 0.5
+                else -> 1.0
+            }
+            // At half time the incoming beat is two of its own: it plays at the speed that puts two of its beats on one of the outgoing song.
+            val speed = plain * factor
+            // A mix at half or double time is a little less natural than one at the same tempo.
+            val tempoScore = (1.0 - abs(speed - 1.0) / MAX_TEMPO_CHANGE).coerceIn(0.0, 1.0) * (if (factor == 1.0) 1.0 else OCTAVE_SCORE)
             if (abs(speed - 1.0) <= MAX_TEMPO_CHANGE && (gap == null || gap <= MAX_ENERGY_GAP) && (swingGap == null || swingGap <= GROOVE_CLASH)) {
-                val blend = if ((gap == null || gap <= LONG_BLEND_GAP) && (swingGap == null || swingGap <= GROOVE_LONG)) 32 else 16
-                return MixDecision(MixKind.BEAT, speed, key, a.bpm, b.bpm, eo, ei, energyScore, tempoScore, blend, groove)
+                // Two worlds of style layered for a long time sound muddy: a jump between families gets the short blend.
+                val long = (gap == null || gap <= LONG_BLEND_GAP) && (swingGap == null || swingGap <= GROOVE_LONG) && factor == 1.0 && (genre == null || genre >= LONG_GENRE)
+                return MixDecision(MixKind.BEAT, speed, key, a.bpm, b.bpm, eo, ei, energyScore, tempoScore, if (long) 32 else 16, groove, genre, factor)
             }
         }
         // No match on the beat. A song at a nearer tempo is still a better neighbour than a far one, so the score is not flat.
@@ -258,7 +295,7 @@ object MixPlanner {
             val nearest = minOf(abs(speed - 1.0), abs(speed / 2 - 1.0), abs(speed * 2 - 1.0))
             soft = 0.2 + 0.3 * (1.0 - nearest / 0.25).coerceIn(0.0, 1.0)
         }
-        return MixDecision(MixKind.SOFT, 1.0, key, a?.bpm, b?.bpm, eo, ei, energyScore, soft, 16, groove)
+        return MixDecision(MixKind.SOFT, 1.0, key, a?.bpm, b?.bpm, eo, ei, energyScore, soft, 16, groove, genre)
     }
 }
 
@@ -291,7 +328,9 @@ object MixScheduler {
         roll: Boolean = false, writtenIncoming: Double = Double.POSITIVE_INFINITY, echo: Boolean = false,
     ): MixPlan? {
         val earliest = posOutgoing + LEAD_SECONDS * rateOutgoing
-        val latestEnd = endOutgoing - TAIL_SECONDS * rateOutgoing
+        // A song that falls silent before its file ends is mixed out before the silence, not into it.
+        val soundEnd = a.cues.firstOrNull { it.kind == CueKind.END && it.frame > earliest }?.frame
+        val latestEnd = min(endOutgoing, soundEnd ?: endOutgoing) - TAIL_SECONDS * rateOutgoing
         val gridA = a.beat; val gridB = b.beat
         if (decision.kind == MixKind.BEAT && gridA != null && gridB != null) {
             val period = gridA.periodSamples
@@ -328,11 +367,38 @@ object MixScheduler {
         }
         val lengthOut = (SOFT_SECONDS * outRate).toInt()
         val span = lengthOut.toDouble() * rateOutgoing / outRate
-        val start = latestEnd - span
-        if (start < earliest) return null
         // The echo repeats at three quarters of a beat of the outgoing song when its tempo is known, else at three eighths of a second.
         val delay = if (gridA != null) (0.75 * gridA.periodSamples * outRate / rateOutgoing).toInt().coerceIn(outRate / 8, outRate * 3 / 2) else outRate * 3 / 8
-        return MixPlan(outgoing, incoming, start, firstIncoming, lengthOut, 1.0, MixKind.SOFT, 8, 8, 0.5, echo = if (echo) EchoPlan(delay) else null)
+        // The incoming song starts where its sound starts, not in the silence before it.
+        val sound = b.cues.firstOrNull { it.kind == CueKind.START }?.frame?.takeIf { it > firstIncoming } ?: firstIncoming
+        // Even without a beat mix, a DJ changes songs on a phrase: the middle of the blend falls on a phrase boundary of the outgoing song (the first after its
+        // outro, or the last that fits), and the incoming song's first downbeat lands right there, so that the change is felt on the one.
+        if (gridA != null) {
+            val half = span / 2
+            val outro = a.cues.firstOrNull { it.kind == CueKind.OUTRO && it.frame >= posOutgoing }
+            var boundary: Double? = null
+            if (outro != null) nextBoundary(gridA, a.origin, outro.frame).takeIf { it - half >= earliest && it + half <= latestEnd }?.let { boundary = it }
+            if (boundary == null) {
+                // The last boundary that leaves room for the second half of the blend.
+                val period = gridA.periodSamples
+                val block = if (a.origin == null) gridA.beatsPerBar * period else PHRASE_BEATS / 4 * gridA.beatsPerBar * period
+                var at = nextBoundary(gridA, a.origin, latestEnd - half - block)
+                if (at + half > latestEnd) at -= block
+                if (at - half >= earliest) boundary = at
+            }
+            boundary?.let { swapFrame ->
+                val start = swapFrame - half
+                val lead = half * rateIncoming / rateOutgoing
+                // The incoming song is started so that its first phrase meets the boundary; when its intro is too short for that, the first downbeat that
+                // leaves room does. Without a grid it starts with its sound.
+                val downbeat = b.origin?.takeIf { it - lead >= sound } ?: gridB?.nextDownbeat(sound + lead)
+                val enter = if (downbeat != null) downbeat - lead else sound
+                return MixPlan(outgoing, incoming, start, enter, lengthOut, 1.0, MixKind.SOFT, 8, 8, 0.5, echo = if (echo) EchoPlan(delay) else null)
+            }
+        }
+        val start = latestEnd - span
+        if (start < earliest) return null
+        return MixPlan(outgoing, incoming, start, sound, lengthOut, 1.0, MixKind.SOFT, 8, 8, 0.5, echo = if (echo) EchoPlan(delay) else null)
     }
 
     /** The first phrase boundary (or downbeat, without a known origin) at or after [sample]. */

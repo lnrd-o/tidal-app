@@ -158,19 +158,31 @@ class PlaybackService : MediaLibraryService() {
             val track = item.mediaMetadata.extras?.getString("track")
                 ?.let { runCatching { io.github.yyan115.opentune.core.JsonCodec.decodeTrack(org.json.JSONObject(it)) }.getOrNull() } ?: return null
             var bpm = track.bpm
-            if (bpm == null && mode >= 2 && !track.isFile) track.isrc?.let { bpm = fetchDeezerBpm(it) }
-            return if (bpm == null && track.key == null) null else io.github.yyan115.opentune.playback.dj.OnlineHint(bpm, track.key)
+            var genre: io.github.yyan115.opentune.core.dj.GenreFamily? = null
+            if (mode >= 2 && !track.isFile) track.isrc?.let { isrc ->
+                val (deezerBpm, deezerGenre) = fetchDeezer(isrc)
+                if (bpm == null) bpm = deezerBpm
+                genre = deezerGenre
+            }
+            return if (bpm == null && track.key == null && genre == null) null else io.github.yyan115.opentune.playback.dj.OnlineHint(bpm, track.key, genre)
         }
 
-        /** The tempo that Deezer lists for a recording, found by its ISRC. Only the ISRC is sent. Returns null when there is none. */
-        private suspend fun fetchDeezerBpm(isrc: String): Double? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                val request = okhttp3.Request.Builder().url("https://api.deezer.com/track/isrc:" + android.net.Uri.encode(isrc)).build()
-                app.http.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@runCatching null
-                    org.json.JSONObject(response.body?.string().orEmpty()).optDouble("bpm", 0.0).takeIf { it in 40.0..250.0 }
+        /**
+         * The tempo and the family of style that Deezer lists for a recording, found by its ISRC. Only the ISRC is sent, and then the id of its album, whose
+         * genres Deezer keeps (a track has none of its own). Either may be null.
+         */
+        private suspend fun fetchDeezer(isrc: String): Pair<Double?, io.github.yyan115.opentune.core.dj.GenreFamily?> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            fun get(url: String): org.json.JSONObject? = runCatching {
+                app.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { response ->
+                    if (!response.isSuccessful) null else org.json.JSONObject(response.body?.string().orEmpty()).takeIf { !it.has("error") }
                 }
             }.getOrNull()
+            val track = get("https://api.deezer.com/track/isrc:" + android.net.Uri.encode(isrc)) ?: return@withContext null to null
+            val bpm = track.optDouble("bpm", 0.0).takeIf { it in 40.0..250.0 }
+            val album = track.optJSONObject("album")?.optLong("id", 0L)?.takeIf { it > 0L }
+            val genres = album?.let { get("https://api.deezer.com/album/$it") }?.optJSONObject("genres")?.optJSONArray("data")
+            val family = genres?.let { list -> (0 until list.length()).firstNotNullOfOrNull { io.github.yyan115.opentune.core.dj.GenreFamily.fromName(list.optJSONObject(it)?.optString("name")) } }
+            bpm to family
         }
 
         override fun cuesOf(id: String): List<io.github.yyan115.opentune.core.dj.Cue> =

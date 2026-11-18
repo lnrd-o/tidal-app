@@ -429,7 +429,9 @@ private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent:
         if (cues.isNotEmpty() && duration > 0) Canvas(Modifier.matchParentSize()) {
             val edge = 5.dp.toPx()
             val span = size.width - 2 * edge
+            // The edges of the sound are for the mixing only: they are not sections to show.
             for (cue in cues) {
+                if (cue.kind == CueKind.START || cue.kind == CueKind.END) continue
                 val x = edge + (cue.atMs.toFloat() / duration).coerceIn(0f, 1f) * span
                 val color = if (cue.kind == CueKind.DROP || cue.kind == CueKind.CHORUS || cue.kind == CueKind.PEAK) accent else Color.White.copy(alpha = .55f)
                 drawRect(color, Offset(x - .5.dp.toPx(), 5.dp.toPx()), Size(1.dp.toPx(), 7.dp.toPx()))

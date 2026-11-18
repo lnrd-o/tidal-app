@@ -31,8 +31,8 @@ import kotlinx.coroutines.withContext
 /** The file in which what the listening ahead learned about songs is kept between sessions, in the files folder. */
 const val DJAI_PROFILE_FILE = "djai_profiles.tsv"
 
-/** The tempo and the key of a song that an online catalogue gave, so that it can be scored before it is listened to. */
-class OnlineHint(val bpm: Double?, val camelot: String?)
+/** The tempo, the key and the family of style of a song that an online catalogue gave, so that it can be scored before it is listened to. */
+class OnlineHint(val bpm: Double?, val camelot: String?, val genre: io.github.yyan115.opentune.core.dj.GenreFamily? = null)
 
 /** What the listener chose about how D'JAI works: its effects, how it chooses the next song, and how far ahead it listens. */
 class DjOptions(
@@ -401,9 +401,9 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         for (i in upcoming(a)) {
             val item = a.getMediaItemAt(i)
             val key = item.mediaId
-            if (key in profiles || !asked.add(key)) continue
+            if ((key in profiles && profiles[key]?.summary?.genre != null) || !asked.add(key)) continue
             host.rememberTrack(item)
-            scope.launch { host.onlineHint(item)?.let { online[key] = it } }
+            scope.launch { host.onlineHint(item)?.let { hint -> online[key] = hint; hint.genre?.let { learnGenre(key, it) } } }
         }
         // The listening starts at once, also right after the listener changed the song: it does not wait for the song that plays to be analysed.
         val slot = DjMix.sessionSlot
@@ -445,8 +445,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val current = a.currentMediaItem?.mediaId?.let { profiles[it] }
         val out = analyzers[slot]
         // The song that plays is known from what was heard of it so far, or from what was learned of it before.
-        val outgoing = if (out.beat != null) TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing.takeIf { options.groove })
-            else current?.summary?.let { if (options.groove) it else it.withoutSwing() } ?: return
+        val outgoing = (if (out.beat != null) TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing.takeIf { options.groove })
+            else current?.summary?.let { if (options.groove) it else it.withoutSwing() } ?: return).let { it.withGenre(genreOf(a.currentMediaItem?.mediaId, it)) }
         val rate = DjMix.streams[slot].ring?.rate ?: current?.rate ?: 44_100
         val next = a.nextMediaItemIndex
         if (next == C.INDEX_UNSET || a.getMediaItemAt(next).mediaId == DjMix.pinnedNext) return
@@ -506,7 +506,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
                 if (f.size < 8) continue
                 val bpm = f[1].toDoubleOrNull()
                 val beat = if (bpm == null) null else BeatAnalysis(bpm, f[2].toDouble(), 0.0, 0, f[3].toFloat(), f[4].toInt(), false)
-                into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null, swing = f.getOrNull(8)?.toDoubleOrNull()), f[7].toInt())
+                val genre = f.getOrNull(9)?.let { name -> io.github.yyan115.opentune.core.dj.GenreFamily.entries.firstOrNull { it.name == name } }
+                into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null, swing = f.getOrNull(8)?.toDoubleOrNull(), genre = genre), f[7].toInt())
             }
         }
     }
@@ -522,7 +523,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         knownJob = scope.launch {
             delay(KNOWN_DELAY_MS)
             val map = HashMap<String, DjMix.SongInfo>(profiles.size + cueIds.size)
-            for ((id, p) in profiles) map[id] = DjMix.SongInfo(p.summary.beat?.bpm, p.summary.camelot, p.summary.energy, id in cueIds)
+            for ((id, p) in profiles) map[id] = DjMix.SongInfo(p.summary.beat?.bpm, p.summary.camelot, p.summary.energy, id in cueIds, p.summary.genre)
             for (id in cueIds) if (id !in map) map[id] = DjMix.SongInfo(null, null, null, true)
             DjMix.known.value = map
         }
@@ -555,7 +556,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         for ((id, p) in profiles) {
             val b = p.summary.beat
             lines.add(listOf(id.replace('\t', '_').replace('\n', '_'), b?.bpm?.toString() ?: "-", b?.periodSamples?.toString() ?: "0", b?.confidence?.toString() ?: "0",
-                b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString(), p.summary.swing?.toString() ?: "-").joinToString("\t"))
+                b?.beatsPerBar?.toString() ?: "4", p.summary.camelot ?: "-", p.summary.energy?.toString() ?: "-", p.rate.toString(), p.summary.swing?.toString() ?: "-", p.summary.genre?.name ?: "-").joinToString("\t"))
         }
         val file = host.profileFile()
         withContext(Dispatchers.IO) { runCatching { synchronized(this@DjEngine) { file.writeText(lines.joinToString("\n")) } } }
@@ -569,7 +570,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val bpm = hint.bpm
         if (bpm == null && hint.camelot == null) return null
         val beat = bpm?.let { BeatAnalysis(it, 60.0 / it * PROVISIONAL_RATE, 0.0, 0, 0.6f) }
-        return Profile(TrackSummary(beat, hint.camelot, null, null), PROVISIONAL_RATE)
+        return Profile(TrackSummary(beat, hint.camelot, null, null, genre = hint.genre), PROVISIONAL_RATE)
     }
 
     /** The songs whose catalogue tempo was logged. */
@@ -582,13 +583,28 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         return bpm
     }
 
+    /** The family of style of the song [id], for a summary built from what is being heard: what a catalogue said, what was kept, or a guess. */
+    private fun genreOf(id: String?, heard: TrackSummary?): io.github.yyan115.opentune.core.dj.GenreFamily? =
+        id?.let { online[it]?.genre ?: profiles[it]?.summary?.genre } ?: io.github.yyan115.opentune.core.dj.GenreFamily.guess(heard?.beat?.bpm, heard?.swing, heard?.energy)
+
+    /** A catalogue named the style of a song that is known already: it replaces a guess. */
+    private fun learnGenre(id: String, genre: io.github.yyan115.opentune.core.dj.GenreFamily) {
+        val p = profiles[id] ?: return
+        if (p.summary.genre == genre) return
+        profiles[id] = Profile(p.summary.withGenre(genre), p.rate)
+        saveProfiles(); publishKnown()
+    }
+
     /** Keeps what a song that was prepared on request taught: it replaces what the short listening found. */
     fun learn(id: String, summary: TrackSummary, rate: Int) { remember(id, Profile(summary, rate)) }
 
     private fun remember(id: String, profile: Profile) {
         publishKnown()
+        // The family of style: a catalogue's word first, then what was kept before, then a guess from the sound when it is a clear case.
+        val s = profile.summary
+        val genre = online[id]?.genre ?: s.genre ?: profiles[id]?.summary?.genre ?: io.github.yyan115.opentune.core.dj.GenreFamily.guess(s.beat?.bpm, s.swing, s.energy)
         profiles.remove(id)
-        profiles[id] = profile
+        profiles[id] = if (genre == s.genre) profile else Profile(s.withGenre(genre), profile.rate)
         while (profiles.size > MAX_PROFILES) profiles.remove(profiles.keys.first())
         saveProfiles()
     }
@@ -602,6 +618,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         val out = analyzers[slot]
         val rate = DjMix.streams[slot].ring?.rate ?: return
         val outgoing = TrackSummary(out.beat, out.key?.camelot, out.energyRecent, out.origin, swing = out.swing.takeIf { options.groove })
+            .let { it.withGenre(genreOf(a.currentMediaItem?.mediaId, it)) }
         val next = a.nextMediaItemIndex
         if (next == C.INDEX_UNSET) return
         if (a.getMediaItemAt(next).mediaId == DjMix.pinnedNext) return
@@ -717,13 +734,19 @@ val measured = profiles[key]
         val incomingId = b.currentMediaItem?.mediaId
         val known = incomingId?.let { profiles[it] }?.summary
         val summaryOut = TrackSummary(analysisOut.beat, analysisOut.key?.camelot, analysisOut.energyRecent, analysisOut.origin, outCues, analysisOut.swing.takeIf { options.groove })
+            .let { it.withGenre(genreOf(itemId, it)) }
         val summaryIn = TrackSummary(analysisIn.beat, known?.camelot ?: analysisIn.key?.camelot, known?.energy ?: (analysisIn.energyIntro ?: analysisIn.energyRecent), analysisIn.origin, inCues,
             (known?.swing ?: analysisIn.swing).takeIf { options.groove })
+            .let { it.withGenre(known?.genre ?: genreOf(incomingId, it)) }
         val pos = DjMix.mixer.position(outSlot)
         // The pointer of the mixer trails the audible position by a few hundred milliseconds, so the end is placed a little early.
         val end = pos + (remaining / 1000.0 - END_BIAS_SECONDS) * ringOut.rate
         val first = ringIn.oldest().toDouble() + ringIn.rate * 0.1
         var chosen = MixPlanner.decide(summaryOut, summaryIn, ringOut.rate, ringIn.rate)
+        // A song at twice or half the tempo is mixed on the beat with its grid read at half or double time: the plan and the kick lock use that grid.
+        val gridIn = if (chosen.gridFactor != 1.0) summaryIn.withBeat(summaryIn.beat?.scaled(chosen.gridFactor)) else summaryIn
+        if (chosen.gridFactor != 1.0 && checkedFor != incomingId) android.util.Log.i("OpenTune", "D'JAI mixes the next song at %s time".format(if (chosen.gridFactor > 1.0) "half" else "double"))
+        if (checkedFor != incomingId) android.util.Log.i("OpenTune", "D'JAI styles: %s into %s".format(summaryOut.genre ?: "unknown", summaryIn.genre ?: "unknown"))
         if (checkedFor != incomingId) android.util.Log.i("OpenTune", "D'JAI match for the mix %.0f%% (tempo %.2f, key %.2f, energy %.2f, groove %s), at the choice %s".format(chosen.match * 100, chosen.tempoScore,
             chosen.keyScore, chosen.energyScore, chosen.grooveScore?.let { "%.2f".format(it) } ?: "unknown", incomingId?.let { choiceMatch[it] }?.let { "%.0f%%".format(it * 100) } ?: "unknown"))
         // A mix whose match is low, with what is known now, is given another song when there is time and a better one: it must be a good mix.
@@ -741,19 +764,20 @@ val measured = profiles[key]
         if (chosen.kind == MixKind.BEAT) {
             // Two loud songs get a loop roll before the swap.
             val roll = options.roll && (chosen.energyOutgoing ?: 0.0) >= ROLL_ENERGY && (chosen.energyIncoming ?: 0.0) >= ROLL_ENERGY
-            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, roll)
+            found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, gridIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, roll)
             // A phrase boundary may be a few seconds away, so the planner waits for one unless the track is nearly over.
             if (found == null && !short) return
         }
         if (found == null) {
             // The songs are as alike as they were: a mix that did not fit on the beat is soft, but its match is not lowered.
-            chosen = MixDecision(MixKind.SOFT, 1.0, chosen.keyScore, chosen.bpmOutgoing, chosen.bpmIncoming, chosen.energyOutgoing, chosen.energyIncoming, chosen.energyScore, chosen.tempoScore, 16, chosen.grooveScore)
+            chosen = MixDecision(MixKind.SOFT, 1.0, chosen.keyScore, chosen.bpmOutgoing, chosen.bpmIncoming, chosen.energyOutgoing, chosen.energyIncoming, chosen.energyScore, chosen.tempoScore, 16, chosen.grooveScore, chosen.genreScore)
             found = MixScheduler.schedule(outSlot, inSlot, chosen, summaryOut, summaryIn, ringOut.rate, ringIn.rate, DjMix.OUT_RATE, pos, end, first, echo = options.echo) ?: return
         } else {
-            found = lockKicks(found, summaryOut.beat!!, summaryIn.beat!!, ringOut, ringIn)
+            found = lockKicks(found, summaryOut.beat!!, gridIn.beat!!, ringOut, ringIn)
         }
         plan = found; decision = chosen
-        planEffects = listOfNotNull(if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null, if (found.echo != null) "ECHO" else null,
+        planEffects = listOfNotNull(if (found.kind == MixKind.BEAT && chosen.gridFactor > 1.0) "HALF" else if (found.kind == MixKind.BEAT && chosen.gridFactor < 1.0) "DOUBLE" else null,
+            if (found.roll != null) "ROLL" else null, if (found.dropEntry) "DROP" else null, if (found.echo != null) "ECHO" else null,
             if (outCues.any { it.kind == CueKind.OUTRO }) "OUTRO" else null).joinToString(" ")
         if (planEffects.isNotEmpty()) android.util.Log.i("OpenTune", "D'JAI effects: $planEffects")
         planBpmIn = analysisIn.beat?.bpm; planKeyIn = summaryIn.camelot

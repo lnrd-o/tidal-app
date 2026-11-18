@@ -770,7 +770,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** The auto mixes that can be built from the songs that D'JAI has analysed and that this device knows. */
     suspend fun buildMixes(): List<MixCard> = withContext(Dispatchers.Default) {
         val points = DjMix.known.value.mapNotNull { (id, info) ->
-            if (info.bpm == null && info.key == null && info.energy == null) null else io.github.yyan115.opentune.core.dj.SongPoint(id, info.bpm, info.key, info.energy)
+            if (info.bpm == null && info.key == null && info.energy == null) null else io.github.yyan115.opentune.core.dj.SongPoint(id, info.bpm, info.key, info.energy, info.genre)
         }
         val tracks = HashMap<String, Track>()
         withContext(Dispatchers.IO) { for (point in points) app.library.get(point.id)?.let { tracks[point.id] = it } }

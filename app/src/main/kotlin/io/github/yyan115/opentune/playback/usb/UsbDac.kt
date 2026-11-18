@@ -157,7 +157,9 @@ object UsbDac {
         close()
         val c = usb.openDevice(target) ?: run { Log.w(TAG, "could not open ${target.productName}"); return }
         val raw = c.rawDescriptors
-        Log.i(TAG, "descriptors of ${target.productName} (%04x:%04x): %s".format(target.vendorId, target.productId, raw.joinToString("") { "%02x".format(it) }))
+        val hex = raw.joinToString("") { "%02x".format(it) }
+        Log.i(TAG, "descriptors of ${target.productName} (%04x:%04x), ${raw.size} bytes".format(target.vendorId, target.productId))
+        hex.chunked(160).forEachIndexed { k, part -> Log.i(TAG, "descriptors $k: $part") }
         val parsed = UsbAudioDescriptors.parse(raw)
         if (parsed == null) { Log.w(TAG, "no playback interface on ${target.productName}"); c.close(); return }
         device = target; connection = c; info = parsed
@@ -207,6 +209,8 @@ object UsbDac {
                 intArrayOf(s16(min, 0), s16(max, 0)) else null
         }
         if (range != null && range[1] > range[0]) { volumeRange = range; volumeChannels = channels; volumeUnit = index }
+        // A DAC that Android had muted, or that starts muted, stays silent until its mute is lifted: master and both channels, whichever it has.
+        for (channel in listOf(0, 1, 2)) c.controlTransfer(0x21, 0x01, 0x0100 or channel, index, byteArrayOf(0), 1, 1000)
         Log.i(TAG, "volume: unit ${unit.unitId}, channels $channels, range ${range?.let { "%.1f to %.1f dB".format(it[0] / 256.0, it[1] / 256.0) } ?: "none"}")
         applyVolume()
     }
@@ -251,10 +255,21 @@ object UsbDac {
         claimed.add(intf)
         if (!c.setInterface(intf)) { Log.w(TAG, "could not select alternate ${setting.alternate}"); return null }
         // The rate: on the endpoint for class 1, on the clock of the terminal for class 2.
+        // The rate is read back: a DAC left at another rate would play the song too fast or too slow, so the stream is not started then.
+        val set: Int; val now: Int
         if (i.uac2) {
-            val clock = i.clocks[setting.terminalLink] ?: i.clocks.values.firstOrNull()
-            if (clock != null) c.controlTransfer(0x21, 0x01, 0x0100, (clock shl 8) or i.controlInterface, le(rate, 4), 4, 1000)
-        } else c.controlTransfer(0x22, 0x01, 0x0100, setting.endpoint, le(rate, 3), 3, 1000)
+            val clock = i.clocks[setting.terminalLink] ?: i.clocks.values.firstOrNull() ?: return null
+            val index = (clock shl 8) or i.controlInterface
+            set = c.controlTransfer(0x21, 0x01, 0x0100, index, le(rate, 4), 4, 1000)
+            val back = ByteArray(4)
+            now = if (c.controlTransfer(0xA1, 0x01, 0x0100, index, back, 4, 1000) == 4) u32(back) else -1
+        } else {
+            set = c.controlTransfer(0x22, 0x01, 0x0100, setting.endpoint, le(rate, 3), 3, 1000)
+            val back = ByteArray(3)
+            now = if (c.controlTransfer(0xA2, 0x81, 0x0100, setting.endpoint, back, 3, 1000) == 3) (u32(back + byteArrayOf(0))) else -1
+        }
+        Log.i(TAG, "rate: asked $rate Hz (request answered $set), the DAC says $now Hz; alternate ${setting.alternate}, endpoint ${setting.endpoint}, ${setting.maxPacket} bytes a packet, interval ${setting.interval}, sync ${setting.syncType}, feedback ${setting.feedbackEndpoint}")
+        if (now > 0 && now != rate) { Log.w(TAG, "the DAC did not take $rate Hz"); interfaceOf(d, setting.interfaceNumber, 0)?.let { c.setInterface(it) }; return null }
         val speed = UsbNative.speed(c.fileDescriptor)
         val high = speed >= 3
         val packetsPerSecond = (if (high) 8000 else 1000) / (1 shl (setting.interval - 1).coerceIn(0, 4))
@@ -264,7 +279,20 @@ object UsbDac {
         applyVolume()
         Log.i(TAG, "streaming $rate Hz, ${setting.bits} bits in ${setting.subslotBytes} bytes, ${setting.channels} channels, speed $speed, ${packetsPerSecond} packets/s")
         mutableState.value = mutableState.value.copy(playing = "%.1f kHz · %d-bit".format(rate / 1000.0, setting.bits))
-        return UsbStream(handle, setting, rate).also { stream = it }
+        return UsbStream(handle, setting, rate).also { s ->
+            stream = s
+            // While it plays, a line every five seconds says how much audio reached the DAC and how often it ran dry.
+            Thread {
+                var last = 0L
+                while (stream === s && UsbNative.running(s.handle)) {
+                    Thread.sleep(5_000)
+                    if (stream !== s) break
+                    val played = UsbNative.framesPlayed(s.handle)
+                    Log.i(TAG, "played %.1f s of audio in the last 5 s, %d underruns, %d bytes queued".format((played - last) / rate.toDouble(), UsbNative.underruns(s.handle), UsbNative.queuedBytes(s.handle)))
+                    last = played
+                }
+            }.apply { isDaemon = true; name = "usb-dac-stats" }.start()
+        }
     }
 
     @Synchronized
@@ -278,6 +306,8 @@ object UsbDac {
         val d = device; val c = connection
         if (d != null && c != null) interfaceOf(d, s.setting.interfaceNumber, 0)?.let { c.setInterface(it) }
     }
+
+    private fun u32(b: ByteArray) = (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8) or ((b[2].toInt() and 0xFF) shl 16) or ((b[3].toInt() and 0xFF) shl 24)
 
     private fun le(value: Int, bytes: Int) = ByteArray(bytes) { ((value shr (8 * it)) and 0xFF).toByte() }
 

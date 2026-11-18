@@ -13,6 +13,8 @@ data class Settings(
     /** Volume normalization from ReplayGain data: "off", "track" or "album". */
     val normalization: String = "off",
     val bitPerfect: Boolean = false,
+    /** The app's own USB driver: a USB DAC is taken from Android and fed the song's own rate and bits, on any Android version. */
+    val usbDriver: Boolean = false,
     /** D'JAI: mixes the queue as one continuous set. The players only decode and a mixer plays the result. */
     val djai: Boolean = false,
     /** Blends the end of a song into the next one for this many seconds. Zero is off. Albums stay gapless. */
@@ -103,7 +105,7 @@ class AppSettings(context: Context) {
     private val mutable = MutableStateFlow(Settings(
         quality = quality("quality", AudioQuality.LOSSLESS), mobileQuality = quality("mobileQuality", AudioQuality.LOSSLESS),
         downloadOnWifi = preferences.getBoolean("downloadOnWifi", true), offline = preferences.getBoolean("offline", false),
-        normalization = preferences.getString("normalization", "off") ?: "off",        bitPerfect = preferences.getBoolean("bitPerfect", false), djai = preferences.getBoolean("djai", false), crossfadeSeconds = preferences.getInt("crossfadeSeconds", 0).coerceIn(0, 12), elzar = preferences.getBoolean("elzar", false),
+        normalization = preferences.getString("normalization", "off") ?: "off",        bitPerfect = preferences.getBoolean("bitPerfect", false), usbDriver = preferences.getBoolean("usbDriver", false), djai = preferences.getBoolean("djai", false), crossfadeSeconds = preferences.getInt("crossfadeSeconds", 0).coerceIn(0, 12), elzar = preferences.getBoolean("elzar", false),
         elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6), cacheMb = preferences.getInt("cacheMb", 256).coerceIn(0, 8192), adaptColor = preferences.getBoolean("adaptColor", false), djRoll = preferences.getBoolean("djRoll", preferences.getBoolean("djEffects", true)),
         djCues = preferences.getBoolean("djCues", preferences.getBoolean("djEffects", true)), djEcho = preferences.getBoolean("djEcho", preferences.getBoolean("djEffects", true)),
         djFilters = preferences.getBoolean("djFilters", true), djGroove = preferences.getBoolean("djGroove", true), djArc = preferences.getBoolean("djArc", true),
@@ -129,7 +131,7 @@ class AppSettings(context: Context) {
         preferences.edit().putString("quality", next.quality.name).putString("mobileQuality", next.mobileQuality.name)
             .putBoolean("downloadOnWifi", next.downloadOnWifi).putBoolean("offline", next.offline)
             .remove("theme").remove("colorTheme").remove("equalizer").remove("equalizerLevels").remove("equalizerCustom").remove("equalizerUsesCustom").remove("visualizer")
-            .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
+            .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("usbDriver", next.usbDriver).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
             .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor).putInt("cacheMb", next.cacheMb).putBoolean("adaptColor", next.adaptColor).putBoolean("djRoll", next.djRoll).putBoolean("djCues", next.djCues).putBoolean("djEcho", next.djEcho).putBoolean("djFilters", next.djFilters)
             .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putBoolean("djFastAnalysis", next.djFastAnalysis).putInt("djWorkers", next.djWorkers).putString("appTheme", next.appTheme).putString("lyricStyle", next.lyricStyle).putString("spectrumStyle", next.spectrumStyle).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
             .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)

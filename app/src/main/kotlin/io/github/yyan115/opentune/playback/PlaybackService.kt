@@ -118,10 +118,14 @@ class PlaybackService : MediaLibraryService() {
                 // Else it only taps, and always, and plays silence at a fast speed.
                 val chain = if (analysis) arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot, always = true))
                     else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot)) }
-                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
+                val default = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
+                // With the app's own USB driver on, a song that the DAC can take goes to it untouched; the rest goes to Android as usual.
+                return if (!analysis && app.settings.state.value.usbDriver) io.github.yyan115.opentune.playback.usb.UsbRoutingSink(default) else default
             }
         }
+        // The decoder hands over 24-bit songs in full only as floating point samples, which carry 24 bits exactly; the USB driver needs them whole.
+        if (!analysis && app.settings.state.value.usbDriver) renderers.setEnableAudioFloatOutput(true)
         val built = ExoPlayer.Builder(this, renderers)
             .setLoadControl(streamingLoadControl())
             .setMediaSourceFactory(OpenTuneSourceFactory(app))
@@ -290,7 +294,8 @@ class PlaybackService : MediaLibraryService() {
         player = buildPlayer(0, true)
         player.addListener(playerListener)
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
-        scope.launch { app.settings.state.collect { app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+        io.github.yyan115.opentune.playback.usb.UsbDac.init(this)
+        scope.launch { app.settings.state.collect { io.github.yyan115.opentune.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.yyan115.opentune.playback.dj.DjOptions(roll = it.djRoll, cues = it.djCues, echo = it.djEcho, filters = it.djFilters, groove = it.djGroove,
                     arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }

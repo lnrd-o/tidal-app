@@ -1,0 +1,3 @@
+C:/Users/leonardorodriguez/Code/tidal-app/app/.cxx/Debug/286k5v33/arm64-v8a/CMakeFiles/usbaudio.dir
+C:/Users/leonardorodriguez/Code/tidal-app/app/.cxx/Debug/286k5v33/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/leonardorodriguez/Code/tidal-app/app/.cxx/Debug/286k5v33/arm64-v8a/CMakeFiles/rebuild_cache.dir

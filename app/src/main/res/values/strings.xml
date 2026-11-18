@@ -409,6 +409,12 @@
     <string name="settings_quality_mobile">Mobile audio quality</string>
     <string name="settings_off">Off</string>
     <string name="settings_on">On</string>
+    <string name="settings_usb_driver">USB DAC driver (exclusive)</string>
+    <string name="settings_usb_driver_text">The app takes a USB DAC or dongle from Android and sends each song at its own rate and bit depth, on any Android version. Android asks once for permission. The volume keys move the DAC\'s own volume. D\'JAI, Tone Lab and crossfade still play through Android.</string>
+    <string name="settings_usb_none">No USB DAC connected</string>
+    <string name="settings_usb_waiting">%1$s: waiting for permission</string>
+    <string name="settings_usb_ready">%1$s: ready</string>
+    <string name="settings_usb_playing">%1$s: playing %2$s, bit-perfect</string>
     <string name="settings_bitperfect">Bit-perfect USB output</string>
     <string name="settings_bitperfect_text">Sends audio to a USB DAC without resampling. Requires Android 14 or later.</string>
     <string name="settings_appearance">Appearance</string>

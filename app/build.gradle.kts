@@ -53,6 +53,9 @@ android {
     sourceSets.getByName("main").assets.srcDir(noticeAssets)
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     testOptions { animationsDisabled = true }
+    // The small native engine that streams to a USB DAC with the app's own driver (app/src/main/cpp).
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     lint { abortOnError = true; checkDependencies = true }
 }
 tasks.named("preBuild") { dependsOn(copyNotices) }

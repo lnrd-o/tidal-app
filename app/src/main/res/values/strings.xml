@@ -758,6 +758,7 @@
     <string name="rhythm_forgotten">The answers are forgotten; the model trusts the network again.</string>
     <string name="rhythm_heard">Rhythm model: %1$s BPM · bars of %2$d · on %3$s</string>
     <string name="rhythm_ask">Is this the tempo you feel? Your answer trains the model.</string>
+    <string name="rhythm_marker">Rhythm model on the %1$s</string>
     <string name="rhythm_right">Right</string>
     <string name="rhythm_half">Half</string>
     <string name="rhythm_double">Double</string>

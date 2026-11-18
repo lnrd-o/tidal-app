@@ -291,7 +291,8 @@ fun NowPlayingScreen(
                                 TextTool(OpenTuneIcons.Lyrics, stringResource(R.string.player_lyrics), lyrics) { lyrics = !lyrics; poke() }
                                 TextTool(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label), timerOn) { timer = true }
                                 TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title), false) { onQueue() }
-                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai) { vm.settings { it.copy(djai = !it.djai) }; poke() }
+                                val marker = rhythmMarker(state.settings.djai && state.settings.djNeural)
+                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { vm.settings { it.copy(djai = !it.djai) }; poke() }
                             }
                             if (state.settings.djai) DjStrip(Modifier.padding(bottom = 8.dp))
                             // The rhythm model asks whether it heard this song's tempo right; the answer trains it.
@@ -381,12 +382,30 @@ private fun ToggleIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, de
 
 /** A small tool with an icon and a label. */
 @Composable
-private fun TextTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+private fun TextTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, marker: Color? = null, markerLabel: String? = null, onClick: () -> Unit) {
     Row(Modifier.clickable(role = Role.Button, onClick = onClick).border(1.dp, if (on) Color.White else Color.White.copy(alpha = .2f), RectangleShape).background(if (on) Color.White.copy(alpha = .12f) else Color.Transparent).padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(15.dp), tint = if (on) Color.White else Color.White.copy(alpha = .7f))
         Spacer(Modifier.width(6.dp))
         Text(label, fontFamily = AppFonts.body, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (on) Color.White else Color.White.copy(alpha = .7f), maxLines = 1)
+        // A small square that says where the rhythm model runs.
+        if (marker != null) {
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.size(8.dp).background(marker).then(if (markerLabel != null) Modifier.semantics { contentDescription = markerLabel } else Modifier))
+        }
+    }
+}
+
+/** The colour of the square on the D'JAI button: white while the rhythm model runs on the CPU, blue on the GPU, gold on the NPU. Null when it does not run. */
+@Composable
+private fun rhythmMarker(on: Boolean): Pair<Color, String>? {
+    val model by io.github.yyan115.opentune.playback.dj.neural.BeatModel.state.collectAsStateWithLifecycle()
+    if (!on) return null
+    return when (model.loaded) {
+        io.github.yyan115.opentune.playback.dj.neural.Accelerator.NPU -> Color(0xFFD6B56A) to stringResource(R.string.rhythm_marker, "NPU")
+        io.github.yyan115.opentune.playback.dj.neural.Accelerator.GPU -> Color(0xFF3B82F6) to stringResource(R.string.rhythm_marker, "GPU")
+        io.github.yyan115.opentune.playback.dj.neural.Accelerator.CPU -> Color.White to stringResource(R.string.rhythm_marker, "CPU")
+        else -> null
     }
 }
 

@@ -66,6 +66,12 @@ object BeatModel {
     private fun options(on: Accelerator): OrtSession.SessionOptions = OrtSession.SessionOptions().apply {
         setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         when (on) {
+            // On the NPU and the GPU the whole network must run there: a back-end that fails to start would otherwise hand every layer to the CPU in silence,
+            // and the screen would claim an accelerator that does nothing.
+            Accelerator.NPU, Accelerator.GPU -> addConfigEntry("session.disable_cpu_ep_fallback", "1")
+            else -> {}
+        }
+        when (on) {
             Accelerator.NPU -> addQnn(mapOf("backend_path" to "libQnnHtp.so", "htp_performance_mode" to "burst", "enable_htp_fp16_precision" to "1", "htp_graph_finalization_optimization_mode" to "3"))
             Accelerator.GPU -> addQnn(mapOf("backend_path" to "libQnnGpu.so"))
             else -> setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(1, 4))

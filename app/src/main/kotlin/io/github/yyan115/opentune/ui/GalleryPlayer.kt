@@ -243,6 +243,8 @@ fun NowPlayingScreen(
                                         }, contentAlignment = Alignment.Center) {
                                         TrackArtwork(pageTrack, stringResource(R.string.player_artwork, pageTrack.album), Modifier.size(coverSize))
                                         HeartBurst(heart)
+                                        // The time to the next transition, on the cover of the song that plays.
+                                        if (page == currentIndex) Box(Modifier.size(coverSize), contentAlignment = Alignment.BottomEnd) { TransitionCountdown() }
                                     }
                                 }
                             }

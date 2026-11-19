@@ -349,7 +349,7 @@ fun NowPlayingScreen(
 
     if (path) SignalPathSheet(state.playback.quality, track, playing, accent = accent, onSpectrum = { path = false; spectrum = true },
         elzar = state.settings.takeIf { it.elzar }?.let { Triple(it.elzarGlue, it.elzarTape, it.elzarVinyl) }) { path = false }
-    if (djSheet) DjaiSheet(state.settings.djai, state.settings.djNeural, track.id, { value -> vm.settings { it.copy(djai = value) } }) { djSheet = false }
+    if (djSheet) DjaiSheet(state.settings.djai, state.settings.djNeural, track.id, cues, state.playback.duration, { value -> vm.settings { it.copy(djai = value) } }) { djSheet = false }
     if (spectrum) SpectrumScreen(state, accent, onStyle = { next -> vm.settings { it.copy(spectrumStyle = next.id) } }) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
     if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }
@@ -447,19 +447,9 @@ private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent:
             enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
             thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },
             track = { SliderDefaults.Track(it, Modifier.height(2.dp), colors = colors, thumbTrackGapSize = 0.dp, drawStopIndicator = null, trackInsideCornerSize = 0.dp) }, colors = colors)
-        // Pins above the line: a small square on a thin stem for each cue point. The drop, the chorus and the peak are bright, the others fainter.
-        if (cues.isNotEmpty() && duration > 0) Canvas(Modifier.matchParentSize()) {
-            val edge = 5.dp.toPx()
-            val span = size.width - 2 * edge
-            // The edges of the sound are for the mixing only: they are not sections to show.
-            for (cue in cues) {
-                if (cue.kind == CueKind.START || cue.kind == CueKind.END) continue
-                val x = edge + (cue.atMs.toFloat() / duration).coerceIn(0f, 1f) * span
-                val color = if (cue.kind == CueKind.DROP || cue.kind == CueKind.CHORUS || cue.kind == CueKind.PEAK) accent else Color.White.copy(alpha = .55f)
-                drawRect(color, Offset(x - .5.dp.toPx(), 5.dp.toPx()), Size(1.dp.toPx(), 7.dp.toPx()))
-                drawRect(color, Offset(x - 2.dp.toPx(), 2.dp.toPx()), Size(4.dp.toPx(), 4.dp.toPx()))
-            }
-        }
+        // The phases of the song above the line: the energetic parts (chorus, drop, peak) tall and bright, the rising ones in between, and the soft ones
+        // (verses, bridges, breaks, intro and outro) low and faint. The phase that plays is lit.
+        if (cues.isNotEmpty() && duration > 0) PhaseRibbon(cues, duration, position, accent, Modifier.matchParentSize())
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(formatDuration(seeking?.toLong() ?: position), fontFamily = AppFonts.mono, fontSize = 11.sp, color = Color.White.copy(alpha = .7f))

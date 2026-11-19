@@ -29,9 +29,11 @@ class RhythmLearningTest {
         repeat(20) {
             val stream = StreamingResampler(48_000)
             val chunk = FloatArray(9_600) { i -> kotlin.math.sin(i * 0.05).toFloat() }
-            val feeder = Thread { repeat(400) { stream.feed(chunk, chunk.size) } }
+            val fed = java.util.concurrent.atomic.AtomicInteger()
+            val feeder = Thread { repeat(400) { stream.feed(chunk, chunk.size); fed.incrementAndGet() } }
             feeder.start()
-            Thread.sleep(2)
+            // The song is ended once a few chunks are in, while the feeder is still going.
+            while (fed.get() < 5) Thread.yield()
             stream.finish()
             val result = stream.result()
             feeder.join()

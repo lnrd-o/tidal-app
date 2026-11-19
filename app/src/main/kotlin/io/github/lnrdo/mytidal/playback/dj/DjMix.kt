@@ -45,6 +45,9 @@ data class DjUi(
     /** The title of the song that D'JAI moved to the next place because it matches better, and how well it matches. */
     val changed: String? = null,
     val changedMatch: Double? = null,
+    /** The family of style of the song that plays and of the song that comes next, when known. */
+    val genreOut: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null,
+    val genreIn: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null,
     /** How many of the next songs were listened to, out of how many. */
     val scouted: Int = 0,
     val scoutTotal: Int = 0,

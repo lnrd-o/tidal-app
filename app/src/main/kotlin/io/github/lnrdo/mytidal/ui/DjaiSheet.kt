@@ -41,7 +41,7 @@ import io.github.lnrdo.mytidal.playback.dj.neural.BeatModel
 @OptIn(ExperimentalMaterial3Api::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun DjaiSheet(on: Boolean, neural: Boolean, trackId: String?, onSwitch: (Boolean) -> Unit, onClose: () -> Unit) {
+fun DjaiSheet(on: Boolean, neural: Boolean, trackId: String?, cues: List<io.github.lnrdo.mytidal.core.dj.Cue>, duration: Long, onSwitch: (Boolean) -> Unit, onClose: () -> Unit) {
     val ui by DjMix.ui.collectAsStateWithLifecycle()
     val model by BeatModel.state.collectAsStateWithLifecycle()
     ModalBottomSheet(shape = RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -77,6 +77,25 @@ fun DjaiSheet(on: Boolean, neural: Boolean, trackId: String?, onSwitch: (Boolean
                         }
                     }
                 }
+            }
+            Spacer(Modifier.height(14.dp))
+            // The style of the song that plays and of the one that comes, and the part of the song that plays now.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Fact(stringResource(R.string.djsheet_style), ui.genreOut?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White)
+                if (ui.genreIn != null || ui.nextTitle != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Text("→", fontFamily = AppFonts.mono, fontSize = 15.sp, color = Color.White.copy(alpha = .5f))
+                    Spacer(Modifier.width(10.dp))
+                    Fact(stringResource(R.string.djsheet_next_style), ui.genreIn?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White)
+                }
+            }
+            val position by LocalPlaybackPosition.current.collectAsStateWithLifecycle()
+            val phases = androidx.compose.runtime.remember(cues, duration) { io.github.lnrdo.mytidal.core.dj.SongPhases.build(cues, duration) }
+            if (phases.isNotEmpty()) {
+                val now = io.github.lnrdo.mytidal.core.dj.SongPhases.at(phases, position)
+                Spacer(Modifier.height(14.dp))
+                Fact(stringResource(R.string.djsheet_part), now?.let { stringResource(phaseName(it.kind)) } ?: "—", Color.White)
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(20.dp).padding(top = 6.dp)) { PhaseRibbon(cues, duration, position, Color(0xFFD6B56A), Modifier.matchParentSize()) }
             }
             Spacer(Modifier.height(16.dp))
             DjStrip()

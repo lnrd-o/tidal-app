@@ -995,6 +995,9 @@ val measured = profiles[key]
             lengthMs = p?.let { it.lengthOut * 1000L / DjMix.OUT_RATE } ?: 0L,
             nextTitle = if (idle) null else nextTitle, album = albumNow, effects = if (state == State.READY || state == State.MIXING) planEffects else "",
             changed = changedTitle, changedMatch = changedMatch, scouted = scouted, scoutTotal = scoutTotal,
+            genreOut = host.player.currentMediaItem?.mediaId?.let { genreOf(it, null) },
+            genreIn = if (idle) host.player.let { pl -> pl.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { pl.getMediaItemAt(it).mediaId } }?.let { genreOf(it, null) }
+                else incoming?.currentMediaItem?.mediaId?.let { genreOf(it, null) },
         ))
     }
     private companion object {

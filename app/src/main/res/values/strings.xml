@@ -812,8 +812,12 @@
     <string name="djcfg_load_overlay_text">For debugging: at the top of the cover, what the app takes of the CPU (in cores, with the threads that take most), how busy the rhythm model keeps the NPU or the GPU, and how many songs are being read.</string>
     <string name="load_cpu">CPU %1$s%% = %2$s of %3$d cores</string>
     <string name="load_npu">NPU: busy %1$s%% of the last minute</string>
-    <string name="load_gpu">GPU: model %1$s%% · device %2$s</string>
+    <string name="load_gpu">GPU: genre model %1$s%% · device %2$s</string>
     <string name="load_reading">READING %1$d SONGS · MODEL ON %2$s</string>
+    <string name="genre_gpu_title">Run the genre model on the GPU</string>
+    <string name="genre_gpu_text">The genre network is made of convolutions, which a GPU runs well: it takes work off the CPU. It falls back to the CPU if the GPU cannot run it.</string>
+    <string name="genre_gpu_running">Running on the GPU: %2$d patches of the last song in %1$s ms</string>
+    <string name="genre_gpu_failed">Tried on this phone and it could not run the network; the CPU is used instead</string>
     <string name="countdown_mix_in">Mix in</string>
     <string name="countdown_mixing">Mixing</string>
     <string name="djcfg_fast">Read songs at full speed</string>

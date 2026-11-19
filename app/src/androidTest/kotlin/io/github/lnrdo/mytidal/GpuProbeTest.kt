@@ -19,6 +19,8 @@ class GpuProbeTest {
         val file = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, args.getString("model")!!)
         val backend = args.getString("backend") ?: "libQnnGpu.so"
         val frames = (args.getString("frames") ?: "125").toLong()
+        val input = args.getString("input") ?: "spect"
+        val width = (args.getString("width") ?: "128").toLong()
         val env = OrtEnvironment.getEnvironment()
         val began = System.nanoTime()
         val options = OrtSession.SessionOptions().apply {
@@ -28,8 +30,8 @@ class GpuProbeTest {
         Log.i("GpuProbe", "${file.name}: opening on $backend")
         env.createSession(file.path, options).use { s ->
             Log.i("GpuProbe", "${file.name}: opened in ${(System.nanoTime() - began) / 1_000_000} ms")
-            OnnxTensor.createTensor(env, FloatBuffer.wrap(FloatArray((frames * 128).toInt()) { (it % 7) * 0.1f }), longArrayOf(1, frames, 128)).use { x ->
-                s.run(mapOf("spect" to x)).use { Log.i("GpuProbe", "${file.name}: ran") }
+            OnnxTensor.createTensor(env, FloatBuffer.wrap(FloatArray((frames * width).toInt()) { (it % 7) * 0.1f }), longArrayOf(1, frames, width)).use { x ->
+                s.run(mapOf(input to x)).use { Log.i("GpuProbe", "${file.name}: ran") }
             }
         }
     }

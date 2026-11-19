@@ -94,7 +94,8 @@ object BeatModel {
         val order = when (wanted) {
             // AUTO stays on the CPU, which always works; the NPU and the GPU are tried only when the listener chooses them.
             Accelerator.NPU -> listOf(Accelerator.NPU, Accelerator.CPU)
-            Accelerator.GPU -> listOf(Accelerator.GPU, Accelerator.CPU)
+            // The Qualcomm GPU back-end builds this network only in windows of about 10 frames, too short for good beats: the GPU is used by the genre model.
+            Accelerator.GPU -> listOf(Accelerator.CPU)
             Accelerator.AUTO, Accelerator.CPU -> listOf(Accelerator.CPU)
         }
         val current = sessionFor
@@ -125,9 +126,6 @@ object BeatModel {
         return null
     }
 
-    private var gpuBytes: ByteArray? = null
-    private fun gpuModel(context: Context): ByteArray = gpuBytes ?: context.assets.open("beatthis/beat_this_small0_gpu.onnx").use { it.readBytes() }.also { gpuBytes = it }
-
     private fun crashMark(context: Context, on: Accelerator) = java.io.File(context.filesDir, "beatthis_trying_${on}_${io.github.lnrdo.mytidal.BuildConfig.VERSION_CODE}")
 
     private var crashesNoted = false
@@ -148,8 +146,6 @@ object BeatModel {
      * sessions load it instead of building it again, which takes seconds and much memory.
      */
     private fun create(context: Context, on: Accelerator): OrtSession {
-        // The GPU gets the same network written with tensors of at most four dimensions (see docs/DJAI.md): the Qualcomm GPU back-end aborts on more.
-        if (on == Accelerator.GPU) return env.createSession(gpuModel(context), options(on))
         if (on != Accelerator.NPU) return env.createSession(model!!, options(on))
         val cached = java.io.File(context.cacheDir, "beatthis_npu_${chipName}.onnx")
         if (cached.exists()) runCatching { return env.createSession(cached.path, options(on)) }.onFailure { cached.delete() }

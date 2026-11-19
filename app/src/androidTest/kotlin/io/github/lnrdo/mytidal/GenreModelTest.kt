@@ -22,11 +22,12 @@ class GenreModelTest {
         val tone = FloatArray(b.remaining()).also { b.get(it) }
         // A 16 kHz tone is read as audio at 22,050 Hz here, as the preparer hands it over; the model brings it back to 16 kHz.
         val song = FloatArray(tone.size * 12) { tone[it % tone.size] }
-        GenreModel.analyze(context, song, 22_050) // opens the model
+        val gpu = InstrumentationRegistry.getArguments().getString("gpu") == "true"
+        GenreModel.analyze(context, song, 22_050, gpu) // opens the model
         val began = System.nanoTime()
-        val verdict = GenreModel.analyze(context, song, 22_050)
+        val verdict = GenreModel.analyze(context, song, 22_050, gpu)
         val ms = (System.nanoTime() - began) / 1e6
-        Log.i("OpenTuneGenreModel", "test: ${song.size / 22_050} s of audio in %.0f ms, genre ${verdict?.genre}".format(ms))
+        Log.i("OpenTuneGenreModel", "test: ${song.size / 22_050} s of audio in %.0f ms, genre ${verdict?.genre}, on ${GenreModel.state.value.loaded}, network ${GenreModel.state.value.lastMs} ms".format(ms))
         assertNotNull(verdict)
         assertTrue("a song is read in under 5 s: $ms ms", ms < 5_000)
     }

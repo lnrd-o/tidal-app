@@ -79,8 +79,8 @@ fun NeuralPanel(settings: Settings, change: ((Settings) -> Settings) -> Unit) {
             Switch(settings.djNeural, { value -> change { it.copy(djNeural = value) } })
         }
         if (settings.djNeural) {
-            // The accelerators, as real switches: one can be on at a time, and only those that opened on this phone can be chosen.
-            for (on in listOf(Accelerator.NPU, Accelerator.GPU)) {
+            // The NPU runs the rhythm model, and only on a phone that has one that this model can use. The GPU runs the genre model (its own switch, below).
+            for (on in listOf(Accelerator.NPU)) {
                 val present = if (on == Accelerator.NPU) hardware?.npu != null else hardware?.gpu != null
                 val has = present && on !in model.failed
                 Row(verticalAlignment = Alignment.CenterVertically) {

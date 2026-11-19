@@ -90,6 +90,8 @@ fun LoadOverlay(modifier: Modifier = Modifier) {
     var load by remember { mutableStateOf<AppLoad?>(null) }
     LaunchedEffect(Unit) { while (true) { load = withContext(Dispatchers.IO) { LoadSampler.sample() } ?: load; delay(1_000) } }
     val model by BeatModel.state.collectAsStateWithLifecycle()
+    val genre by io.github.lnrdo.mytidal.playback.dj.neural.GenreModel.state.collectAsStateWithLifecycle()
+    val genreOnGpu = genre.loaded == Accelerator.GPU
     val l = load ?: return
     val reading = (DjMix.ANALYSIS_SLOT..DjMix.SCOUT_SLOT).count { DjMix.streams[it].ring != null }
     val where = model.loaded
@@ -98,8 +100,8 @@ fun LoadOverlay(modifier: Modifier = Modifier) {
         Text(stringResource(R.string.load_cpu, "%.0f".format(l.cores), "%.1f".format(l.cores / 100.0), l.coresCount), fontFamily = mono, fontSize = 10.sp, color = if (l.cores / 100.0 > l.coresCount * .35) Color(0xFFFFB454) else Color.White)
         for (t in l.threads) Text("  %s %.0f%%".format(t.name.take(24), t.percent), fontFamily = mono, fontSize = 9.sp, color = Color.White.copy(alpha = .7f))
         Text(stringResource(R.string.load_npu, if (where == Accelerator.NPU) "%.0f".format(model.busyPercent) else "—"), fontFamily = mono, fontSize = 10.sp, color = if (where == Accelerator.NPU) Color(0xFFD6B56A) else Color.White.copy(alpha = .5f))
-        Text(stringResource(R.string.load_gpu, if (where == Accelerator.GPU) "%.0f".format(model.busyPercent) else "—", l.gpuSystem?.let { "$it%" } ?: "—"), fontFamily = mono, fontSize = 10.sp,
-            color = if (where == Accelerator.GPU) Color(0xFF3B82F6) else Color.White.copy(alpha = .5f))
+        Text(stringResource(R.string.load_gpu, if (genreOnGpu) "%.0f".format(genre.busyPercent) else "—", l.gpuSystem?.let { "$it%" } ?: "—"), fontFamily = mono, fontSize = 10.sp,
+            color = if (genreOnGpu) Color(0xFF3B82F6) else Color.White.copy(alpha = .5f))
         Text(stringResource(R.string.load_reading, reading, where?.name ?: "—"), fontFamily = mono, fontSize = 9.sp, color = Color.White.copy(alpha = .6f))
     }
 }

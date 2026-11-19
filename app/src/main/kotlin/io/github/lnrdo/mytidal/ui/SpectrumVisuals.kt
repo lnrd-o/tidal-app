@@ -23,11 +23,15 @@ import kotlin.math.sin
 /** The ways to draw the sound. [id] is what the settings keep. [axis] says whether the frequency axis under the picture means something for it. All of them use the one accent colour. */
 enum class SpectrumStyle(val id: String, @StringRes val nameRes: Int, @StringRes val hintRes: Int, val axis: Boolean = false) {
     Blocks("blocks", R.string.spectrum_blocks, R.string.spectrum_blocks_text, axis = true),
+    PeakHold("peakhold", R.string.spectrum_peakhold, R.string.spectrum_peakhold_text, axis = true),
     Bars("bars", R.string.spectrum_bars, R.string.spectrum_bars_text, axis = true),
     Wave("wave", R.string.spectrum_wave, R.string.spectrum_wave_text, axis = true),
     Scope("scope", R.string.spectrum_scope, R.string.spectrum_scope_text),
     Flower("flower", R.string.spectrum_flower, R.string.spectrum_flower_text),
     Dots("dots", R.string.spectrum_dots, R.string.spectrum_dots_text, axis = true);
+
+    /** Drawn as the grid of blocks of the analyzer, not as a picture of its own. */
+    val blocky: Boolean get() = this == Blocks || this == PeakHold
 
     /** The style that follows this one, going round at the end. */
     fun next() = entries[(ordinal + 1) % entries.size]
@@ -55,7 +59,7 @@ class VisualData(val columns: Int, val shown: FloatArray, val peaks: FloatArray)
 /** Draws [data] in [style], in [color]. */
 fun DrawScope.drawVisual(style: SpectrumStyle, data: VisualData, color: Color) {
     when (style) {
-        SpectrumStyle.Blocks -> Unit
+        SpectrumStyle.Blocks, SpectrumStyle.PeakHold -> Unit
         SpectrumStyle.Bars -> bars(data, color)
         SpectrumStyle.Wave -> singleWave(data, color)
         SpectrumStyle.Scope -> scope(data, color)

@@ -1002,6 +1002,8 @@
     <string name="lyric_focus_text">Only the line that sings, big and in the middle.</string>
     <string name="spectrum_blocks">Blocks</string>
     <string name="spectrum_blocks_text">Square cells, with a held peak. The original.</string>
+    <string name="spectrum_peakhold">Peak hold</string>
+    <string name="spectrum_peakhold_text">Blocks, with a red block on each frequency at the highest level of the last 3 seconds.</string>
     <string name="spectrum_bars">Bars</string>
     <string name="spectrum_bars_text">Smooth bars with a reflection.</string>
     <string name="spectrum_wave">Wave</string>

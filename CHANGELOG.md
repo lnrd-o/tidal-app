@@ -4,6 +4,12 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-19
+
+### Added
+
+- Peak hold, a new spectrum style: the blocks of the analyzer, with a red block on each frequency at the highest level that it reached in the last 3 seconds. The red block drops when that peak is older than the window.
+
 ## [1.0.0] - 2026-11-19
 
 ### Changed

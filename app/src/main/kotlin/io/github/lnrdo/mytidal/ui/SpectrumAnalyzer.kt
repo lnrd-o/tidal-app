@@ -49,6 +49,7 @@ fun SpectrumAnalyzer(
     val target = remember(columns) { FloatArray(columns) }
     val peaks = remember(columns) { FloatArray(columns) }
     val data = remember(columns) { VisualData(columns, shown, peaks) }
+    val window = remember(columns) { io.github.lnrdo.mytidal.core.PeakWindow(columns) }
     var frame by remember { mutableIntStateOf(0) }
     var nyquist by remember { mutableIntStateOf(22_050) }
     var content by remember { mutableIntStateOf(0) }
@@ -63,7 +64,7 @@ fun SpectrumAnalyzer(
                     val rate = AudioSpectrum.sampleRate
                     Spectrum.bands(samples, rate, fresh, columns, LOW_HZ, rate / 2f, re, im, power)
                     System.arraycopy(fresh, 0, target, 0, columns)
-                    if (styleNow != SpectrumStyle.Blocks) {
+                    if (!styleNow.blocky) {
                         System.arraycopy(samples, samples.size - data.wave.size, data.wave, 0, data.wave.size)
                     }
                     // The highest bin clearly above the noise floor, held for a moment so that the readout does not flicker.
@@ -83,21 +84,22 @@ fun SpectrumAnalyzer(
         while (isActive) withFrameNanos { now ->
             val dt = if (last == 0L) 0f else ((now - last) / 1_000_000_000f).coerceAtMost(.1f)
             last = now
-            if (styleNow != SpectrumStyle.Blocks) data.step(dt)
+            if (!styleNow.blocky) data.step(dt)
             for (i in 0 until columns) {
                 val t = target[i]
                 shown[i] = if (t > shown[i]) shown[i] + (t - shown[i]) * .6f else shown[i] - minOf(shown[i] - t, .018f)
                 peaks[i] = if (shown[i] >= peaks[i]) shown[i] else (peaks[i] - .006f).coerceAtLeast(0f)
             }
+            window.add(shown, dt)
             frame++
         }
     }
     Column(modifier) {
         Row(if (fill) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth()) {
-            if (showScale && style == SpectrumStyle.Blocks) DecibelScale(color, Modifier.width(34.dp).fillMaxHeight())
+            if (showScale && style.blocky) DecibelScale(color, Modifier.width(34.dp).fillMaxHeight())
             Canvas((if (fill) Modifier.weight(1f).fillMaxHeight() else Modifier.weight(1f).aspectRatio(columns / rows.toFloat())).testTag("spectrum")) {
                 frame // Reading the frame here redraws the canvas on each frame without recomposing anything.
-                if (style != SpectrumStyle.Blocks) { drawVisual(style, data, color); return@Canvas }
+                if (!style.blocky) { drawVisual(style, data, color); return@Canvas }
                 val pitch = size.width / columns
                 val gap = (pitch * .16f).coerceAtLeast(1f)
                 val cell = pitch - gap
@@ -106,10 +108,12 @@ fun SpectrumAnalyzer(
                 for (column in 0 until columns) {
                     val lit = (shown[column] * rows).roundToInt()
                     val peak = (peaks[column] * rows).roundToInt().coerceAtMost(rows) - 1
+                    // The peak-hold style keeps the highest level of the last 3 seconds as a red block.
+                    val held = if (style == SpectrumStyle.PeakHold) (window.highest[column] * rows).roundToInt().coerceAtMost(rows) - 1 else -1
                     val x = column * pitch + gap / 2
                     for (row in 0 until rows) {
                         val y = size.height - (row + 1) * rowPitch + gap / 2
-                        drawRect(when { row < lit -> color; row == peak && peak >= lit -> color.copy(alpha = .55f); else -> dim }, Offset(x, y), Size(cell, rowPitch - gap))
+                        drawRect(when { row == held && held >= lit -> PeakRed; row < lit -> color; row == peak && peak >= lit -> color.copy(alpha = .55f); else -> dim }, Offset(x, y), Size(cell, rowPitch - gap))
                     }
                 }
             }
@@ -139,3 +143,6 @@ private fun DecibelScale(color: Color, modifier: Modifier) {
         }
     }
 }
+
+/** The red of the block that holds the highest level of each column. */
+private val PeakRed = Color(0xFFE5484D)

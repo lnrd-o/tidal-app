@@ -6,7 +6,7 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import io.github.lnrdo.mytidal.core.dj.GenreFamily
+import io.github.lnrdo.mytidal.core.dj.MusicGenre
 import io.github.lnrdo.mytidal.core.dj.neural.GenreVerdict
 import io.github.lnrdo.mytidal.core.dj.neural.Resampler
 import io.github.lnrdo.mytidal.core.dj.neural.YamnetFeatures
@@ -18,7 +18,7 @@ import java.nio.FloatBuffer
 /**
  * The genre model: YAMNet (Google, Apache 2.0), a small convolutional network that knows 521 sounds of AudioSet, among them pop, hip-hop, rock, house, techno,
  * drum and bass, reggae, salsa, jazz and classical music. It listens to a whole song in patches of about a second, and the scores of the styles, averaged
- * over the song, are voted into the style families of D'JAI ([YamnetGenres]). It runs on the CPU: it is small enough that a song takes about a second.
+ * over the song, are voted into the genres of D'JAI ([YamnetGenres]). It runs on the CPU: it is small enough that a song takes about a second.
  */
 object GenreModel {
     private const val TAG = "OpenTuneGenreModel"
@@ -28,7 +28,7 @@ object GenreModel {
     private val env: OrtEnvironment by lazy { OrtEnvironment.getEnvironment() }
     private var session: OrtSession? = null
     private var features: YamnetFeatures? = null
-    private var table: Array<GenreFamily?> = emptyArray()
+    private var table: Array<MusicGenre?> = emptyArray()
 
     @Synchronized
     private fun open(context: Context): OrtSession {
@@ -59,7 +59,7 @@ object GenreModel {
         val count = f.patchCount(frames)
         if (count == 0) return null
         val step = maxOf(1, count / MAX_PATCHES)
-        val sum = FloatArray(521); var read = 0
+        val sum = FloatArray(521); val embedding = FloatArray(1024); var read = 0
         var index = 0
         while (index < count) {
             val patch = f.patch(logMel, index)
@@ -68,13 +68,17 @@ object GenreModel {
                     @Suppress("UNCHECKED_CAST")
                     val scores = (result.get(0).value as Array<FloatArray>)[0]
                     for (k in sum.indices) sum[k] += scores[k]
+                    @Suppress("UNCHECKED_CAST")
+                    val vector = (result.get(1).value as Array<FloatArray>)[0]
+                    for (k in embedding.indices) embedding[k] += vector[k]
                 }
             }
             read++; index += step
         }
         for (k in sum.indices) sum[k] /= read
-        val verdict = YamnetGenres.decide(sum, table)
-        Log.i(TAG, "the genre of a song of %.0f s: %s (%.2f), from %d patches in %d ms (resampling %d, features %d, network %d); %s".format(mono.size.toDouble() / rate, verdict.family ?: "not sure", verdict.confidence, read,
+        for (k in embedding.indices) embedding[k] /= read
+        val verdict = YamnetGenres.decide(sum, table, embedding)
+        Log.i(TAG, "the genre of a song of %.0f s: %s (%.2f), from %d patches in %d ms (resampling %d, features %d, network %d); %s".format(mono.size.toDouble() / rate, verdict.genre ?: "not sure", verdict.confidence, read,
             SystemClock.elapsedRealtime() - began, resampled - began, featured - resampled, SystemClock.elapsedRealtime() - featured, verdict.scores.entries.sortedByDescending { it.value }.take(3).joinToString { "%s %.2f".format(it.key, it.value) }))
         return verdict
     }

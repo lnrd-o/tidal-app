@@ -1,6 +1,6 @@
 package io.github.lnrdo.mytidal.core.dj.neural
 
-import io.github.lnrdo.mytidal.core.dj.GenreFamily
+import io.github.lnrdo.mytidal.core.dj.MusicGenre
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.ln
@@ -79,41 +79,50 @@ class YamnetFeatures(private val filterbank: FloatArray) {
     }
 }
 
-/** What the genre model concluded about a song: the family, how sure it is (the song-wide score of its best class, 0 to 1), and the score of every family. */
-class GenreVerdict(val family: GenreFamily?, val confidence: Float, val scores: Map<GenreFamily, Float>)
+/** What the genre model concluded about a song: the genre, how sure it is (the song-wide score of its best class, 0 to 1), the score of every genre, and its embedding. */
+class GenreVerdict(val genre: MusicGenre?, val confidence: Float, val scores: Map<MusicGenre, Float>, val embedding: FloatArray? = null)
 
 /**
- * Turns the 521 sound scores of YAMNet into a style family. Each AudioSet class that names a style belongs to one family. The scores of each class are averaged
- * over the whole song, the score of a family is that of its best class (a family with many classes does not win for that reason), and the best family wins
- * when it scores at least [MIN_SCORE] and leads the second by [MIN_LEAD].
+ * Turns the 521 sound scores of YAMNet into a genre. Each AudioSet class that names a style belongs to one genre. The scores of each class are averaged over
+ * the whole song, the score of a genre is that of its best class, and the best genre wins when it scores at least [MIN_SCORE] and leads the second by
+ * [MIN_LEAD]. Many genres have no class of their own in AudioSet (reggaeton, trap, indie...): those are learned by [GenreHead] from the listener's answers.
  */
 object YamnetGenres {
     const val MIN_SCORE = 0.06f
     const val MIN_LEAD = 0.015f
 
-    /** The classes of AudioSet that name a style, by display name. Anything else is not a style and is not read. */
-    private val CLASSES: Map<String, GenreFamily> = buildMap {
-        for (n in listOf("Pop music")) put(n, GenreFamily.POP)
-        for (n in listOf("Hip hop music", "Rhythm and blues")) put(n, GenreFamily.HIPHOP)
-        for (n in listOf("Rock music", "Heavy metal", "Punk rock", "Grunge", "Progressive rock", "Rock and roll", "Psychedelic rock", "Ska")) put(n, GenreFamily.ROCK)
-        for (n in listOf("Soul music", "Funk", "Disco", "Swing music", "Jazz", "Blues", "Gospel music")) put(n, GenreFamily.SOUL)
-        for (n in listOf("Reggae", "Salsa music", "Music of Latin America", "Flamenco", "Afrobeat", "Music of Africa")) put(n, GenreFamily.LATIN)
-        for (n in listOf("Electronic music", "House music", "Techno", "Electronica", "Electronic dance music", "Trance music", "Dance music")) put(n, GenreFamily.ELECTRONIC)
-        for (n in listOf("Dubstep", "Drum and bass")) put(n, GenreFamily.BASS)
-        for (n in listOf("Ambient music", "Classical music", "Opera", "Folk music", "Country", "Bluegrass", "New-age music")) put(n, GenreFamily.CHILL)
+    /** The classes of AudioSet that name a genre, by display name. Anything else is not a genre and is not read. */
+    private val CLASSES: Map<String, MusicGenre> = buildMap {
+        put("Pop music", MusicGenre.POP)
+        put("Hip hop music", MusicGenre.HIPHOP); put("Rhythm and blues", MusicGenre.RNB)
+        for (n in listOf("Rock music", "Grunge", "Progressive rock", "Rock and roll", "Psychedelic rock")) put(n, MusicGenre.ROCK)
+        put("Punk rock", MusicGenre.PUNK); put("Ska", MusicGenre.PUNK)
+        put("Heavy metal", MusicGenre.METAL)
+        for (n in listOf("Soul music", "Gospel music")) put(n, MusicGenre.SOUL)
+        put("Funk", MusicGenre.FUNK); put("Disco", MusicGenre.DISCO)
+        put("Jazz", MusicGenre.JAZZ); put("Swing music", MusicGenre.JAZZ); put("Blues", MusicGenre.BLUES)
+        put("Country", MusicGenre.COUNTRY); put("Bluegrass", MusicGenre.COUNTRY); put("Folk music", MusicGenre.FOLK)
+        put("Reggae", MusicGenre.REGGAE); put("Salsa music", MusicGenre.TROPICAL)
+        put("Music of Latin America", MusicGenre.LATIN); put("Flamenco", MusicGenre.LATIN)
+        put("Afrobeat", MusicGenre.AFROBEATS); put("Music of Africa", MusicGenre.AFROBEATS)
+        put("House music", MusicGenre.HOUSE); put("Techno", MusicGenre.TECHNO); put("Trance music", MusicGenre.TRANCE)
+        for (n in listOf("Electronic music", "Electronica", "Electronic dance music", "Dance music")) put(n, MusicGenre.EDM)
+        put("Dubstep", MusicGenre.DUBSTEP); put("Drum and bass", MusicGenre.DNB)
+        for (n in listOf("Ambient music", "New-age music")) put(n, MusicGenre.AMBIENT)
+        for (n in listOf("Classical music", "Opera")) put(n, MusicGenre.CLASSICAL)
     }
 
-    /** For each of the classes of [names] (in the order of the network's output), its family, or null. */
-    fun table(names: List<String>): Array<GenreFamily?> = Array(names.size) { CLASSES[names[it]] }
+    /** For each of the classes of [names] (in the order of the network's output), its genre, or null. */
+    fun table(names: List<String>): Array<MusicGenre?> = Array(names.size) { CLASSES[names[it]] }
 
     /** The verdict for the mean scores [mean] of a song's patches, with [table] from [table]. */
-    fun decide(mean: FloatArray, table: Array<GenreFamily?>): GenreVerdict {
-        val best = HashMap<GenreFamily, Float>()
-        for (i in mean.indices) { val f = table.getOrNull(i) ?: continue; if (mean[i] > (best[f] ?: 0f)) best[f] = mean[i] }
+    fun decide(mean: FloatArray, table: Array<MusicGenre?>, embedding: FloatArray? = null): GenreVerdict {
+        val best = HashMap<MusicGenre, Float>()
+        for (i in mean.indices) { val g = table.getOrNull(i) ?: continue; if (mean[i] > (best[g] ?: 0f)) best[g] = mean[i] }
         val ranked = best.entries.sortedByDescending { it.value }
-        val top = ranked.firstOrNull() ?: return GenreVerdict(null, 0f, best)
+        val top = ranked.firstOrNull() ?: return GenreVerdict(null, 0f, best, embedding)
         val second = ranked.getOrNull(1)?.value ?: 0f
         val sure = top.value >= MIN_SCORE && top.value - second >= MIN_LEAD
-        return GenreVerdict(if (sure) top.key else null, top.value, best)
+        return GenreVerdict(if (sure) top.key else null, top.value, best, embedding)
     }
 }

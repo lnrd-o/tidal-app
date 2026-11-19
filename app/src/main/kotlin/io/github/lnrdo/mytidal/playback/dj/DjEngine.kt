@@ -31,8 +31,8 @@ import kotlinx.coroutines.withContext
 /** The file in which what the listening ahead learned about songs is kept between sessions, in the files folder. */
 const val DJAI_PROFILE_FILE = "djai_profiles.tsv"
 
-/** The tempo, the key and the family of style of a song that an online catalogue gave, so that it can be scored before it is listened to. */
-class OnlineHint(val bpm: Double?, val camelot: String?, val genre: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null)
+/** The tempo, the key and the genre of a song that an online catalogue gave, so that it can be scored before it is listened to. */
+class OnlineHint(val bpm: Double?, val camelot: String?, val genre: io.github.lnrdo.mytidal.core.dj.MusicGenre? = null)
 
 /** What the listener chose about how D'JAI works: its effects, how it chooses the next song, and how far ahead it listens. */
 class DjOptions(
@@ -163,6 +163,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     /** What the listening ahead found out about a track that is not playing yet. */
     private class Profile(val summary: TrackSummary, val rate: Int)
     private val profiles = LinkedHashMap<String, Profile>().also { loadProfiles(it) }
+    init { watchLabels() }
     /** What online catalogues said about the songs ahead, and the songs that were already asked about. */
     private val online = HashMap<String, OnlineHint>()
     private val asked = HashSet<String>()
@@ -411,7 +412,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
             val key = item.mediaId
             if ((key in profiles && profiles[key]?.summary?.genre != null) || !asked.add(key)) continue
             host.rememberTrack(item)
-            scope.launch { host.onlineHint(item)?.let { hint -> online[key] = hint; hint.genre?.let { learnGenre(key, it) } } }
+            scope.launch { host.onlineHint(item)?.let { hint -> online[key] = hint; hint.genre?.let { learnGenre(key, it); io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.fromCatalogue(key, it) } } }
         }
         // The listening starts at once, also right after the listener changed the song: it does not wait for the song that plays to be analysed.
         val scoutSlot = DjMix.SCOUT_SLOT
@@ -515,7 +516,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
                 if (f.size < 8) continue
                 val bpm = f[1].toDoubleOrNull()
                 val beat = if (bpm == null) null else BeatAnalysis(bpm, f[2].toDouble(), 0.0, 0, f[3].toFloat(), f[4].toInt(), false)
-                val genre = f.getOrNull(9)?.let { name -> io.github.lnrdo.mytidal.core.dj.GenreFamily.entries.firstOrNull { it.name == name } }
+                // Older files named a family of style here; a name that is not a genre is read as no genre, and is learned again.
+                val genre = f.getOrNull(9)?.let { name -> io.github.lnrdo.mytidal.core.dj.MusicGenre.entries.firstOrNull { it.name == name } }
                 into[f[0]] = Profile(TrackSummary(beat, f[5].takeIf { it != "-" }, f[6].toDoubleOrNull(), null, swing = f.getOrNull(8)?.toDoubleOrNull(), genre = genre), f[7].toInt())
             }
         }
@@ -532,7 +534,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         knownJob = scope.launch {
             delay(KNOWN_DELAY_MS)
             val map = HashMap<String, DjMix.SongInfo>(profiles.size + cueIds.size)
-            for ((id, p) in profiles) map[id] = DjMix.SongInfo(p.summary.beat?.bpm, p.summary.camelot, p.summary.energy, id in cueIds, p.summary.genre)
+            for ((id, p) in profiles) map[id] = DjMix.SongInfo(p.summary.beat?.bpm, p.summary.camelot, p.summary.energy, id in cueIds, io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.labelOf(id)?.genre ?: p.summary.genre)
             for (id in cueIds) if (id !in map) map[id] = DjMix.SongInfo(null, null, null, true)
             DjMix.known.value = map
         }
@@ -592,18 +594,27 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         return bpm
     }
 
-    /** The family of style of the song [id], for a summary built from what is being heard: what a catalogue said, what was kept, or a guess. */
-    private fun genreOf(id: String?, heard: TrackSummary?): io.github.lnrdo.mytidal.core.dj.GenreFamily? =
-        id?.let { online[it]?.genre ?: profiles[it]?.summary?.genre } ?: io.github.lnrdo.mytidal.core.dj.GenreFamily.guess(heard?.beat?.bpm, heard?.swing, heard?.energy)
+    /**
+     * The genre of the song [id], for a summary built from what is being heard. The listener's word comes first, then a catalogue's, then what the genre model
+     * (or its head) said and was kept, and last a guess from the sound when it is a clear case.
+     */
+    private fun genreOf(id: String?, heard: TrackSummary?): io.github.lnrdo.mytidal.core.dj.MusicGenre? =
+        id?.let { io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.labelOf(it)?.genre ?: online[it]?.genre ?: profiles[it]?.summary?.genre }
+            ?: io.github.lnrdo.mytidal.core.dj.MusicGenre.guess(heard?.beat?.bpm, heard?.swing, heard?.energy)
 
-    /** The genre model named the style of a song: it replaces a guess, but not the word of a catalogue. */
-    fun learnGenreFromAi(id: String, genre: io.github.lnrdo.mytidal.core.dj.GenreFamily) {
-        if (online[id]?.genre != null) return
+    /** The genre model named the genre of a song: it replaces a guess, but not the word of the listener or of a catalogue. */
+    fun learnGenreFromAi(id: String, genre: io.github.lnrdo.mytidal.core.dj.MusicGenre) {
+        if (online[id]?.genre != null || io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.labelOf(id) != null) return
         learnGenre(id, genre)
     }
 
-    /** A catalogue named the style of a song that is known already: it replaces a guess. */
-    private fun learnGenre(id: String, genre: io.github.lnrdo.mytidal.core.dj.GenreFamily) {
+    /** Starts listening to the labels: a correction by the listener is kept with the song at once. */
+    private fun watchLabels() {
+        io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.onLabel = { id, genre -> learnGenre(id, genre); publishKnown(); publish() }
+    }
+
+    /** A genre was given for a song that is known already: it replaces what was kept. */
+    private fun learnGenre(id: String, genre: io.github.lnrdo.mytidal.core.dj.MusicGenre) {
         val p = profiles[id] ?: return
         if (p.summary.genre == genre) return
         profiles[id] = Profile(p.summary.withGenre(genre), p.rate)
@@ -617,7 +628,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
         publishKnown()
         // The family of style: a catalogue's word first, then what was kept before, then a guess from the sound when it is a clear case.
         val s = profile.summary
-        val genre = online[id]?.genre ?: s.genre ?: profiles[id]?.summary?.genre ?: io.github.lnrdo.mytidal.core.dj.GenreFamily.guess(s.beat?.bpm, s.swing, s.energy)
+        val genre = online[id]?.genre ?: s.genre ?: profiles[id]?.summary?.genre ?: io.github.lnrdo.mytidal.core.dj.MusicGenre.guess(s.beat?.bpm, s.swing, s.energy)
         profiles.remove(id)
         profiles[id] = if (genre == s.genre) profile else Profile(s.withGenre(genre), profile.rate)
         while (profiles.size > MAX_PROFILES) profiles.remove(profiles.keys.first())
@@ -1003,7 +1014,8 @@ val measured = profiles[key]
             lengthMs = p?.let { it.lengthOut * 1000L / DjMix.OUT_RATE } ?: 0L,
             nextTitle = if (idle) null else nextTitle, album = albumNow, effects = if (state == State.READY || state == State.MIXING) planEffects else "",
             changed = changedTitle, changedMatch = changedMatch, scouted = scouted, scoutTotal = scoutTotal,
-            genreOut = host.player.currentMediaItem?.mediaId?.let { genreOf(it, null) },
+            genreOut = host.player.currentMediaItem?.mediaId?.let { genreOf(it, null) }, idOut = host.player.currentMediaItem?.mediaId,
+            idIn = if (idle) host.player.let { pl -> pl.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { pl.getMediaItemAt(it).mediaId } } else incoming?.currentMediaItem?.mediaId,
             genreIn = if (idle) host.player.let { pl -> pl.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { pl.getMediaItemAt(it).mediaId } }?.let { genreOf(it, null) }
                 else incoming?.currentMediaItem?.mediaId?.let { genreOf(it, null) },
         ))

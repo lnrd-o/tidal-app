@@ -12,41 +12,40 @@ class CrossGenreTest {
 
     private fun grid(bpm: Double, anchor: Double = 0.0, confidence: Float = 0.9f) = BeatAnalysis(bpm, 60.0 / bpm * rate, anchor, 0, confidence)
 
-    @Test fun genreNamesFallIntoTheirFamilies() {
-        assertEquals(GenreFamily.HIPHOP, GenreFamily.fromName("Rap/Hip Hop"))
-        assertEquals(GenreFamily.ELECTRONIC, GenreFamily.fromName("Dance"))
-        assertEquals(GenreFamily.ELECTRONIC, GenreFamily.fromName("Electro"))
-        assertEquals(GenreFamily.LATIN, GenreFamily.fromName("Latin Music"))
-        assertEquals(GenreFamily.LATIN, GenreFamily.fromName("Dancehall"))
-        assertEquals(GenreFamily.BASS, GenreFamily.fromName("Drum & Bass"))
-        assertEquals(GenreFamily.SOUL, GenreFamily.fromName("Soul & Funk"))
-        assertEquals(GenreFamily.ROCK, GenreFamily.fromName("Alternative"))
-        assertEquals(GenreFamily.POP, GenreFamily.fromName("Pop"))
-        assertEquals(GenreFamily.CHILL, GenreFamily.fromName("Classical"))
-        assertNull(GenreFamily.fromName("Podcasts"))
-        assertNull(GenreFamily.fromName(null))
+    @Test fun genreNamesAreRecognisedAsTheGenresOfTheListener() {
+        val names = mapOf("Rap/Hip Hop" to MusicGenre.HIPHOP, "Dance" to MusicGenre.EDM, "Electro" to MusicGenre.EDM, "Latin Music" to MusicGenre.LATIN, "Dancehall" to MusicGenre.DANCEHALL,
+            "Drum & Bass" to MusicGenre.DNB, "Soul & Funk" to MusicGenre.FUNK, "Alternative" to MusicGenre.INDIE, "Heavy Metal" to MusicGenre.METAL, "Country" to MusicGenre.COUNTRY,
+            "Folk" to MusicGenre.FOLK, "Jazz" to MusicGenre.JAZZ, "Blues" to MusicGenre.BLUES, "Pop" to MusicGenre.POP, "Classical" to MusicGenre.CLASSICAL, "Reggaeton" to MusicGenre.REGGAETON,
+            "Reggae" to MusicGenre.REGGAE, "Disco" to MusicGenre.DISCO, "Deep House" to MusicGenre.HOUSE, "Techno" to MusicGenre.TECHNO, "Trance" to MusicGenre.TRANCE, "R&B" to MusicGenre.RNB,
+            "Trap" to MusicGenre.TRAP, "Salsa" to MusicGenre.TROPICAL, "Afrobeats" to MusicGenre.AFROBEATS, "Punk" to MusicGenre.PUNK, "Rock" to MusicGenre.ROCK, "Ambient" to MusicGenre.AMBIENT)
+        for ((name, genre) in names) assertEquals(name, genre, MusicGenre.fromName(name))
+        assertNull(MusicGenre.fromName("Podcasts")); assertNull(MusicGenre.fromName(null))
+        // Every genre belongs to a family, and every family has a genre.
+        assertEquals(GenreFamily.entries.toSet(), MusicGenre.entries.map { it.family }.toSet())
     }
 
     @Test fun onlyClearSoundsAreGuessed() {
-        assertEquals(GenreFamily.ELECTRONIC, GenreFamily.guess(126.0, 0.5, 7.5))
-        assertEquals(GenreFamily.BASS, GenreFamily.guess(174.0, 0.5, 8.0))
-        assertEquals(GenreFamily.HIPHOP, GenreFamily.guess(90.0, 0.6, 6.0))
-        assertEquals(GenreFamily.CHILL, GenreFamily.guess(100.0, null, 2.5))
-        assertNull("a mid-tempo straight song could be anything", GenreFamily.guess(108.0, 0.5, 6.0))
-        assertNull(GenreFamily.guess(null, null, 6.0))
+        assertEquals(MusicGenre.HOUSE, MusicGenre.guess(126.0, 0.5, 7.5))
+        assertEquals(MusicGenre.DNB, MusicGenre.guess(174.0, 0.5, 8.0))
+        assertEquals(MusicGenre.HIPHOP, MusicGenre.guess(90.0, 0.6, 6.0))
+        assertEquals(MusicGenre.AMBIENT, MusicGenre.guess(100.0, null, 2.5))
+        assertNull("a mid-tempo straight song could be anything", MusicGenre.guess(108.0, 0.5, 6.0))
+        assertNull(MusicGenre.guess(null, null, 6.0))
     }
 
     @Test fun neighboursFollowEachOtherBetterThanWorldsApart() {
-        assertEquals(1.0, GenreFamily.affinity(GenreFamily.HIPHOP, GenreFamily.HIPHOP)!!, 0.0)
-        assertEquals(GenreFamily.affinity(GenreFamily.HIPHOP, GenreFamily.LATIN), GenreFamily.affinity(GenreFamily.LATIN, GenreFamily.HIPHOP))
-        assertTrue(GenreFamily.affinity(GenreFamily.HIPHOP, GenreFamily.LATIN)!! > GenreFamily.affinity(GenreFamily.ROCK, GenreFamily.LATIN)!!)
-        assertNull(GenreFamily.affinity(null, GenreFamily.POP))
+        assertEquals(1.0, MusicGenre.affinity(MusicGenre.HIPHOP, MusicGenre.HIPHOP)!!, 0.0)
+        assertEquals("inside a family", 0.85, MusicGenre.affinity(MusicGenre.HIPHOP, MusicGenre.TRAP)!!, 0.0)
+        assertEquals(MusicGenre.affinity(MusicGenre.HIPHOP, MusicGenre.REGGAETON), MusicGenre.affinity(MusicGenre.REGGAETON, MusicGenre.HIPHOP))
+        assertTrue(MusicGenre.affinity(MusicGenre.HIPHOP, MusicGenre.REGGAETON)!! > MusicGenre.affinity(MusicGenre.ROCK, MusicGenre.REGGAETON)!!)
+        assertTrue("metal sits by rock", MusicGenre.affinity(MusicGenre.METAL, MusicGenre.ROCK)!! > MusicGenre.affinity(MusicGenre.METAL, MusicGenre.POP)!!)
+        assertNull(MusicGenre.affinity(null, MusicGenre.POP))
     }
 
     @Test fun theFamilyOfStyleCountsInTheMatch() {
-        val out = TrackSummary(grid(124.0), "8A", 6.0, genre = GenreFamily.ELECTRONIC)
-        val same = TrackSummary(grid(124.0), "8A", 6.0, genre = GenreFamily.ELECTRONIC)
-        val far = TrackSummary(grid(124.0), "8A", 6.0, genre = GenreFamily.ROCK)
+        val out = TrackSummary(grid(124.0), "8A", 6.0, genre = MusicGenre.HOUSE)
+        val same = TrackSummary(grid(124.0), "8A", 6.0, genre = MusicGenre.HOUSE)
+        val far = TrackSummary(grid(124.0), "8A", 6.0, genre = MusicGenre.ROCK)
         val unknown = TrackSummary(grid(124.0), "8A", 6.0)
         val m = { b: TrackSummary -> MixPlanner.decide(out, b, rate, rate) }
         assertTrue(m(same).match > m(far).match)
@@ -157,13 +156,13 @@ class CrossGenreTest {
     }
 
     @Test fun genreMixesAreBuiltAndAJourneyPrefersNeighbours() {
-        val songs = (0 until 7).map { SongPoint("h$it", 124.0, "8A", 5.0 + it * 0.3, GenreFamily.ELECTRONIC) } + (0 until 3).map { SongPoint("r$it", 124.0, "8A", 6.0, GenreFamily.ROCK) }
+        val songs = (0 until 7).map { SongPoint("h$it", 124.0, "8A", 5.0 + it * 0.3, MusicGenre.HOUSE) } + (0 until 3).map { SongPoint("r$it", 124.0, "8A", 6.0, MusicGenre.ROCK) }
         val mixes = AutoMixes.build(songs)
-        val house = mixes.firstOrNull { (it.kind as? AutoMixKind.Genre)?.family == GenreFamily.ELECTRONIC }
+        val house = mixes.firstOrNull { (it.kind as? AutoMixKind.Genre)?.genre == MusicGenre.HOUSE }
         assertNotNull(house)
         assertEquals(7, house!!.ids.size)
-        assertTrue(mixes.none { (it.kind as? AutoMixKind.Genre)?.family == GenreFamily.ROCK })
-        val e = SongPoint("e", 124.0, "8A", 6.0, GenreFamily.ELECTRONIC)
+        assertTrue(mixes.none { (it.kind as? AutoMixKind.Genre)?.genre == MusicGenre.ROCK })
+        val e = SongPoint("e", 124.0, "8A", 6.0, MusicGenre.HOUSE)
         assertTrue(AutoMixes.transition(e, songs[1]) > AutoMixes.transition(e, songs[8]))
     }
 }

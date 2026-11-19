@@ -166,7 +166,7 @@ class PlaybackService : MediaLibraryService() {
             val track = item.mediaMetadata.extras?.getString("track")
                 ?.let { runCatching { io.github.lnrdo.mytidal.core.JsonCodec.decodeTrack(org.json.JSONObject(it)) }.getOrNull() } ?: return null
             var bpm = track.bpm
-            var genre: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null
+            var genre: io.github.lnrdo.mytidal.core.dj.MusicGenre? = null
             if (mode >= 2 && !track.isFile) track.isrc?.let { isrc ->
                 val (deezerBpm, deezerGenre) = fetchDeezer(isrc)
                 if (bpm == null) bpm = deezerBpm
@@ -176,10 +176,10 @@ class PlaybackService : MediaLibraryService() {
         }
 
         /**
-         * The tempo and the family of style that Deezer lists for a recording, found by its ISRC. Only the ISRC is sent, and then the id of its album, whose
+         * The tempo and the genre that Deezer lists for a recording, found by its ISRC. Only the ISRC is sent, and then the id of its album, whose
          * genres Deezer keeps (a track has none of its own). Either may be null.
          */
-        private suspend fun fetchDeezer(isrc: String): Pair<Double?, io.github.lnrdo.mytidal.core.dj.GenreFamily?> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        private suspend fun fetchDeezer(isrc: String): Pair<Double?, io.github.lnrdo.mytidal.core.dj.MusicGenre?> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             fun get(url: String): org.json.JSONObject? = runCatching {
                 app.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { response ->
                     if (!response.isSuccessful) null else org.json.JSONObject(response.body?.string().orEmpty()).takeIf { !it.has("error") }
@@ -189,8 +189,8 @@ class PlaybackService : MediaLibraryService() {
             val bpm = track.optDouble("bpm", 0.0).takeIf { it in 40.0..250.0 }
             val album = track.optJSONObject("album")?.optLong("id", 0L)?.takeIf { it > 0L }
             val genres = album?.let { get("https://api.deezer.com/album/$it") }?.optJSONObject("genres")?.optJSONArray("data")
-            val family = genres?.let { list -> (0 until list.length()).firstNotNullOfOrNull { io.github.lnrdo.mytidal.core.dj.GenreFamily.fromName(list.optJSONObject(it)?.optString("name")) } }
-            bpm to family
+            val genre = genres?.let { list -> (0 until list.length()).firstNotNullOfOrNull { io.github.lnrdo.mytidal.core.dj.MusicGenre.fromName(list.optJSONObject(it)?.optString("name")) } }
+            bpm to genre
         }
 
         override fun cuesOf(id: String): List<io.github.lnrdo.mytidal.core.dj.Cue> =
@@ -299,6 +299,7 @@ class PlaybackService : MediaLibraryService() {
         app.sources.onGains = { id -> Handler(Looper.getMainLooper()).post { if (player.currentMediaItem?.mediaId == id) applyNormalization() } }
         io.github.lnrdo.mytidal.playback.usb.UsbDac.init(this)
         io.github.lnrdo.mytidal.playback.dj.neural.RhythmStore.init(this)
+        io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.init(this)
         scope.launch { app.settings.state.collect { io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.lnrdo.mytidal.playback.dj.DjOptions(roll = false, cues = it.djCues, echo = false, filters = it.djFilters, groove = it.djGroove,

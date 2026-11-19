@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /** What D'JAI knows of a song, for building mixes: its id, tempo, key as a Camelot code, and energy from 1 to 10. Any of them may be missing. */
-class SongPoint(val id: String, val bpm: Double?, val camelot: String?, val energy: Double?, val genre: GenreFamily? = null)
+class SongPoint(val id: String, val bpm: Double?, val camelot: String?, val energy: Double?, val genre: MusicGenre? = null)
 
 /** The kinds of mix that are built, each with the numbers that describe it. */
 sealed class AutoMixKind {
@@ -16,8 +16,8 @@ sealed class AutoMixKind {
     class Tempo(val from: Int, val to: Int) : AutoMixKind()
     /** Songs whose keys sit next to each other on the Camelot wheel, around [centre]. */
     class Harmonic(val centre: String) : AutoMixKind()
-    /** Songs of one family of style, in the order that mixes best. */
-    class Genre(val family: GenreFamily) : AutoMixKind()
+    /** Songs of one genre, in the order that mixes best. */
+    class Genre(val genre: MusicGenre) : AutoMixKind()
 }
 
 /** A mix: its kind and its songs, in the order that they mix best. */
@@ -47,10 +47,10 @@ object AutoMixes {
             val members = known.filter { val b = it.bpm ?: return@filter false; listOf(b, b * 2, b / 2).any { t -> t >= from && t <= to + 0.999 } }
             if (members.size >= MIN_SONGS) mixes.add(AutoMix(AutoMixKind.Tempo(from, to), order(members, rising = false).take(MAX_SONGS)))
         }
-        // By family of style: a set that stays in one world.
-        for (family in GenreFamily.entries) {
-            val members = known.filter { it.genre == family }
-            if (members.size >= MIN_SONGS) mixes.add(AutoMix(AutoMixKind.Genre(family), order(members, rising = true).take(MAX_SONGS)))
+        // By genre: a set that stays in one style.
+        for (genre in MusicGenre.entries) {
+            val members = known.filter { it.genre == genre }
+            if (members.size >= MIN_SONGS) mixes.add(AutoMix(AutoMixKind.Genre(genre), order(members, rising = true).take(MAX_SONGS)))
         }
         // By families of keys: each key with its neighbours on the wheel, the largest families first, and none that is mostly another one.
         val families = known.mapNotNull { it.camelot }.distinct().map { centre -> centre to known.filter { s -> s.camelot != null && Camelot.compatibility(centre, s.camelot) >= 0.8 } }
@@ -85,7 +85,7 @@ object AutoMixes {
         } else 0.5
         val sound = 0.4 * tempo + 0.3 * key + 0.3 * energy
         // Within a family of style the set holds together; a jump between worlds costs a little, so that a journey moves between neighbours.
-        val genre = GenreFamily.affinity(a.genre, b.genre) ?: return sound
+        val genre = MusicGenre.affinity(a.genre, b.genre) ?: return sound
         return 0.85 * sound + 0.15 * genre
     }
 

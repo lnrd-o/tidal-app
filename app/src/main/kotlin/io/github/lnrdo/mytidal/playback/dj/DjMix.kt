@@ -46,8 +46,11 @@ data class DjUi(
     val changed: String? = null,
     val changedMatch: Double? = null,
     /** The family of style of the song that plays and of the song that comes next, when known. */
-    val genreOut: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null,
-    val genreIn: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null,
+    val genreOut: io.github.lnrdo.mytidal.core.dj.MusicGenre? = null,
+    /** The ids of the song that plays and of the one that comes next, for correcting their genre. */
+    val idOut: String? = null,
+    val idIn: String? = null,
+    val genreIn: io.github.lnrdo.mytidal.core.dj.MusicGenre? = null,
     /** How many of the next songs were listened to, out of how many. */
     val scouted: Int = 0,
     val scoutTotal: Int = 0,
@@ -110,7 +113,7 @@ object DjMix {
     }
 
     /** What D'JAI has kept about a song: its tempo, key and energy when known, and whether its cue points are kept. */
-    class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean, val genre: io.github.lnrdo.mytidal.core.dj.GenreFamily? = null)
+    class SongInfo(val bpm: Double?, val key: String?, val energy: Double?, val cues: Boolean, val genre: io.github.lnrdo.mytidal.core.dj.MusicGenre? = null)
 
     /** The id of the song that the listener chose to play next. D'JAI does not move it: it was asked for. */
     @Volatile var pinnedNext: String? = null

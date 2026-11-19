@@ -44,7 +44,7 @@ class Preprocessor(
     /** Whether the genre model reads the style of each song. */
     private val genreAi: () -> Boolean = { false },
     /** Keeps the style that the genre model found for a song. */
-    private val learnGenre: (String, io.github.lnrdo.mytidal.core.dj.GenreFamily) -> Unit = { _, _ -> },
+    private val learnGenre: (String, io.github.lnrdo.mytidal.core.dj.MusicGenre) -> Unit = { _, _ -> },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
@@ -108,7 +108,9 @@ class Preprocessor(
                 val verdict = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                     runCatching { io.github.lnrdo.mytidal.playback.dj.neural.GenreModel.analyze(context, heard, io.github.lnrdo.mytidal.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
                 }
-                verdict?.family?.let { learnGenre(request.id, it) }
+                verdict?.embedding?.let { io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.record(request.id, it) }
+                // The listener's word, or the head once it has learned enough, comes before the plain vote of the genre model.
+                (io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.predict(request.id) ?: verdict?.genre)?.let { learnGenre(request.id, it) }
             }
             if (accelerator != null && context != null) heard?.let { audio ->
                 val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {

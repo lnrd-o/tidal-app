@@ -89,19 +89,40 @@ fun mixTitle(kind: AutoMixKind): String = when (kind) {
     is AutoMixKind.Energy -> stringResource(when (kind.level) { 0 -> R.string.mixes_calm; 1 -> R.string.mixes_groove; else -> R.string.mixes_peak })
     is AutoMixKind.Tempo -> stringResource(R.string.mixes_tempo, kind.from, kind.to)
     is AutoMixKind.Harmonic -> stringResource(R.string.mixes_keys, Camelot.noteName(kind.centre)?.let { "${kind.centre} $it" } ?: kind.centre)
-    is AutoMixKind.Genre -> stringResource(genreName(kind.family))
+    is AutoMixKind.Genre -> stringResource(genreName(kind.genre))
 }
 
-/** The name of a family of style, as the lists and the mixes show it. */
-fun genreName(family: io.github.lnrdo.mytidal.core.dj.GenreFamily): Int = when (family) {
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.ELECTRONIC -> R.string.genre_electronic
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.BASS -> R.string.genre_bass
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.HIPHOP -> R.string.genre_hiphop
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.LATIN -> R.string.genre_latin
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.POP -> R.string.genre_pop
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.ROCK -> R.string.genre_rock
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.SOUL -> R.string.genre_soul
-    io.github.lnrdo.mytidal.core.dj.GenreFamily.CHILL -> R.string.genre_chill
+/** The name of a genre, as the sheet and the mixes show it. */
+fun genreName(genre: io.github.lnrdo.mytidal.core.dj.MusicGenre): Int = when (genre) {
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.POP -> R.string.genre_pop
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.DISCO -> R.string.genre_disco
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.FUNK -> R.string.genre_funk
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.SOUL -> R.string.genre_soul
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.RNB -> R.string.genre_rnb
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.HIPHOP -> R.string.genre_hiphop
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.TRAP -> R.string.genre_trap
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.REGGAETON -> R.string.genre_reggaeton
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.LATIN -> R.string.genre_latin
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.TROPICAL -> R.string.genre_tropical
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.REGGAE -> R.string.genre_reggae
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.DANCEHALL -> R.string.genre_dancehall
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.AFROBEATS -> R.string.genre_afrobeats
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.HOUSE -> R.string.genre_house
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.TECHNO -> R.string.genre_techno
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.TRANCE -> R.string.genre_trance
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.EDM -> R.string.genre_edm
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.DNB -> R.string.genre_dnb
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.DUBSTEP -> R.string.genre_dubstep
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.ROCK -> R.string.genre_rock
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.INDIE -> R.string.genre_indie
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.PUNK -> R.string.genre_punk
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.METAL -> R.string.genre_metal
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.JAZZ -> R.string.genre_jazz
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.BLUES -> R.string.genre_blues
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.COUNTRY -> R.string.genre_country
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.FOLK -> R.string.genre_folk
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.CLASSICAL -> R.string.genre_classical
+    io.github.lnrdo.mytidal.core.dj.MusicGenre.AMBIENT -> R.string.genre_ambient
 }
 
 private fun AutoMixKind.key(): String = when (this) {
@@ -109,5 +130,5 @@ private fun AutoMixKind.key(): String = when (this) {
     is AutoMixKind.Energy -> "energy$level"
     is AutoMixKind.Tempo -> "tempo$from"
     is AutoMixKind.Harmonic -> "keys$centre"
-    is AutoMixKind.Genre -> "genre${family.name}"
+    is AutoMixKind.Genre -> "genre${genre.name}"
 }

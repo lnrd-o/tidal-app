@@ -2,6 +2,7 @@ package io.github.lnrdo.mytidal.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,15 +82,20 @@ fun DjaiSheet(on: Boolean, neural: Boolean, trackId: String?, cues: List<io.gith
             }
             Spacer(Modifier.height(14.dp))
             // The style of the song that plays and of the one that comes, and the part of the song that plays now.
+            var picking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Fact(stringResource(R.string.djsheet_style), ui.genreOut?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White)
+                val outId = ui.idOut ?: trackId
+                Fact(stringResource(R.string.djsheet_style), ui.genreOut?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White,
+                    Modifier.clickable(enabled = outId != null) { picking = outId })
                 if (ui.genreIn != null || ui.nextTitle != null) {
                     Spacer(Modifier.width(10.dp))
                     Text("→", fontFamily = AppFonts.mono, fontSize = 15.sp, color = Color.White.copy(alpha = .5f))
                     Spacer(Modifier.width(10.dp))
-                    Fact(stringResource(R.string.djsheet_next_style), ui.genreIn?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White)
+                    Fact(stringResource(R.string.djsheet_next_style), ui.genreIn?.let { stringResource(genreName(it)) } ?: stringResource(R.string.djsheet_unknown), Color.White,
+                        Modifier.clickable(enabled = ui.idIn != null) { picking = ui.idIn })
                 }
             }
+            picking?.let { id -> GenrePicker(id, if (id == ui.idIn) ui.genreIn else ui.genreOut) { picking = null } }
             val position by LocalPlaybackPosition.current.collectAsStateWithLifecycle()
             val phases = androidx.compose.runtime.remember(cues, duration) { io.github.lnrdo.mytidal.core.dj.SongPhases.build(cues, duration) }
             if (phases.isNotEmpty()) {
@@ -105,8 +112,8 @@ fun DjaiSheet(on: Boolean, neural: Boolean, trackId: String?, cues: List<io.gith
 }
 
 @Composable
-private fun Fact(label: String, value: String, tint: Color) {
-    Column {
+private fun Fact(label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
         Text(label.uppercase(), fontFamily = AppFonts.body, fontSize = 9.sp, letterSpacing = 1.4.sp, color = Color.White.copy(alpha = .45f))
         Text(value, fontFamily = AppFonts.mono, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = tint)
     }

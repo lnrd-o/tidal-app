@@ -134,8 +134,8 @@ class TrackSummary(
     val cues: List<CueMark> = emptyList(),
     /** Where the off-beat eighth falls in the beat (0.5 straight, up to 0.67 swung), or null when it is not known. See [Swing]. */
     val swing: Double? = null,
-    /** The family of the song's style, or null when it is not known. See [GenreFamily]. */
-    val genre: GenreFamily? = null,
+    /** The genre of the song, or null when it is not known. See [MusicGenre]. */
+    val genre: MusicGenre? = null,
 ) {
     /** The same song without its groove, for when the listener turned the matching of grooves off. */
     fun withoutSwing() = if (swing == null) this else TrackSummary(beat, camelot, energy, origin, cues, null, genre)
@@ -144,7 +144,7 @@ class TrackSummary(
     fun withBeat(grid: BeatAnalysis?) = TrackSummary(grid, camelot, energy, origin, cues, swing, genre)
 
     /** The same song with its family of style. */
-    fun withGenre(family: GenreFamily?) = TrackSummary(beat, camelot, energy, origin, cues, swing, family)
+    fun withGenre(genre: MusicGenre?) = TrackSummary(beat, camelot, energy, origin, cues, swing, genre)
 }
 
 class MixDecision(
@@ -264,7 +264,7 @@ object MixPlanner {
         // A straight groove and a swung one clash even at the same tempo.
         val swingGap = if (outgoing.swing != null && incoming.swing != null) abs(outgoing.swing - incoming.swing) else null
         val groove = Swing.score(outgoing.swing, incoming.swing)
-        val genre = GenreFamily.affinity(outgoing.genre, incoming.genre)
+        val genre = MusicGenre.affinity(outgoing.genre, incoming.genre)
         if (a != null && b != null && a.confidence >= MIN_CONFIDENCE && b.confidence >= MIN_CONFIDENCE && a.beatsPerBar == b.beatsPerBar) {
             // The incoming track plays this much faster to bring its beats onto the grid of the outgoing one.
             val plain = (b.periodSamples / rateIncoming) / (a.periodSamples / rateOutgoing)

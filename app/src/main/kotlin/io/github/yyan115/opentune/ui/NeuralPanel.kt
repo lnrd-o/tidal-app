@@ -51,18 +51,11 @@ fun NeuralPanel(settings: Settings, change: ((Settings) -> Settings) -> Unit) {
     val model by BeatModel.state.collectAsStateWithLifecycle()
     val stats by RhythmStore.stats.collectAsStateWithLifecycle()
     val songs by RhythmStore.songs.collectAsStateWithLifecycle()
-    var probing by remember { mutableStateOf(false) }
+    // What the phone has comes from its chip, without opening the model: building the graph for the NPU is long and heavy, and is done for the first song.
+    val hardware by androidx.compose.runtime.produceState<DeviceHardware?>(null) { value = withContext(Dispatchers.Default) { HardwareInfo.read(context.applicationContext) } }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val chosen = Accelerator.entries.firstOrNull { it.name == settings.djAccelerator } ?: Accelerator.AUTO
-    // Which accelerators the phone has is learned once, by opening the model on each.
-    LaunchedEffect(settings.djNeural) {
-        if (settings.djNeural && model.available.isEmpty() && !probing) {
-            probing = true
-            withContext(Dispatchers.Default) { runCatching { BeatModel.probe(context.applicationContext, chosen) } }
-            probing = false
-        }
-    }
     LaunchedEffect(Unit) { while (true) { BeatModel.refreshBusy(); delay(1_000) } }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch(Dispatchers.IO) {
@@ -88,17 +81,17 @@ fun NeuralPanel(settings: Settings, change: ((Settings) -> Settings) -> Unit) {
         if (settings.djNeural) {
             // The accelerators, as real switches: one can be on at a time, and only those that opened on this phone can be chosen.
             for (on in listOf(Accelerator.NPU, Accelerator.GPU)) {
-                val has = on in model.available
+                val present = if (on == Accelerator.NPU) hardware?.npu != null else hardware?.gpu != null
+                val has = present && on !in model.failed
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(if (on == Accelerator.NPU) R.string.rhythm_use_npu else R.string.rhythm_use_gpu), style = MaterialTheme.typography.bodyMedium,
                             color = if (has) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(when { probing -> stringResource(R.string.rhythm_checking); has -> stringResource(R.string.rhythm_available); else -> stringResource(R.string.rhythm_unavailable) },
+                        Text(when { on in model.failed -> stringResource(R.string.rhythm_failed); on == model.loaded -> stringResource(R.string.rhythm_running); has -> stringResource(R.string.rhythm_available); else -> stringResource(R.string.rhythm_unavailable) },
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(chosen == on || (chosen == Accelerator.AUTO && model.loaded == on), { value ->
                         change { it.copy(djAccelerator = if (value) on.name else Accelerator.CPU.name) }
-                        scope.launch(Dispatchers.Default) { runCatching { BeatModel.open(context.applicationContext, if (value) on else Accelerator.CPU) } }
                     }, enabled = has)
                 }
             }

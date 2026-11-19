@@ -126,19 +126,19 @@ object BeatDecoder {
     const val BORDER = 6
 
     /** The start frame of each window, as Beat This!'s split_piece places them (the last one ends with the song). */
-    fun windowStarts(frames: Int): IntArray {
-        val step = WINDOW - 2 * BORDER
+    fun windowStarts(frames: Int, window: Int = WINDOW): IntArray {
+        val step = window - 2 * BORDER
         val starts = ArrayList<Int>()
         var s = -BORDER
         while (s < frames - BORDER) { starts.add(s); s += step }
-        if (frames > step && starts.isNotEmpty()) starts[starts.size - 1] = frames - (WINDOW - BORDER)
+        if (frames > step && starts.isNotEmpty()) starts[starts.size - 1] = frames - (window - BORDER)
         return starts.toIntArray()
     }
 
-    /** One window of the spectrogram from [start] (which may be negative), zero-padded to [WINDOW] frames. */
-    fun window(spect: FloatArray, frames: Int, start: Int): FloatArray {
-        val out = FloatArray(WINDOW * LogMel.MELS)
-        for (t in 0 until WINDOW) {
+    /** One window of the spectrogram from [start] (which may be negative), zero-padded to [window] frames. */
+    fun window(spect: FloatArray, frames: Int, start: Int, window: Int = WINDOW): FloatArray {
+        val out = FloatArray(window * LogMel.MELS)
+        for (t in 0 until window) {
             val f = start + t
             if (f in 0 until frames) System.arraycopy(spect, f * LogMel.MELS, out, t * LogMel.MELS, LogMel.MELS)
         }
@@ -149,12 +149,12 @@ object BeatDecoder {
      * Puts the answers of the windows back into one series per output, keeping for each frame the first window's answer ("keep_first"), without the
      * [BORDER] frames at each edge that the network was not trained on.
      */
-    fun aggregate(windows: List<FloatArray>, starts: IntArray, frames: Int): FloatArray {
+    fun aggregate(windows: List<FloatArray>, starts: IntArray, frames: Int, window: Int = WINDOW): FloatArray {
         val out = FloatArray(frames) { -1000f }
         val filled = BooleanArray(frames)
         for ((w, start) in starts.withIndex()) {
             val values = windows[w]
-            for (t in BORDER until WINDOW - BORDER) {
+            for (t in BORDER until window - BORDER) {
                 val f = start + t
                 if (f in 0 until frames && !filled[f]) { out[f] = values[t]; filled[f] = true }
             }

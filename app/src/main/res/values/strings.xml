@@ -743,8 +743,9 @@
     <string name="rhythm_text">A neural network reads each song that D\'JAI prepares, whole, and finds its beats, its bars and its tempo. It runs on the NPU or the GPU when the phone has them. You confirm or correct its tempo on the player, and your answers train it on the phone.</string>
     <string name="rhythm_use_npu">Run it on the NPU</string>
     <string name="rhythm_use_gpu">Run it on the GPU</string>
-    <string name="rhythm_checking">Checking this phone…</string>
-    <string name="rhythm_available">Available on this phone</string>
+    <string name="rhythm_failed">Tried on this phone and it could not run the model; the CPU is used instead</string>
+    <string name="rhythm_running">Running the model now</string>
+    <string name="rhythm_available">On this phone: it is used from the next song that is prepared</string>
     <string name="rhythm_unavailable">Not available on this phone</string>
     <string name="rhythm_status">ON %1$s · BUSY %2$s %% LAST MINUTE · LAST SONG %3$s s FOR %4$s</string>
     <string name="rhythm_learned">%1$d songs read · %2$d answers learned · the model reads %3$s %% of them right</string>

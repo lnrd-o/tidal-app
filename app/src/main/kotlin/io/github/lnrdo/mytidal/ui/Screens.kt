@@ -439,6 +439,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lnrd-o/tidal-app"))) }
         }) }
         item { SettingRow(OpenTuneIcons.PrivacyTip, stringResource(R.string.settings_privacy), stringResource(R.string.settings_privacy_text)) }
+        item { SettingRow(OpenTuneIcons.Info, stringResource(R.string.hw_page_title), stringResource(R.string.hw_page_summary), { onOpenPage(SettingsPage.Hardware) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.Description, stringResource(R.string.settings_licenses), onClick = { onOpenPage(SettingsPage.Licenses) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
     }
     if (cacheOpen) CacheDialog(settings.cacheMb, vm, { value -> vm.settings { it.copy(cacheMb = value) } }) { cacheOpen = false }

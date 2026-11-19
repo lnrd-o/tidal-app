@@ -1,0 +1,1 @@
+- The app is now MyTidal under the application ID io.github.lnrdo.mytidal, and the Kotlin package is io.github.lnrdo.mytidal. Debug builds no longer have their own .debug ID. It installs as a new app next to older builds: export a backup from Settings first if you want your library, and restore it in the new app. It has a new icon.

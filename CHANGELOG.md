@@ -4,12 +4,15 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-19
+
 ### Changed
 
 - The app is now MyTidal under the application ID `io.github.lnrdo.mytidal`, and the Kotlin package is `io.github.lnrdo.mytidal`. Debug builds no longer have their own `.debug` ID. It installs as a new app next to older builds: export a backup from Settings first if you want your library, and restore it in the new app. It has a new icon.
 
 ### Added
 
+- Hardware per device: on first run D'JAI reads the chip, memory, GPU and audio features, classes the device (high, medium or basic), checks whether its NPU can run the bundled models (Qualcomm Hexagon v68 and later on Android 12 or later) and sets the neural rhythm model, workers and songs ahead to what suits it. A new About > Hardware page shows each part, and "Use the recommended settings" applies them again. The processor load overlay is now off by default.
 - Genres: D'JAI now names 29 genres (pop, disco, funk, soul, R&B, hip-hop, trap, reggaeton, latin, salsa and bachata, reggae, dancehall, afrobeats, house, techno, trance, EDM, drum and bass, dubstep, rock, indie, punk, metal, jazz, blues, country, folk, classical, ambient), each in one of 11 families that decide how well two songs follow each other. Tap the style in the D'JAI sheet to say what genre a song is: it is kept, wins over the model, and teaches a classifier that learns the genres of your library from YAMNet's embedding of each song (including those that YAMNet has no name for, such as reggaeton). The Mixes tab builds a mix for each genre.
 - Genre with AI: a small neural network (YAMNet, from Google, Apache 2.0) listens to each song that D'JAI prepares and names its style family (house and techno, drum and bass, hip-hop, latin, pop, rock, soul, chill). It runs on the phone in about a second per song, never replaces a genre that Deezer gave, and is used to keep sets in one style. Switch: D'JAI settings, Analysis. The D'JAI sheet shows the style of the song that plays and of the next one, and the part of the song that plays now.
 - The player's seek line shows the phases of the song (chorus, drop and peak tall and bright, build-ups in between, verses, bridges, breaks, intro and outro low and faint) instead of pins, and lights the one that plays.

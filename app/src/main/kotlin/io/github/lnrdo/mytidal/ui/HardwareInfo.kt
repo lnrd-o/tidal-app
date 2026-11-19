@@ -1,6 +1,11 @@
 package io.github.lnrdo.mytidal.ui
 
+import android.app.ActivityManager
 import android.content.Context
+import io.github.lnrdo.mytidal.core.DeviceFacts
+import io.github.lnrdo.mytidal.core.DeviceProfile
+import io.github.lnrdo.mytidal.core.DeviceProfiles
+import io.github.lnrdo.mytidal.data.Settings
 import android.content.pm.PackageManager
 import android.opengl.EGL14
 import android.opengl.EGLConfig
@@ -29,6 +34,20 @@ object HardwareInfo {
     /** Reads the hardware once. It opens a small graphics context to ask the driver its name, so it is called off the main thread. */
     fun read(context: Context): DeviceHardware = cached ?: DeviceHardware(chip(), Runtime.getRuntime().availableProcessors(), clusters(), gpuName(),
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL), npu()).also { cached = it }
+
+    @Volatile private var profiled: DeviceProfile? = null
+
+    /** What the device is: read once, off the main thread. */
+    fun profile(context: Context): DeviceProfile = profiled ?: run {
+        val hardware = read(context)
+        val manager = context.getSystemService(ActivityManager::class.java)
+        val memory = ActivityManager.MemoryInfo().also { manager?.getMemoryInfo(it) }
+        val maxKhz = (0 until hardware.cores).mapNotNull { File("/sys/devices/system/cpu/cpu$it/cpufreq/cpuinfo_max_freq").takeIf(File::canRead)?.readText()?.trim()?.toLongOrNull() }.maxOrNull() ?: 0L
+        val packages = context.packageManager
+        val facts = DeviceFacts(Build.MANUFACTURER, Build.MODEL, hardware.chip, Build.VERSION.SDK_INT, hardware.cores, (memory.totalMem / 1_048_576L).toInt(), (maxKhz / 1000).toInt(),
+            hardware.gpu, hardware.vulkan, packages.hasSystemFeature(PackageManager.FEATURE_USB_HOST), packages.hasSystemFeature(PackageManager.FEATURE_AUDIO_LOW_LATENCY))
+        DeviceProfiles.profile(facts).also { profiled = it }
+    }
 
     private fun chip(): String? =
         if (Build.VERSION.SDK_INT >= 31) listOf(Build.SOC_MANUFACTURER, Build.SOC_MODEL).filter { it.isNotBlank() && it != Build.UNKNOWN }.joinToString(" ").ifBlank { null }
@@ -102,3 +121,9 @@ object HardwareInfo {
         else ((ticks - previous) * 10.0 / (now - then) * 100.0 / Runtime.getRuntime().availableProcessors()).coerceIn(0.0, 100.0)
     }.getOrNull()
 }
+
+/** The settings that suit the device, applied over the listener's: the neural rhythm model, the genre model, the workers and how far ahead D'JAI listens. */
+fun Settings.withRecommendation(profile: DeviceProfile): Settings = copy(
+    djNeural = profile.recommendation.neuralRhythm, djGenreAi = profile.recommendation.genreAi, djGenreGpu = profile.recommendation.genreOnGpu,
+    djWorkers = profile.recommendation.workers, djListenAhead = profile.recommendation.listenAhead, djProfile = profile.fingerprint,
+)

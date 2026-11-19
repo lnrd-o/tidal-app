@@ -7,6 +7,7 @@ import io.github.lnrdo.mytidal.data.AppSettings
 import io.github.lnrdo.mytidal.data.LibraryStore
 import io.github.lnrdo.mytidal.data.OfflineExporter
 import io.github.lnrdo.mytidal.data.SecureSessionStore
+import io.github.lnrdo.mytidal.ui.withRecommendation
 import okhttp3.OkHttpClient
 import io.github.lnrdo.mytidal.playback.AudioSources
 import java.util.concurrent.TimeUnit
@@ -38,6 +39,13 @@ class OpenTuneApp : Application() {
         super.onCreate()
         CrashReporter.install(this)
         applyPlaceholders()
+        // The first time that the app runs on a device, D'JAI is set to what the device can do: the hardware is read off the main thread.
+        Thread({
+            runCatching {
+                val profile = io.github.lnrdo.mytidal.ui.HardwareInfo.profile(this)
+                if (settings.state.value.djProfile != profile.fingerprint) settings.update { it.withRecommendation(profile) }
+            }
+        }, "device-profile").apply { priority = Thread.MIN_PRIORITY; start() }
         runCatching {
             getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: android.net.Network) { networkEpoch.value += 1 }

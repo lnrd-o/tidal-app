@@ -89,6 +89,10 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
         }
         item { SwitchRow(OpenTuneIcons.Info, stringResource(R.string.djcfg_load_overlay), settings.djLoadOverlay, { value -> vm.settings { it.copy(djLoadOverlay = value) } }, stringResource(R.string.djcfg_load_overlay_text)) }
         item { HardwarePanel() }
+        item {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            SettingRow(OpenTuneIcons.Refresh, stringResource(R.string.hw_reset), stringResource(R.string.hw_reset_text), { Thread { val profile = HardwareInfo.profile(context.applicationContext); vm.settings { it.withRecommendation(profile) } }.start() })
+        }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_songs)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_dj_data), settings.showDjData, { value -> vm.settings { it.copy(showDjData = value) } }, stringResource(R.string.settings_dj_data_text)) }

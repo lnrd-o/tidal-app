@@ -36,11 +36,11 @@ class ThemesTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
-    @Test fun thereIsOneDarkSquareTheme() {
-        assertEquals(listOf("dark"), appThemes.map { it.id })
-        assertTrue(appThemes.single().dark)
-        assertTrue(appThemes.single().scheme.background.luminance() < .1f)
-        assertEquals(0, appThemes.single().radius)
+    @Test fun theFirstThemeIsTheDarkSquareOne() {
+        assertEquals("dark", appThemes.first().id)
+        assertTrue(appThemes.all { it.dark })
+        assertTrue(appThemes.first().scheme.background.luminance() < .1f)
+        assertEquals(0, appThemes.first().radius)
     }
 
     @Test fun everyIdGivesTheDarkTheme() {

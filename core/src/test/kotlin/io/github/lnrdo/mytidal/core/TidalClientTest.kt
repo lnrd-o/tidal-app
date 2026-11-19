@@ -144,6 +144,18 @@ class TidalClientTest {
         assertEquals("100", server.takeRequest().requestUrl!!.queryParameter("offset"))
     }
 
+    @Test fun favoritesContinuePastAPageThatHoldsFewerThanAHundred() = runBlocking {
+        val first = (1..95).joinToString(",") { """{"item":{"id":$it,"title":"Track $it"}}""" }
+        val second = (96..120).joinToString(",") { """{"item":{"id":$it,"title":"Track $it"}}""" }
+        server.enqueue(MockResponse().setBody("""{"totalNumberOfItems":120,"items":[$first]}"""))
+        server.enqueue(MockResponse().setBody("""{"totalNumberOfItems":120,"items":[$second]}"""))
+        val tracks = client.allFavorites()
+        assertEquals(120, tracks.size)
+        assertEquals("0", server.takeRequest().requestUrl!!.queryParameter("offset"))
+        assertEquals("95", server.takeRequest().requestUrl!!.queryParameter("offset"))
+        assertEquals(2, server.requestCount)
+    }
+
     @Test fun playlistRemovalRefusesAStaleTrackPosition() = runBlocking {
         server.enqueue(MockResponse().setHeader("ETag", "fresh-version").setBody("{}"))
         server.enqueue(MockResponse().setBody("""{"items":[{"item":{"id":999,"title":"Different track"}}]}"""))

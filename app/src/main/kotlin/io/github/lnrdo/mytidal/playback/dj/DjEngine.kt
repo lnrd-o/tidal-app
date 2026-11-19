@@ -1016,6 +1016,10 @@ val measured = profiles[key]
             energyIn = if (idle) null else (d?.energyIncoming ?: inn.energyIntro),
             keyScore = d?.keyScore ?: 0.5, match = d?.match, speed = p?.speedIncoming ?: 1.0, startsInMs = starts,
             lengthMs = p?.let { it.lengthOut * 1000L / DjMix.OUT_RATE } ?: 0L,
+            mixLeftMs = if (p != null && state == State.MIXING)
+                // The mixer's own progress: it counts the frames that it rendered, so a loop roll on the outgoing deck does not move it back.
+                ((1f - DjMix.mixer.progress) * (p.lengthOut * 1000L / DjMix.OUT_RATE)).toLong().coerceAtLeast(0) else 0L,
+            running = host.player.playWhenReady && (host.player.isPlaying || incoming?.isPlaying == true),
             nextTitle = if (idle) null else nextTitle, album = albumNow, effects = if (state == State.READY || state == State.MIXING) planEffects else "",
             changed = changedTitle, changedMatch = changedMatch, scouted = scouted, scoutTotal = scoutTotal,
             genreOut = host.player.currentMediaItem?.mediaId?.let { genreOf(it, null) }, idOut = host.player.currentMediaItem?.mediaId,

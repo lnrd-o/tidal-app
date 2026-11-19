@@ -375,9 +375,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun moreFavorites() = viewModelScope.launch {
         try {
-            val next = app.tidal.favorites(favoritesOffset)
+            val page = app.tidal.favoritesPage(favoritesOffset); val next = page.items
             cloudFavorites = (cloudFavorites + next).distinctBy(Track::id); favoritesOffset += next.size
-            ui.update { it.copy(hasMoreFavorites = next.size == 100) }; refreshLocal()
+            ui.update { it.copy(hasMoreFavorites = next.isNotEmpty() && (page.total?.let { favoritesOffset < it } ?: true)) }; refreshLocal()
         } catch (error: Exception) { if (error is CancellationException) throw error; notify(userMessage(error)) }
     }
 

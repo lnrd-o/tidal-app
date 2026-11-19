@@ -4,6 +4,13 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-19
+
+### Fixed
+
+- Liked songs: the list stopped at the first page that held fewer than 100 songs (about 95 for some accounts) and left the rest out. It now reads on until TIDAL's own total is reached, and the "load more" button follows the same total.
+- Mix countdown: the time over the cover kept counting down while the music was paused, and during a mix it ran on its own clock. It now follows the decks: it stops and dims while paused or waiting for data, and during a mix it counts from the mixer's own progress.
+
 ## [1.0.1] - 2026-11-19
 
 ### Added

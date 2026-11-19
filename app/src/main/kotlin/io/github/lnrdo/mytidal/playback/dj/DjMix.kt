@@ -41,6 +41,10 @@ data class DjUi(
     val startsInMs: Long = 0,
     /** Length of the transition in milliseconds. */
     val lengthMs: Long = 0,
+    /** Milliseconds until the next song has taken over, while the transition runs, measured from where the decks are. */
+    val mixLeftMs: Long = 0,
+    /** True while the music moves: the countdown stands still while the player is paused or waits for data. */
+    val running: Boolean = false,
     val nextTitle: String? = null,
     /** True while an album plays. D'JAI is then off for the queue. */
     val album: Boolean = false,

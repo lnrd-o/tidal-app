@@ -109,8 +109,12 @@ class TidalClient(
             topTrack = if (topType == "TRACKS") topValue?.let(JsonCodec::track) else null)
     }
 
-    suspend fun favorites(offset: Int = 0): List<Track> =
-        JsonCodec.items(request("users/${userId()}/favorites/tracks", mapOf("limit" to "100", "offset" to "$offset", "order" to "DATE", "orderDirection" to "DESC"))).map(JsonCodec::track)
+    suspend fun favoritesPage(offset: Int = 0): PageOf<Track> {
+        val data = request("users/${userId()}/favorites/tracks", mapOf("limit" to "100", "offset" to "$offset", "order" to "DATE", "orderDirection" to "DESC"))
+        return PageOf(JsonCodec.items(data).map(JsonCodec::track), data.optInt("totalNumberOfItems", -1).takeIf { it >= 0 })
+    }
+
+    suspend fun favorites(offset: Int = 0): List<Track> = favoritesPage(offset).items
 
     suspend fun favoriteAlbums(offset: Int = 0): List<Release> =
         JsonCodec.items(request("users/${userId()}/favorites/albums", mapOf("limit" to "100", "offset" to "$offset"))).map { JsonCodec.release(it, ReleaseType.ALBUM) }
@@ -131,7 +135,7 @@ class TidalClient(
     }
 
     suspend fun allTracks(release: Release): List<Track> = allPages { tracks(release, it) }
-    suspend fun allFavorites(): List<Track> = allPages(page = ::favorites)
+    suspend fun allFavorites(): List<Track> = collectPages { currentCoroutineContext().ensureActive(); favoritesPage(it) }
     suspend fun allFavoriteAlbums(): List<Release> = allPages(page = ::favoriteAlbums)
     suspend fun allPlaylists(): List<Release> = allPages(50, ::playlists)
 

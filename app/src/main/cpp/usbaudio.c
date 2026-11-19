@@ -134,7 +134,7 @@ static void *loop(void *arg) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_start(JNIEnv *env, jclass cls, jint fd, jint endpoint, jint max_packet, jint frame_bytes, jint rate,
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_start(JNIEnv *env, jclass cls, jint fd, jint endpoint, jint max_packet, jint frame_bytes, jint rate,
                                                               jint packets_per_second, jint feedback, jint feedback_bytes, jint high_speed, jint ring_bytes) {
     Engine *e = calloc(1, sizeof(Engine));
     e->fd = fd;
@@ -166,7 +166,7 @@ Java_io_github_yyan115_opentune_playback_usb_UsbNative_start(JNIEnv *env, jclass
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_write(JNIEnv *env, jclass cls, jlong handle, jobject buffer, jint length) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_write(JNIEnv *env, jclass cls, jlong handle, jobject buffer, jint length) {
     Engine *e = (Engine *) (intptr_t) handle;
     if (!e || !atomic_load(&e->running)) return -1;
     uint8_t *src = (*env)->GetDirectBufferAddress(env, buffer);
@@ -180,44 +180,44 @@ Java_io_github_yyan115_opentune_playback_usb_UsbNative_write(JNIEnv *env, jclass
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_framesPlayed(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_framesPlayed(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     return e ? atomic_load(&e->frames_played) : 0;
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_queuedBytes(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_queuedBytes(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     return e ? (jint) queued(e) : 0;
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_underruns(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_underruns(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     return e ? atomic_load(&e->underruns) : 0;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_running(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_running(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     return e && atomic_load(&e->running);
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_setPaused(JNIEnv *env, jclass cls, jlong handle, jboolean paused) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_setPaused(JNIEnv *env, jclass cls, jlong handle, jboolean paused) {
     Engine *e = (Engine *) (intptr_t) handle;
     if (e) atomic_store(&e->paused, paused ? 1 : 0);
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_flush(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_flush(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     if (!e) return;
     atomic_store(&e->read, atomic_load(&e->write));
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_stop(JNIEnv *env, jclass cls, jlong handle) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_stop(JNIEnv *env, jclass cls, jlong handle) {
     Engine *e = (Engine *) (intptr_t) handle;
     if (!e) return;
     atomic_store(&e->running, 0);
@@ -236,7 +236,7 @@ Java_io_github_yyan115_opentune_playback_usb_UsbNative_stop(JNIEnv *env, jclass 
 
 // 1 low, 2 full, 3 high, 5 super speed, as the kernel names them; -1 when it cannot say.
 JNIEXPORT jint JNICALL
-Java_io_github_yyan115_opentune_playback_usb_UsbNative_speed(JNIEnv *env, jclass cls, jint fd) {
+Java_io_github_lnrdo_mytidal_playback_usb_UsbNative_speed(JNIEnv *env, jclass cls, jint fd) {
     int speed = ioctl(fd, USBDEVFS_GET_SPEED, 0);
     return speed < 0 ? -1 : speed;
 }

@@ -1,5 +1,5 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <group android:translateX="19.2" android:translateY="19.2" android:scaleX="2.9" android:scaleY="2.9">
-        <path android:fillColor="#00000000" android:strokeColor="#F1EBDD" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M18.4 5.8A9 9 0 1 0 20.5 15 M9.3 5.5V10.2A2.7 2.7 0 0 0 14.7 10.2V5.5 M12 12.9V20"/>
-    </group>
+    <!-- An M with square ends, the first letter of the name, above a small spectrum of five bars. Everything sits inside the 66 dp that the launcher never crops. -->
+    <path android:fillColor="#00000000" android:strokeColor="#F1EBDD" android:strokeWidth="7" android:strokeLineCap="butt" android:strokeLineJoin="miter" android:strokeMiterLimit="4" android:pathData="M31.5 70V37.5L54 61L76.5 37.5V70"/>
+    <path android:fillColor="#D6B56A" android:pathData="M35 78h5v6h-5z M43.5 74h5v10h-5z M52 70h5v14h-5z M60.5 74h5v10h-5z M69 78h5v6h-5z"/>
 </vector>

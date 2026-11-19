@@ -8,8 +8,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-package=io.github.yyan115.opentune.debug
-activity="$package/io.github.yyan115.opentune.preview.ThemePreviewActivity"
+package=io.github.lnrdo.mytidal
+activity="$package/io.github.lnrdo.mytidal.preview.ThemePreviewActivity"
 output="$root/fastlane/metadata/android/en-US/images/phoneScreenshots"
 mkdir -p "$output"
 

@@ -4,6 +4,10 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- The app is now MyTidal under the application ID `io.github.lnrdo.mytidal`, and the Kotlin package is `io.github.lnrdo.mytidal`. Debug builds no longer have their own `.debug` ID. It installs as a new app next to older builds: export a backup from Settings first if you want your library, and restore it in the new app. It has a new icon.
+
 ### Added
 
 - D'JAI has its own sheet: the D'JAI button on the player now opens a popup with the on/off switch, the match and time of the next mix, where the rhythm model runs, the picture of the transition and the tempo question, so the player stays clean. The D'JAI settings page is regrouped into five sections (D'JAI, Mixing, Song choice, Analysis, Library and data), and the loop roll and the echo wash are removed.

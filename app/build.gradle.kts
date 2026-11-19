@@ -12,10 +12,10 @@ val copyNotices = tasks.register<Sync>("copyNotices") {
     into(noticeAssets.map { it.dir("licenses") })
 }
 android {
-    namespace = "io.github.yyan115.opentune"
+    namespace = "io.github.lnrdo.mytidal"
     compileSdk = 36
     defaultConfig {
-        applicationId = "io.github.yyan115.opentune"
+        applicationId = "io.github.lnrdo.mytidal"
         minSdk = 26
         targetSdk = 36
         versionCode = versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
@@ -40,7 +40,6 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            applicationIdSuffix = ".debug"
             // Adds the en-XA and ar-XB test languages, which mark every string that comes from a resource.
             isPseudoLocalesEnabled = true
         }

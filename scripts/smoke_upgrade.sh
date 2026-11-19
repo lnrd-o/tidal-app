@@ -8,7 +8,7 @@ set -euo pipefail
 
 new=${1:?usage: smoke_upgrade.sh NEW_APK [PREVIOUS_APK]}
 previous=${2:-}
-package=io.github.yyan115.opentune
+package=io.github.lnrdo.mytidal
 
 start() {
   adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 > /dev/null

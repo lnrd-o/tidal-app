@@ -65,7 +65,7 @@ Nine 1080 x 1920 layouts (`StoryLayout`): Centered, Aura, Noir, Mini, Backdrop, 
 ## Layout of the code
 
 ```
-app/src/main/kotlin/io/github/yyan115/opentune/
+app/src/main/kotlin/io/github/lnrdo/mytidal/
   data/       AiRecommendationEngine, LibraryStore, AppSettings, Download*, BackupManager, Scrobbler
   playback/   PlaybackService, AudioSpectrum (+ SignalPath, SpectrumProcessor), BrowseTree, AudioSources
   ui/         Root, GalleryHome, GalleryPlayer, SignalPathSheet, StoryShareSheet, TidalStoryRenderer,
@@ -99,7 +99,7 @@ Design notes are in `docs/DJAI.md`. The code is in `core/.../dj/` (pure Kotlin, 
 - `TidalStoryRenderer` has 12 layouts built from stacks inside a safe zone (Instagram covers the top and bottom of a story). Text measures and shrinks to fit. The last three (Liner, Sleeve, Poster) show the release date and the credits, which `MainViewModel.storyDetails` loads from TIDAL.
 - Instagram gets the card as the background only. Sending it as a sticker too put a second copy on top of it.
 - A long press on the cover shows the credits. `SpectrumScreen` is the full-screen analyzer, in portrait and landscape.
-- Debug builds have a preview page that renders every story layout: `adb shell am start -n <debug package>/io.github.yyan115.opentune.preview.ThemePreviewActivity --es page stories`, then read `files/story-preview` with `run-as`.
+- Debug builds have a preview page that renders every story layout: `adb shell am start -n <debug package>/io.github.lnrdo.mytidal.preview.ThemePreviewActivity --es page stories`, then read `files/story-preview` with `run-as`.
 - **Softer transitions:** the bass swap takes a quarter of a beat (not a few milliseconds), the equalizer is moved into and out of over about 20 ms at the edges of a mix (`Deck.eqBlend`), and the sweep filters resonate less.
 - **Cues, loop and roll:** `core/dj/Sections.kt` (accumulator and detector), the loop primitive and roll in `DjMixer` (`Deck.loop*`, `shadow`, `jump` with a 5 ms fade), `RollPlan` and `dropEntry` in `MixPlan`, cue-aware `MixScheduler`, cues stored in `LibraryStore` (schema 8), found at the swap in `DjEngine.swap`. D'JAI uses them automatically; see `docs/DJAI.md` section 9.
 - **Android Auto:** `BrowseTree` gives the root four tabs with icons (`ic_tab_*`), the library holds albums and downloads, and the content style hints and `SEARCH_SUPPORTED` go in the root extras (`BrowseTree.rootExtras`). `PlaybackService.updateButtons` sets the media button preferences (save, shuffle, repeat, D'JAI with `ic_car_spectrum`), in the overflow slot so that play and skip keep their places; they follow the song, shuffle, repeat and the settings. `androidx.car.app.TintableAttributionIcon` and the service icon are the spectrum mark. The car screen is templated: it cannot draw a live spectrum.

@@ -116,6 +116,7 @@ class DeckAnalyzer(
         var forcedStart = -1L
         val mono = FloatArray(48_000 * 2)
         while (scope.isActive) {
+            val turnStart = System.nanoTime()
             val ring = DjMix.streams[slot].ring
             if (ring == null) { delay(250); continue }
             val request = restartAt
@@ -154,7 +155,13 @@ class DeckAnalyzer(
             }
             // A deck that plays gives a few hundred milliseconds at a time. A hidden deck that decodes at full speed gives seconds: the analyzer then goes on
             // at once, so that it keeps up, and only lets other work run.
-            if (read == began) delay(250) else if (read - began >= ring.rate) kotlinx.coroutines.yield() else delay(150)
+            if (read == began) delay(250)
+            else if (slot >= DjMix.ANALYSIS_SLOT) {
+                // A hidden deck rests as long as it worked, so that it takes about half a core at most instead of a whole one: a song is read in twice the time,
+                // and the phone stays cool and quick. The rest is at least 20 ms and at most 400 ms.
+                val worked = (System.nanoTime() - turnStart) / 1_000_000
+                delay(worked.coerceIn(20L, 400L))
+            } else delay(150)
         }
     }
 

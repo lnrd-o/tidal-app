@@ -78,6 +78,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
         }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_speed)) }
+        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_genre_ai), settings.djGenreAi, { value -> vm.settings { it.copy(djGenreAi = value) } }, stringResource(R.string.djcfg_genre_ai_text)) }
         item { NeuralPanel(settings) { f -> vm.settings(f) } }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_fast), settings.djFastAnalysis, { value -> vm.settings { it.copy(djFastAnalysis = value) } }, stringResource(R.string.djcfg_fast_text)) }
         item {

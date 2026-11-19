@@ -44,6 +44,8 @@ class DjOptions(
     val beatFirst: Boolean = true,
     /** The rhythm model reads the songs ahead whole. */
     val neural: Boolean = false,
+    /** The genre model reads the style of the songs ahead. */
+    val genreAi: Boolean = false,
 )
 
 /** The tempo that TIDAL gave for the song of a media item, in its data, or null. */
@@ -422,7 +424,7 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
                 if (key != null) remember(key, Profile(TrackSummary(result.beat, result.key?.camelot, result.energyIntro ?: result.energyRecent, result.origin, swing = result.swing), result.rate))
                 // With the rhythm model on, a song ahead is also read whole, so that the model can find its beats and bars.
                 val item = scout?.currentMediaItem
-                if (key != null && item != null && options.neural && io.github.lnrdo.mytidal.playback.dj.neural.RhythmStore.songs.value[key] == null)
+                if (key != null && item != null && ((options.neural && io.github.lnrdo.mytidal.playback.dj.neural.RhythmStore.songs.value[key] == null) || (options.genreAi && profiles[key]?.summary?.genre == null)))
                     DjMix.preprocess.tryEmit(PreprocessRequest(key, host.titleOf(item) ?: key, item, s.duration.coerceAtLeast(0L)))
                 endScout()
             }
@@ -593,6 +595,12 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
     /** The family of style of the song [id], for a summary built from what is being heard: what a catalogue said, what was kept, or a guess. */
     private fun genreOf(id: String?, heard: TrackSummary?): io.github.lnrdo.mytidal.core.dj.GenreFamily? =
         id?.let { online[it]?.genre ?: profiles[it]?.summary?.genre } ?: io.github.lnrdo.mytidal.core.dj.GenreFamily.guess(heard?.beat?.bpm, heard?.swing, heard?.energy)
+
+    /** The genre model named the style of a song: it replaces a guess, but not the word of a catalogue. */
+    fun learnGenreFromAi(id: String, genre: io.github.lnrdo.mytidal.core.dj.GenreFamily) {
+        if (online[id]?.genre != null) return
+        learnGenre(id, genre)
+    }
 
     /** A catalogue named the style of a song that is known already: it replaces a guess. */
     private fun learnGenre(id: String, genre: io.github.lnrdo.mytidal.core.dj.GenreFamily) {

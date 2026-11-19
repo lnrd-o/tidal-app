@@ -239,6 +239,7 @@ class PlaybackService : MediaLibraryService() {
     private val preprocessor by lazy {
         Preprocessor(scope, { slot -> buildPlayer(slot, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf,
             workers = { app.settings.state.value.djWorkers }, context = this,
+            genreAi = { app.settings.state.value.djGenreAi }, learnGenre = { id, genre -> engine.learnGenreFromAi(id, genre) },
             neural = { app.settings.state.value.let { s -> if (s.djNeural) io.github.lnrdo.mytidal.playback.dj.neural.Accelerator.entries.firstOrNull { it.name == s.djAccelerator } ?: io.github.lnrdo.mytidal.playback.dj.neural.Accelerator.AUTO else null } })
     }
 
@@ -301,7 +302,7 @@ class PlaybackService : MediaLibraryService() {
         scope.launch { app.settings.state.collect { io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.lnrdo.mytidal.playback.dj.DjOptions(roll = false, cues = it.djCues, echo = false, filters = it.djFilters, groove = it.djGroove,
-                    arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
+                    arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural, genreAi = it.djGenreAi)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { DjMix.preprocess.collect { preprocessor.add(it) } }
         scope.launch {
             DjMix.forgetRequests.collect {

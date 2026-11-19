@@ -41,6 +41,10 @@ class Preprocessor(
     private val context: android.content.Context? = null,
     /** Where the rhythm model runs, or null when it is off. */
     private val neural: () -> io.github.lnrdo.mytidal.playback.dj.neural.Accelerator? = { null },
+    /** Whether the genre model reads the style of each song. */
+    private val genreAi: () -> Boolean = { false },
+    /** Keeps the style that the genre model found for a song. */
+    private val learnGenre: (String, io.github.lnrdo.mytidal.core.dj.GenreFamily) -> Unit = { _, _ -> },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
@@ -67,7 +71,8 @@ class Preprocessor(
         val failed = PreprocessResult(request.title, false, null, null, emptyList())
         val analyzer = DeckAnalyzer(slot, scope, { 0L }, estimateEvery = ESTIMATE_SECONDS)
         val accelerator = neural()
-        analyzer.collectAudio = accelerator != null && context != null
+        val wantGenre = genreAi()
+        analyzer.collectAudio = (accelerator != null || wantGenre) && context != null
         analyzer.hintBpm = catalogBpm(request.item)
         DjMix.streams[slot].clear()
         val player = runCatching { build(slot) }.getOrNull() ?: return failed
@@ -97,7 +102,15 @@ class Preprocessor(
             val cues = analyzer.sectionInput(duration)?.let { input -> detectCues(input, runCatching { lyrics(request.id) }.getOrNull()) }.orEmpty()
             var summary = TrackSummary(beat, key?.camelot, analyzer.energyIntro ?: analyzer.energyRecent, analyzer.origin, swing = analyzer.swing)
             // The rhythm model reads the whole song: its tempo is kept, and it settles the octave of the tempo that the listening found.
-            if (accelerator != null && context != null) analyzer.collected()?.let { audio ->
+            val heard = if (context != null && (accelerator != null || wantGenre)) analyzer.collected() else null
+            // The style of the song: the genre model listens to the same audio, and the style family is kept with the song.
+            if (heard != null && wantGenre && context != null) {
+                val verdict = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching { io.github.lnrdo.mytidal.playback.dj.neural.GenreModel.analyze(context, heard, io.github.lnrdo.mytidal.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
+                }
+                verdict?.family?.let { learnGenre(request.id, it) }
+            }
+            if (accelerator != null && context != null) heard?.let { audio ->
                 val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                     runCatching { io.github.lnrdo.mytidal.playback.dj.neural.BeatModel.analyze(context, accelerator, audio, io.github.lnrdo.mytidal.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
                 }

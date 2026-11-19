@@ -782,6 +782,8 @@
     <string name="phase_peak">Peak</string>
     <string name="phase_outro">Outro</string>
     <string name="phase_intro">Intro</string>
+    <string name="djcfg_genre_ai">Identify the genre with AI</string>
+    <string name="djcfg_genre_ai_text">A small neural network (YAMNet, from Google) listens to each song D\'JAI prepares and names its style: house and techno, hip-hop, rock, latin, and so on. D\'JAI uses it to keep a set in one style and to show the style in the D\'JAI sheet. It runs on the phone, and a song takes about a second.</string>
     <string name="countdown_mix_in">Mix in</string>
     <string name="countdown_mixing">Mixing</string>
     <string name="djcfg_fast">Read songs at full speed</string>

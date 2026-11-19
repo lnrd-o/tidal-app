@@ -14,9 +14,7 @@ import kotlin.math.sin
  * takes 13 MB instead of 50 MB of floats at 44.1 kHz. The network needs nothing finer than 16 bits.
  */
 class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAMPLE_RATE) {
-    private val ratio = to.toDouble() / from
-    private val cutoff = min(1.0, ratio) * 0.95
-    private val reach = 24 / cutoff
+    private val kernel = SincKernel(from, to)
     private var input = FloatArray(1 shl 16)
     private var inputStart = 0L // the absolute index of input[0]
     private var inputCount = 0
@@ -44,17 +42,17 @@ class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAM
 
     private fun produce(final: Boolean) {
         val available = inputStart + inputCount
+        val half = kernel.half
         while (true) {
-            val centre = nextOut / ratio
-            if (!final && centre + reach >= available) break
+            val centre = kernel.centreOf(nextOut)
+            if (!final && centre + half >= available) break
             if (final && centre >= available) break
-            val first = max(inputStart, (centre - reach).toLong()); val last = min(available - 1, (centre + reach).toLong())
+            val row = kernel.weights[kernel.phaseOf(nextOut)]
+            val first = max(inputStart, centre - half); val last = min(available - 1, centre + half)
             var sum = 0.0; var weights = 0.0
             var i = first
             while (i <= last) {
-                val x = (i - centre) * cutoff
-                val sinc = if (abs(x) < 1e-9) 1.0 else sin(PI * x) / (PI * x)
-                val h = sinc * (0.5 + 0.5 * cos(PI * (i - centre) / reach))
+                val h = row[(i - centre + half).toInt()]
                 sum += input[(i - inputStart).toInt()] * h; weights += h
                 i++
             }
@@ -64,7 +62,7 @@ class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAM
             nextOut++
         }
         // What no later output can reach is dropped.
-        val keepFrom = max(inputStart, (nextOut / ratio - reach).toLong() - 1)
+        val keepFrom = max(inputStart, kernel.centreOf(nextOut) - half - 1)
         val drop = (keepFrom - inputStart).toInt()
         if (drop > 0 && drop <= inputCount) {
             System.arraycopy(input, drop, input, 0, inputCount - drop)

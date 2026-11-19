@@ -86,28 +86,59 @@ class LogMel(private val filterbank: FloatArray) {
     }
 }
 
-/** Brings mono audio to another rate with a windowed-sinc filter: slow enough to be clean, fast enough for a whole song in a second or two. */
-object Resampler {
-    private const val HALF_TAPS = 24
+/**
+ * The filter of a conversion between two rates: a windowed sinc whose weights are worked out once for each of the positions that an output sample can take
+ * between two input samples. For 22,050 to 16,000 Hz that is 320 positions, so a whole song is converted with multiplications and additions only, and no sine
+ * is computed for each sample.
+ */
+class SincKernel(val from: Int, val to: Int) {
+    private val g = gcd(from, to)
+    /** The number of positions between two input samples, and the taps on each side of an output sample. */
+    val phases = to / g
+    private val cutoff = min(1.0, to.toDouble() / from) * 0.95
+    private val reach = HALF_TAPS / cutoff
+    val half = kotlin.math.ceil(reach).toInt()
+    /** [phases] rows of 2 * [half] + 1 weights, for the input samples from the one at or before the centre minus [half] to plus [half]. */
+    val weights = Array(phases) { DoubleArray(2 * half + 1) }
 
+    init {
+        // The centre of an output sample is at floor(o * from / to) + frac, with frac = ((o * from) mod to) / to; the positions are the multiples of g mod to.
+        for (k in 0 until phases) {
+            // Phase k is the fraction (k * g) / to between two input samples.
+            val frac = (k.toLong() * g).toDouble() / to
+            for (t in -half..half) {
+                val d = t - frac
+                val x = d * cutoff
+                val sinc = if (abs(x) < 1e-9) 1.0 else sin(PI * x) / (PI * x)
+                weights[k][t + half] = if (abs(d) > reach) 0.0 else sinc * (0.5 + 0.5 * cos(PI * d / reach))
+            }
+        }
+    }
+
+    /** The row of weights for output sample [o], and the input sample at the centre of its filter. */
+    fun phaseOf(o: Long): Int = ((o * from) % to / g).toInt()
+    fun centreOf(o: Long): Long = o * from / to
+
+    private companion object {
+        const val HALF_TAPS = 24
+        fun gcd(a: Int, b: Int): Int { var x = a; var y = b; while (y != 0) { val t = x % y; x = y; y = t }; return x }
+    }
+}
+
+/** Brings mono audio to another rate with the windowed-sinc filter of [SincKernel]: clean, and a whole song in a fraction of a second. */
+object Resampler {
     fun resample(input: FloatArray, from: Int, to: Int): FloatArray {
         if (from == to) return input.copyOf()
-        val ratio = to.toDouble() / from
-        val cutoff = min(1.0, ratio) * 0.95
-        val length = floor(input.size * ratio).toInt()
+        val kernel = SincKernel(from, to)
+        val length = floor(input.size.toDouble() * to / from).toInt()
         val out = FloatArray(length)
-        val reach = HALF_TAPS / cutoff
+        val half = kernel.half
         for (o in 0 until length) {
-            val centre = o / ratio
-            val first = max(0, (centre - reach).toInt()); val last = min(input.size - 1, (centre + reach).toInt())
+            val centre = kernel.centreOf(o.toLong()).toInt()
+            val row = kernel.weights[kernel.phaseOf(o.toLong())]
+            val first = max(0, centre - half); val last = min(input.size - 1, centre + half)
             var sum = 0.0; var weights = 0.0
-            for (i in first..last) {
-                val x = (i - centre) * cutoff
-                val sinc = if (abs(x) < 1e-9) 1.0 else sin(PI * x) / (PI * x)
-                val w = 0.5 + 0.5 * cos(PI * (i - centre) / reach) // a Hann window over the reach
-                val h = sinc * w
-                sum += input[i] * h; weights += h
-            }
+            for (i in first..last) { val h = row[i - centre + half]; sum += input[i] * h; weights += h }
             out[o] = if (weights != 0.0) (sum / weights).toFloat() else 0f
         }
         return out

@@ -1,5 +1,7 @@
 package io.github.lnrdo.mytidal.playback.dj
 
+import kotlinx.coroutines.asCoroutineDispatcher
+
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -90,6 +92,17 @@ object DjMix {
     // The decks keep 50 s for the mix; the hidden decks only feed an analyzer that keeps up, and keep 20 s: 19 MB less each at 48 kHz.
     val streams = Array(SCOUT_SLOT + 1) { if (it < ANALYSIS_SLOT) Stream() else Stream(ANALYSIS_RING_SECONDS) }
     const val ANALYSIS_RING_SECONDS = 20
+
+    /**
+     * The threads for the analysis of songs that are not playing: they run at background priority, so that they give way to the audio, the screen and the
+     * decks that are heard, and there are at most [ANALYSIS_THREADS] of them, however many songs are being read.
+     */
+    const val ANALYSIS_THREADS = 3
+    val analysisDispatcher: kotlinx.coroutines.CoroutineDispatcher by lazy {
+        java.util.concurrent.Executors.newFixedThreadPool(ANALYSIS_THREADS) { r ->
+            Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "djai-analysis").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+    }
 
     /** The beat grid of a deck: its first beat and the length of a beat, in frames of the ring of [slot]. */
     class LiveGrid(val slot: Int, val anchor: Double, val period: Double, val rate: Int)

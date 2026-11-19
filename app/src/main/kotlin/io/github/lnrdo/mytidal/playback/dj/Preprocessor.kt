@@ -45,6 +45,8 @@ class Preprocessor(
     private val genreAi: () -> Boolean = { false },
     /** Keeps the style that the genre model found for a song. */
     private val learnGenre: (String, io.github.lnrdo.mytidal.core.dj.MusicGenre) -> Unit = { _, _ -> },
+    /** Whether the phone is cool enough, and not saving power, for work that nobody asked to see: when it is not, the queue waits. */
+    private val comfortable: () -> Boolean = { true },
 ) {
     private val queue = Channel<PreprocessRequest>(Channel.UNLIMITED)
 
@@ -56,7 +58,7 @@ class Preprocessor(
                 val request = queue.receive()
                 var result: PreprocessResult? = null
                 while (result == null) {
-                    while (!enabled()) delay(1_000)
+                    while (!enabled() || !comfortable()) delay(2_000)
                     result = run(request, DjMix.ANALYSIS_SLOT + w)
                 }
                 DjMix.preprocessResults.tryEmit(result)
@@ -105,7 +107,7 @@ class Preprocessor(
             val heard = if (context != null && (accelerator != null || wantGenre)) analyzer.collected() else null
             // The style of the song: the genre model listens to the same audio, and the style family is kept with the song.
             if (heard != null && wantGenre && context != null) {
-                val verdict = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val verdict = kotlinx.coroutines.withContext(DjMix.analysisDispatcher) {
                     runCatching { io.github.lnrdo.mytidal.playback.dj.neural.GenreModel.analyze(context, heard, io.github.lnrdo.mytidal.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
                 }
                 verdict?.embedding?.let { io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.record(request.id, it) }
@@ -113,7 +115,7 @@ class Preprocessor(
                 (io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.predict(request.id) ?: verdict?.genre)?.let { learnGenre(request.id, it) }
             }
             if (accelerator != null && context != null) heard?.let { audio ->
-                val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val found = kotlinx.coroutines.withContext(DjMix.analysisDispatcher) {
                     runCatching { io.github.lnrdo.mytidal.playback.dj.neural.BeatModel.analyze(context, accelerator, audio, io.github.lnrdo.mytidal.core.dj.neural.LogMel.SAMPLE_RATE) }.getOrNull()
                 }
                 if (found?.bpm != null) {

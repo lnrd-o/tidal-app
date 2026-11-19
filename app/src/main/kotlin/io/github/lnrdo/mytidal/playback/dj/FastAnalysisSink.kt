@@ -27,6 +27,7 @@ class FastAnalysisSink(private val slot: Int) : AudioSink {
     private var ended = false
     private var startUs = C.TIME_UNSET
     private var frames = 0L
+    private var startedAt = 0L
     private var parameters = PlaybackParameters.DEFAULT
     private var attributes = AudioAttributes.DEFAULT
     private var skipSilence = false
@@ -65,6 +66,13 @@ class FastAnalysisSink(private val slot: Int) : AudioSink {
         // Before the player starts, the sink takes a second of audio, as a real one fills its buffer: the player waits for that to be ready, and only then
         // starts. Taking nothing before the start would leave the two waiting for each other.
         if (!playing && frames >= sampleRate) return false
+        // Not faster than [MAX_SPEED] times the music: a song is then read in a steady stretch of time instead of a burst that takes every core, which is what
+        // makes a phone hot and the interface slow. The player asks again a few milliseconds later.
+        if (startUs != C.TIME_UNSET) {
+            val audioSeconds = frames.toDouble() / sampleRate
+            val wallSeconds = (System.nanoTime() - startedAt) / 1e9
+            if (audioSeconds > wallSeconds * MAX_SPEED + 2.0) return false
+        } else startedAt = System.nanoTime()
         val stream = DjMix.streams[slot]
         val ring = stream.ring
         if (ring != null && ring.written - stream.readMark > ring.rate.toLong() * MAX_UNREAD_SECONDS) return false
@@ -105,7 +113,7 @@ class FastAnalysisSink(private val slot: Int) : AudioSink {
     override fun setVolume(volume: Float) {}
 
     override fun flush() {
-        startUs = C.TIME_UNSET; frames = 0L; ended = false
+        startUs = C.TIME_UNSET; frames = 0L; ended = false; startedAt = 0L
         writer.flush()
     }
 
@@ -114,5 +122,7 @@ class FastAnalysisSink(private val slot: Int) : AudioSink {
     private companion object {
         /** The most audio, in seconds, that the analyzer may have left to read before the sink waits for it. The ring holds [DjMix.RING_SECONDS]. */
         const val MAX_UNREAD_SECONDS = 10
+        /** The fastest that a song is read, in times its length. A song of four minutes then takes at least 20 s. */
+        const val MAX_SPEED = 12.0
     }
 }

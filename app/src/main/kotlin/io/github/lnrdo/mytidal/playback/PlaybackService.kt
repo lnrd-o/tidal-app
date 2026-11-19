@@ -158,6 +158,7 @@ class PlaybackService : MediaLibraryService() {
         override fun adopt(next: ExoPlayer) = this@PlaybackService.adopt(next)
         override fun gainFor(item: MediaItem?): Float = this@PlaybackService.gainFor(item)
         override fun titleOf(item: MediaItem?): String? = item?.let(::trackOf)?.title
+        override val comfortable: Boolean get() = this@PlaybackService.comfortable()
         override val sleepAtTrackEnd: Boolean get() = this@PlaybackService.sleepAtTrackEnd
         override fun albumQueue(): Boolean = this@PlaybackService.isAlbumQueue()
         override suspend fun onlineHint(item: MediaItem): io.github.lnrdo.mytidal.playback.dj.OnlineHint? {
@@ -235,10 +236,17 @@ class PlaybackService : MediaLibraryService() {
         }
         return albumResult
     }
+    /** False while the phone is saving power or has warmed up to the "moderate" level of its thermal state or more. */
+    private fun comfortable(): Boolean {
+        val power = getSystemService(android.os.PowerManager::class.java) ?: return true
+        if (power.isPowerSaveMode) return false
+        return android.os.Build.VERSION.SDK_INT < 29 || power.currentThermalStatus < android.os.PowerManager.THERMAL_STATUS_MODERATE
+    }
+
     private val engine by lazy { DjEngine(djHost, scope) }
     private val preprocessor by lazy {
         Preprocessor(scope, { slot -> buildPlayer(slot, false, analysis = true) }, engine::learn, { id, cues -> djHost.saveCues(id, cues); engine.noteCues(id) }, { app.settings.state.value.djai }, djHost::lyricsOf,
-            workers = { app.settings.state.value.djWorkers }, context = this,
+            workers = { app.settings.state.value.djWorkers }, context = this, comfortable = ::comfortable,
             genreAi = { app.settings.state.value.djGenreAi }, learnGenre = { id, genre -> engine.learnGenreFromAi(id, genre) },
             neural = { app.settings.state.value.let { s -> if (s.djNeural) io.github.lnrdo.mytidal.playback.dj.neural.Accelerator.entries.firstOrNull { it.name == s.djAccelerator } ?: io.github.lnrdo.mytidal.playback.dj.neural.Accelerator.AUTO else null } })
     }

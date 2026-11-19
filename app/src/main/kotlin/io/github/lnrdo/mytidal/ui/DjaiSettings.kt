@@ -86,6 +86,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
                 vm.settings { it.copy(djWorkers = value) }
             }
         }
+        item { SwitchRow(OpenTuneIcons.Info, stringResource(R.string.djcfg_load_overlay), settings.djLoadOverlay, { value -> vm.settings { it.copy(djLoadOverlay = value) } }, stringResource(R.string.djcfg_load_overlay_text)) }
         item { HardwarePanel() }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_songs)) }

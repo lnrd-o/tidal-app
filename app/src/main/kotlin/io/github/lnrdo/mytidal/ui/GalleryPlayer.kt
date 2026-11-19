@@ -246,6 +246,8 @@ fun NowPlayingScreen(
                                         HeartBurst(heart)
                                         // The time to the next transition, on the cover of the song that plays.
                                         if (page == currentIndex) Box(Modifier.size(coverSize), contentAlignment = Alignment.BottomEnd) { TransitionCountdown() }
+                                        // The load of the app, for debugging.
+                                        if (page == currentIndex && state.settings.djLoadOverlay) Box(Modifier.size(coverSize), contentAlignment = Alignment.TopStart) { LoadOverlay() }
                                     }
                                 }
                             }

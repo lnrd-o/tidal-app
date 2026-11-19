@@ -95,7 +95,8 @@ class DeckAnalyzer(
 
     fun start() {
         if (job != null) return
-        job = scope.launch(Dispatchers.Default) { loop() }
+        // The decks that are heard are analysed at normal priority, because the mix depends on them. A hidden deck is analysed in the background.
+        job = scope.launch(if (slot >= DjMix.ANALYSIS_SLOT) DjMix.analysisDispatcher else Dispatchers.Default) { loop() }
     }
 
     fun stop() { job?.cancel(); job = null; clearResults() }

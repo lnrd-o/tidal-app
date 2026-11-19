@@ -71,11 +71,12 @@ object BeatModel {
     }
 
     private fun options(on: Accelerator): OrtSession.SessionOptions = OrtSession.SessionOptions().apply {
-        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        // The graph optimisations that fuse nodes (into layer norms and gelus) make graphs that the Qualcomm GPU back-end aborts on: it gets the basic ones.
+        setOptimizationLevel(if (on == Accelerator.GPU) OrtSession.SessionOptions.OptLevel.BASIC_OPT else OrtSession.SessionOptions.OptLevel.ALL_OPT)
         when (on) {
             // On the NPU and the GPU the whole network must run there: a back-end that fails to start would otherwise hand every layer to the CPU in silence,
             // and the screen would claim an accelerator that does nothing.
-            Accelerator.NPU, Accelerator.GPU -> addConfigEntry("session.disable_cpu_ep_fallback", "1")
+            Accelerator.NPU -> addConfigEntry("session.disable_cpu_ep_fallback", "1")
             else -> {}
         }
         when (on) {

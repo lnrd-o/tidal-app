@@ -808,6 +808,12 @@
     <string name="genre_pick_title">What genre is this song?</string>
     <string name="genre_pick_text">Your answer is kept for the song and teaches the genre model, which learns the genres of the rest of your library from it. A song that you correct is never changed by the model.</string>
     <string name="genre_pick_forget">Let the model decide</string>
+    <string name="djcfg_load_overlay">Show the processor load on the cover</string>
+    <string name="djcfg_load_overlay_text">For debugging: at the top of the cover, what the app takes of the CPU (in cores, with the threads that take most), how busy the rhythm model keeps the NPU or the GPU, and how many songs are being read.</string>
+    <string name="load_cpu">CPU %1$s%% = %2$s of %3$d cores</string>
+    <string name="load_npu">NPU: busy %1$s%% of the last minute</string>
+    <string name="load_gpu">GPU: model %1$s%% · device %2$s</string>
+    <string name="load_reading">READING %1$d SONGS · MODEL ON %2$s</string>
     <string name="countdown_mix_in">Mix in</string>
     <string name="countdown_mixing">Mixing</string>
     <string name="djcfg_fast">Read songs at full speed</string>

@@ -26,7 +26,7 @@ class GenreModelTest {
         val began = System.nanoTime()
         val verdict = GenreModel.analyze(context, song, 22_050)
         val ms = (System.nanoTime() - began) / 1e6
-        Log.i("OpenTuneGenreModel", "test: ${song.size / 22_050} s of audio in %.0f ms, family ${verdict?.family}".format(ms))
+        Log.i("OpenTuneGenreModel", "test: ${song.size / 22_050} s of audio in %.0f ms, genre ${verdict?.genre}".format(ms))
         assertNotNull(verdict)
         assertTrue("a song is read in under 5 s: $ms ms", ms < 5_000)
     }

@@ -64,6 +64,8 @@ interface DjHost {
     fun adopt(next: ExoPlayer)
     fun gainFor(item: MediaItem?): Float
     fun titleOf(item: MediaItem?): String?
+    /** Whether the phone is cool enough, and not saving power, for the listening ahead and the preparing of songs. */
+    val comfortable: Boolean get() = true
     val sleepAtTrackEnd: Boolean
     /** True while the queue is one album, which plays as released. */
     fun albumQueue(): Boolean
@@ -406,6 +408,8 @@ class DjEngine(private val host: DjHost, private val scope: CoroutineScope) {
 
     /** Listens to the first seconds of the next songs on the idle deck, one at a time, and remembers their tempo, key and energy. */
     private fun scouting(a: ExoPlayer, id: String) {
+        // A phone that is hot or saving power does not listen ahead: the songs are read when it is comfortable again, or when their turn comes.
+        if (scout == null && !host.comfortable) return
         // The tempo and key of the songs ahead are asked from the catalogue at once: they give a first score before any song is listened to.
         for (i in upcoming(a)) {
             val item = a.getMediaItemAt(i)

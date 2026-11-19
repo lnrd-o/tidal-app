@@ -72,7 +72,12 @@ class DeckAnalyzer(
     @Volatile private var collector: io.github.yyan115.opentune.core.dj.neural.StreamingResampler? = null
 
     /** The song as it was heard, at 22.05 kHz, or null when nothing was kept. */
-    fun collected(): FloatArray? = collector?.let { it.finish(); it.result() }
+    fun collected(): FloatArray? {
+        val c = collector ?: return null
+        collector = null
+        c.finish()
+        return c.result()
+    }
 
     /** The tempo that a catalogue gives for the song, which settles the octave of the tempo that is heard. Set by the engine for each song. */
     @Volatile var hintBpm: Double? = null

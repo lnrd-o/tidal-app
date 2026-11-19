@@ -113,6 +113,6 @@ class FastAnalysisSink(private val slot: Int) : AudioSink {
 
     private companion object {
         /** The most audio, in seconds, that the analyzer may have left to read before the sink waits for it. The ring holds [DjMix.RING_SECONDS]. */
-        const val MAX_UNREAD_SECONDS = 30
+        const val MAX_UNREAD_SECONDS = 10
     }
 }

@@ -20,6 +20,7 @@
         </intent>
     </queries>
     <application
+        android:largeHeap="true"
         android:name=".OpenTuneApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

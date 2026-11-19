@@ -24,15 +24,23 @@ class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAM
     private var out = ShortArray(1 shl 20)
     var outCount = 0
         private set
+    private var finished = false
 
+    /**
+     * Adds [n] samples. The analyzer feeds it from its own thread while another thread may end it and read the result, so every call holds the lock;
+     * samples that arrive after the end are dropped.
+     */
+    @Synchronized
     fun feed(samples: FloatArray, n: Int) {
+        if (finished) return
         if (inputCount + n > input.size) input = input.copyOf(max(input.size * 2, inputCount + n))
         System.arraycopy(samples, 0, input, inputCount, n); inputCount += n
         produce(final = false)
     }
 
-    /** Ends the song: the last samples are made with what there is. */
-    fun finish() { produce(final = true) }
+    /** Ends the song: the last samples are made with what there is. Later calls do nothing. */
+    @Synchronized
+    fun finish() { if (!finished) { finished = true; produce(final = true) } }
 
     private fun produce(final: Boolean) {
         val available = inputStart + inputCount
@@ -65,6 +73,7 @@ class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAM
     }
 
     /** The audio at the new rate, as floats. */
+    @Synchronized
     fun result(): FloatArray = FloatArray(outCount) { out[it] / 32768f }
 }
 

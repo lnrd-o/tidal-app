@@ -24,6 +24,22 @@ class RhythmLearningTest {
         assertTrue("streamed and at once agree to 16 bits: $worst", worst < 1e-3)
     }
 
+    @Test fun theResamplerCanBeEndedWhileAnotherThreadFeedsIt() {
+        // The analyzer feeds while the preprocessor ends the song and reads it: this used to corrupt the read position and throw.
+        repeat(20) {
+            val stream = StreamingResampler(48_000)
+            val chunk = FloatArray(9_600) { i -> kotlin.math.sin(i * 0.05).toFloat() }
+            val feeder = Thread { repeat(400) { stream.feed(chunk, chunk.size) } }
+            feeder.start()
+            Thread.sleep(2)
+            stream.finish()
+            val result = stream.result()
+            feeder.join()
+            assertTrue(result.isNotEmpty())
+            assertEquals("nothing is added after the end", result.size, stream.result().size)
+        }
+    }
+
     @Test fun theCalibrationTrustsTheNetworkUntilTaughtOtherwise() {
         val c = RhythmCalibration()
         assertEquals(124.0, c.predict(124.0), 1e-9)

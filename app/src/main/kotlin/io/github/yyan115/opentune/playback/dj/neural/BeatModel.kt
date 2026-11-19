@@ -189,11 +189,15 @@ object BeatModel {
         return BeatDecoder.aggregate(beats, starts, frames, window) to BeatDecoder.aggregate(downs, starts, frames, window)
     }
 
-    /** Finds the beats, bars and tempo of a whole song from its mono audio at [rate]. Returns null when the model cannot run. */
+    /**
+     * Finds the beats, bars and tempo of a whole song from its mono audio at [rate]. Returns null when the model cannot run. Songs go through one at a time:
+     * a song's spectrogram and audio take tens of megabytes, and the accelerator runs one window after another anyway.
+     */
+    @Synchronized
     fun analyze(context: Context, wanted: Accelerator, mono: FloatArray, rate: Int): NeuralBeats? {
         load(context)
         val began = SystemClock.elapsedRealtime()
-        val audio = Resampler.resample(mono, rate, LogMel.SAMPLE_RATE)
+        val audio = if (rate == LogMel.SAMPLE_RATE) mono else Resampler.resample(mono, rate, LogMel.SAMPLE_RATE)
         val (spect, frames) = logMel!!.compute(audio)
         val (beat, down) = logits(context, wanted, spect, frames) ?: return null
         val result = BeatDecoder.decode(beat, down)

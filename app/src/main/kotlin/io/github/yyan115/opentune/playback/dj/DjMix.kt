@@ -58,7 +58,7 @@ data class DjUi(
  */
 object DjMix {
     /** The audio that one deck decoded. The ring is replaced when the sample rate of the track changes. */
-    class Stream : RingSource {
+    class Stream(private val seconds: Int = RING_SECONDS) : RingSource {
         @Volatile var ring: PcmRing? = null
         override fun ring(): PcmRing? = ring
         /** The ring frame up to which the analyzer of this slot has read. The sink of a hidden player waits when it is far behind. */
@@ -68,7 +68,7 @@ object DjMix {
         fun ensure(rate: Int): PcmRing {
             val existing = ring
             if (existing != null && existing.rate == rate) return existing
-            return PcmRing(rate * RING_SECONDS, rate).also { ring = it }
+            return PcmRing(rate * seconds, rate).also { ring = it }
         }
 
         fun clear() { ring = null; readMark = 0L }
@@ -81,7 +81,9 @@ object DjMix {
     const val ANALYSIS_SLOT = 2
     const val MAX_WORKERS = 3
     const val SCOUT_SLOT = ANALYSIS_SLOT + MAX_WORKERS
-    val streams = Array(SCOUT_SLOT + 1) { Stream() }
+    // The decks keep 50 s for the mix; the hidden decks only feed an analyzer that keeps up, and keep 20 s: 19 MB less each at 48 kHz.
+    val streams = Array(SCOUT_SLOT + 1) { if (it < ANALYSIS_SLOT) Stream() else Stream(ANALYSIS_RING_SECONDS) }
+    const val ANALYSIS_RING_SECONDS = 20
 
     /** The beat grid of a deck: its first beat and the length of a beat, in frames of the ring of [slot]. */
     class LiveGrid(val slot: Int, val anchor: Double, val period: Double, val rate: Int)

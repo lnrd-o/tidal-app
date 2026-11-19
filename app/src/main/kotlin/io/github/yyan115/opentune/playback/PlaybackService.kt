@@ -300,7 +300,7 @@ class PlaybackService : MediaLibraryService() {
         io.github.yyan115.opentune.playback.dj.neural.RhythmStore.init(this)
         scope.launch { app.settings.state.collect { io.github.yyan115.opentune.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
-                io.github.yyan115.opentune.playback.dj.DjOptions(roll = it.djRoll, cues = it.djCues, echo = it.djEcho, filters = it.djFilters, groove = it.djGroove,
+                io.github.yyan115.opentune.playback.dj.DjOptions(roll = false, cues = it.djCues, echo = false, filters = it.djFilters, groove = it.djGroove,
                     arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }
         scope.launch { DjMix.preprocess.collect { preprocessor.add(it) } }
         scope.launch {

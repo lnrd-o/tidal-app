@@ -169,6 +169,7 @@ fun NowPlayingScreen(
     var path by remember { mutableStateOf(false) }
     var storyShare by remember { mutableStateOf(false) }
     var spectrum by remember { mutableStateOf(false) }
+    var djSheet by remember { mutableStateOf(false) }
     // The text and the controls always stay on screen.
     val chrome = true
     val context = LocalContext.current
@@ -292,11 +293,8 @@ fun NowPlayingScreen(
                                 TextTool(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label), timerOn) { timer = true }
                                 TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title), false) { onQueue() }
                                 val marker = rhythmMarker(state.settings.djai && state.settings.djNeural)
-                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { vm.settings { it.copy(djai = !it.djai) }; poke() }
+                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { djSheet = true; poke() }
                             }
-                            if (state.settings.djai) DjStrip(Modifier.padding(bottom = 8.dp))
-                            // The rhythm model asks whether it heard this song's tempo right; the answer trains it.
-                            if (state.settings.djai && state.settings.djNeural) RhythmConfirmCard(track.id, Modifier.padding(bottom = 8.dp))
                             UpNext(state, vm, onQueue)
                         }
                     }
@@ -351,6 +349,7 @@ fun NowPlayingScreen(
 
     if (path) SignalPathSheet(state.playback.quality, track, playing, accent = accent, onSpectrum = { path = false; spectrum = true },
         elzar = state.settings.takeIf { it.elzar }?.let { Triple(it.elzarGlue, it.elzarTape, it.elzarVinyl) }) { path = false }
+    if (djSheet) DjaiSheet(state.settings.djai, state.settings.djNeural, track.id, { value -> vm.settings { it.copy(djai = value) } }) { djSheet = false }
     if (spectrum) SpectrumScreen(state, accent, onStyle = { next -> vm.settings { it.copy(spectrumStyle = next.id) } }) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
     if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }

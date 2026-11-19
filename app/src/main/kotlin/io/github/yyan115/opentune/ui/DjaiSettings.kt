@@ -59,9 +59,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
 
         item { SectionTitle(stringResource(R.string.djcfg_section_transitions)) }
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.djcfg_filters), settings.djFilters, { value -> vm.settings { it.copy(djFilters = value) } }, stringResource(R.string.djcfg_filters_text)) }
-        item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.djcfg_roll), settings.djRoll, { value -> vm.settings { it.copy(djRoll = value) } }, stringResource(R.string.djcfg_roll_text)) }
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.djcfg_cues), settings.djCues, { value -> vm.settings { it.copy(djCues = value) } }, stringResource(R.string.djcfg_cues_text)) }
-        item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.djcfg_echo), settings.djEcho, { value -> vm.settings { it.copy(djEcho = value) } }, stringResource(R.string.djcfg_echo_text)) }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_choice)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_groove), settings.djGroove, { value -> vm.settings { it.copy(djGroove = value) } }, stringResource(R.string.djcfg_groove_text)) }
@@ -80,7 +78,6 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
         }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_speed)) }
-        item { HardwarePanel() }
         item { NeuralPanel(settings) { f -> vm.settings(f) } }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.djcfg_fast), settings.djFastAnalysis, { value -> vm.settings { it.copy(djFastAnalysis = value) } }, stringResource(R.string.djcfg_fast_text)) }
         item {
@@ -88,6 +85,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
                 vm.settings { it.copy(djWorkers = value) }
             }
         }
+        item { HardwarePanel() }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_songs)) }
         item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_dj_data), settings.showDjData, { value -> vm.settings { it.copy(showDjData = value) } }, stringResource(R.string.settings_dj_data_text)) }

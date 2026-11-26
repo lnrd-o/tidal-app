@@ -400,6 +400,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.settings_adapt_color), settings.adaptColor, { value -> vm.settings { it.copy(adaptColor = value) } }, stringResource(R.string.settings_adapt_color_text)) }
         item { SettingRow(OpenTuneIcons.Download, stringResource(R.string.settings_cache),
             if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }
+        item { SettingRow(OpenTuneIcons.Equalizer, stringResource(R.string.stems_title), stringResource(R.string.stems_settings_summary), { onOpenPage(SettingsPage.Stems) }) }
         item { SettingRow(OpenTuneIcons.LibraryMusic, stringResource(R.string.cache_title), stringResource(R.string.cache_summary), { onOpenPage(SettingsPage.Cache) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
             if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }

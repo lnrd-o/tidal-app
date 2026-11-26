@@ -31,6 +31,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 
+/** How much lower than the separation gives them the stems are kept: 6 dB, room for the peaks that pass full scale. */
+const val HEADROOM = .5f
+
 /** The stems of songs, kept on the device: for each song a folder with the left and the right channel of each stem as 16-bit samples at 44.1 kHz. */
 class StemStore(private val context: Context) {
     private val root get() = File(context.filesDir, "stems/tracks").apply { mkdirs() }
@@ -41,6 +44,12 @@ class StemStore(private val context: Context) {
     private fun meta(id: String) = File(folder(id), "meta.txt")
 
     /** The number of samples (per channel) of the song's stems, or 0 when it has none. */
+    /**
+     * What the samples of the song's stems are multiplied by when they are played: they are kept 6 dB down ([HEADROOM]), because a stem can peak above
+     * full scale (a voice cut out of a loud master), and 16 bits would cut its top off, which is heard as a crack. Stems kept before this have 1.
+     */
+    fun gain(id: String): Float = runCatching { meta(id).readLines().firstOrNull { it.startsWith("gain=") }?.substringAfter('=')?.toFloat() }.getOrNull() ?: 1f
+
     fun length(id: String): Int = runCatching { meta(id).readLines().firstOrNull { it.startsWith("length=") }?.substringAfter('=')?.toInt() ?: 0 }.getOrDefault(0)
     /** Whether the song's stems are all there: the record, and the eight files with the length that the record gives. */
     fun has(id: String): Boolean {
@@ -48,6 +57,26 @@ class StemStore(private val context: Context) {
         return n > 0 && Stem.entries.all { s -> (0..1).all { c -> file(id, s, c).let { f -> f.isFile && f.length() >= n * 2L } } }
     }
     fun model(id: String): String? = runCatching { meta(id).readLines().firstOrNull { it.startsWith("model=") }?.substringAfter('=') }.getOrNull()
+
+    /** A song whose stems are kept: its details (null for stems kept before they were written down), the model, the space and when it was separated. */
+    data class Kept(val folder: File, val track: Track?, val model: String?, val bytes: Long, val created: Long)
+
+    /** The songs whose stems are all here, separated last first. */
+    fun list(): List<Kept> = root.listFiles()?.filter { it.isDirectory }?.mapNotNull { folder ->
+        val values = runCatching { File(folder, "meta.txt").readLines().filter { '=' in it }.associate { it.substringBefore('=') to it.substringAfter('=') } }.getOrNull() ?: return@mapNotNull null
+        val length = values["length"]?.toIntOrNull() ?: return@mapNotNull null
+        val whole = Stem.entries.all { s -> listOf("l", "r").all { c -> File(folder, "${s.id}_$c.pcm").let { it.isFile && it.length() >= length * 2L } } }
+        if (!whole) return@mapNotNull null
+        val track = values["id"]?.let { id ->
+            Track(id = id, title = values["title"].orEmpty(), artist = values["artist"].orEmpty(), album = values["album"].orEmpty(), albumId = values["albumId"].orEmpty(),
+                artwork = values["artwork"]?.takeIf { it.isNotBlank() }, durationMs = values["durationMs"]?.toLongOrNull() ?: 0, artistId = values["artistId"].orEmpty(),
+                localUri = values["localUri"]?.takeIf { it.isNotBlank() })
+        }
+        Kept(folder, track, values["model"], folder.walkTopDown().filter(File::isFile).sumOf { it.length() }, values["created"]?.toLongOrNull() ?: folder.lastModified())
+    }?.sortedByDescending { it.created }.orEmpty()
+
+    /** Removes the stems of every song. */
+    fun clear() { root.deleteRecursively() }
 
     fun delete(id: String) { folder(id).deleteRecursively() }
 
@@ -60,8 +89,9 @@ class StemStore(private val context: Context) {
         for (f in folders) { if (total <= limitBytes) break; total -= f.walkTopDown().filter(File::isFile).sumOf { it.length() }; f.deleteRecursively() }
     }
 
-    /** Writes the stems of [id] as the separation hands them over. The song counts as separated only when [finish] is called. */
-    inner class Writer(private val id: String, private val model: String) : StemSink {
+    /** Writes the stems of [track] as the separation hands them over. The song counts as separated only when [finish] is called. */
+    inner class Writer(private val track: Track, private val model: String) : StemSink {
+        private val id = track.id
         // The folder is made once, empty: making it again for each file would delete the files that were already open.
         private val streams = folder(id).also { it.deleteRecursively(); it.mkdirs() }.let { _ ->
             Array(4) { s -> Array(2) { c -> BufferedOutputStream(FileOutputStream(file(id, Stem.entries[s], c)), 1 shl 16) } }
@@ -71,12 +101,24 @@ class StemStore(private val context: Context) {
 
         override fun write(stem: Int, channel: Int, offset: Int, samples: FloatArray, count: Int) {
             if (buffer.size < count * 2) buffer = ByteArray(count * 2)
-            for (i in 0 until count) { val v = (samples[i] * 32767f).coerceIn(-32768f, 32767f).toInt(); buffer[2 * i] = v.toByte(); buffer[2 * i + 1] = (v shr 8).toByte() }
+            for (i in 0 until count) { val v = (samples[i] * 32767f * HEADROOM).coerceIn(-32768f, 32767f).toInt(); buffer[2 * i] = v.toByte(); buffer[2 * i + 1] = (v shr 8).toByte() }
             streams[stem][channel].write(buffer, 0, count * 2)
             length = maxOf(length, offset + count)
         }
 
-        fun finish() { streams.forEach { s -> s.forEach { it.close() } }; meta(id).writeText("length=$length\nmodel=$model\ncreated=${System.currentTimeMillis()}\n") }
+        fun finish() {
+            streams.forEach { s -> s.forEach { it.close() } }
+            // The song's details go with its stems, so that the list of separated songs can show them and open them.
+            fun clean(value: String?) = value.orEmpty().replace('\n', ' ').replace('\r', ' ')
+            // Read before buildString: inside it, "length" would be the length of the text being built.
+            val samples = length
+            meta(id).writeText(buildString {
+                append("gain=${1f / HEADROOM}\n")
+                append("length=$samples\nmodel=$model\ncreated=${System.currentTimeMillis()}\n")
+                append("id=${clean(track.id)}\ntitle=${clean(track.title)}\nartist=${clean(track.artist)}\nalbum=${clean(track.album)}\nalbumId=${clean(track.albumId)}\n")
+                append("artistId=${clean(track.artistId)}\nartwork=${clean(track.artwork)}\ndurationMs=${track.durationMs}\nlocalUri=${clean(track.localUri)}\n")
+            })
+        }
         fun abort() { runCatching { streams.forEach { s -> s.forEach { it.close() } } }; delete(id) }
     }
 }
@@ -102,7 +144,9 @@ class StemManager(private val app: OpenTuneApp) {
 
     private fun set(id: String, p: StemProgress?) = mutable.update { if (p == null) it - id else it + (id to p) }
 
-    fun separate(track: Track, model: StemModel, limitMb: Int = 1500, power: Int = 2) {
+    /** Separates [track] with [model]; with [npu] off every network runs on the CPU. */
+    fun separate(track: Track, model: StemModel, limitMb: Int = 1500, power: Int = 2, npu: Boolean = true) {
+        val wanted = if (npu) Accelerator.NPU else Accelerator.CPU
         if (jobs[track.id]?.isActive == true) return
         set(track.id, StemProgress(StemProgress.Phase.WAITING, model = model))
         jobs[track.id] = scope.launch {
@@ -110,20 +154,20 @@ class StemManager(private val app: OpenTuneApp) {
                 val began = System.currentTimeMillis()
                 try { coroutineScope {
                     // The first time, SCNet's NPU graph is built before anything else, with its own progress.
-                    val prepared: AutoCloseable? = if (model == StemModel.SCNET && StemNetworks.scnetNeedsPreparing(app)) {
+                    val prepared: AutoCloseable? = if (npu && model == StemModel.SCNET && StemNetworks.scnetNeedsPreparing(app)) {
                         set(track.id, StemProgress(StemProgress.Phase.PREPARING, 0f, model, Accelerator.NPU))
                         StemNetworks.openScnet(app, Accelerator.NPU) { set(track.id, StemProgress(StemProgress.Phase.PREPARING, it, model, Accelerator.NPU)) }
                     } else null
                     set(track.id, StemProgress(StemProgress.Phase.READING, 0f, model))
                     // The network is opened while the song is read: on the NPU it takes several seconds to build, and the song takes longer to arrive.
                     val opening = async<AutoCloseable?>(Dispatchers.Default) {
-                        prepared ?: if (model == StemModel.SCNET) StemNetworks.openScnet(app, Accelerator.NPU) else StemNetworks.open(app, model, if (model == StemModel.OPEN_UNMIX) Accelerator.CPU else Accelerator.NPU)
+                        prepared ?: if (model == StemModel.SCNET) StemNetworks.openScnet(app, wanted) else StemNetworks.open(app, model, if (model == StemModel.OPEN_UNMIX) Accelerator.CPU else wanted)
                     }
                     val song = SongCapture.read(app, track, { set(track.id, StemProgress(StemProgress.Phase.READING, it * .2f, model)) }, { !jobs.containsKey(track.id) })
                     val network = opening.await()
                     if (song == null || network == null) { network?.close(); return@coroutineScope set(track.id, StemProgress(StemProgress.Phase.FAILED, model = model)) }
                     network.use {
-                        val writer = store.Writer(track.id, model.id)
+                        val writer = store.Writer(track, model.id)
                         val where = (network as? OpenNetwork)?.where ?: (network as? OpenScnet)?.where ?: Accelerator.CPU
                         val progress = { it: Float -> set(track.id, StemProgress(StemProgress.Phase.SEPARATING, .2f + .8f * it, model, where)) }
                         val cancelled = { jobs[track.id]?.isActive != true }

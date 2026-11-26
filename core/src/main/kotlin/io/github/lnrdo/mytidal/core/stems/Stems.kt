@@ -156,6 +156,10 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
         var accOrigin = -size
         val fade = FloatArray(frames)
         val top = min(48, covered)
+        // The crack of the drums is kept out of the voice: at a drum onset part of the voice's highs go back to the drums (see [DrumLeak]).
+        val leak = DrumLeak(size)
+        val leakFrom = min(leak.from, covered)
+        val drumHigh = Array(2) { FloatArray(frames) }; val voiceHigh = Array(2) { FloatArray(frames) }; val moved = Array(2) { FloatArray(frames) }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(threads) { r -> Thread(r, "stems").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 } }
         fun parallel(count: Int, work: (Int) -> Unit) {
             if (threads == 1) { for (i in 0 until count) work(i); return }
@@ -200,6 +204,18 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
                         for (s in 0 until 4) sum += pow(estimate[((s * 2 + c) * frames + f) * covered + b])
                         denominator[(c * frames + f) * covered + b] = sum
                     }
+                    // The energy of the drums and of the voice above the leak's first bin, frame by frame, for the onsets.
+                    for (f in 0 until count) {
+                        var d = 0f; var v = 0f
+                        for (b in leakFrom until covered) {
+                            val i = (c * frames + f) * covered + b
+                            val m = magnitude[i] / denominator[i]
+                            val kd = pow(estimate[((2 + c) * frames + f) * covered + b]) * m; val kv = pow(estimate[((0 + c) * frames + f) * covered + b]) * m
+                            d += kd * kd; v += kv * kv
+                        }
+                        drumHigh[c][f] = d; voiceHigh[c][f] = v
+                    }
+                    leak.amounts(drumHigh[c], voiceHigh[c], count, moved[c])
                 }
                 parallel(4) { s ->
                     val t = transforms[s]
@@ -210,7 +226,13 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
                             val base = f * bins
                             for (b in 0 until covered) {
                                 val e = estimate[((s * 2 + c) * frames + f) * covered + b]
-                                val k = w * (pow(e) + SHARE_FLOOR) / denominator[(c * frames + f) * covered + b]
+                                var k = w * (pow(e) + SHARE_FLOOR) / denominator[(c * frames + f) * covered + b]
+                                val a = moved[c][f]
+                                if (a > 0f && b >= leakFrom && s <= 1) {
+                                    // Stem 0 is the voice and stem 1 the drums: the voice gives part of its share to the drums.
+                                    if (s == 0) k *= 1 - a
+                                    else k += a * w * (pow(estimate[((0 + c) * frames + f) * covered + b]) + SHARE_FLOOR) / denominator[(c * frames + f) * covered + b]
+                                }
                                 if (b >= covered - top) carried += k
                                 sr[s][base + b] = re[c][base + b] * k; si[s][base + b] = im[c][base + b] * k
                             }

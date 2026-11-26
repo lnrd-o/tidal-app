@@ -55,7 +55,8 @@ fun StemsSheet(track: Track, state: AppState, vm: MainViewModel, onClose: () -> 
     var version by remember { mutableIntStateOf(0) }
     val ready = remember(job, version) { manager.store.has(track.id) }
     // One model, chosen for the device: the best that is installed and that it runs well.
-    val model = remember(version) { StemModel.best(context) }
+    val model = remember(version, state.settings.stemsModel) { StemModel.chosen(context, state.settings.stemsModel) }
+    val auto = state.settings.stemsModel == "auto" || model?.id != state.settings.stemsModel
     var importing by remember { mutableStateOf(StemModel.SPLEETER) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -82,12 +83,12 @@ fun StemsSheet(track: Track, state: AppState, vm: MainViewModel, onClose: () -> 
                 job != null && job.phase != StemProgress.Phase.DONE && job.phase != StemProgress.Phase.FAILED -> Working(job) { manager.cancel(track.id) }
                 job?.phase == StemProgress.Phase.FAILED && !ready -> {
                     Text(stringResource(R.string.stems_failed), color = MaterialTheme.colorScheme.error)
-                    SeparateControls(model, power, { p -> vm.settings { s -> s.copy(stemsPower = p) } }) { manager.separate(track, model, state.settings.stemsCacheMb, power) }
+                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu) }
                 }
                 ready -> Mixer(track, state, vm, manager.store.model(track.id), job, onAgain = { manager.delete(track.id); version++ })
                 else -> {
                     Text(stringResource(R.string.stems_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SeparateControls(model, power, { p -> vm.settings { s -> s.copy(stemsPower = p) } }) { manager.separate(track, model, state.settings.stemsCacheMb, power) }
+                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu) }
                 }
             }
         }
@@ -95,21 +96,14 @@ fun StemsSheet(track: Track, state: AppState, vm: MainViewModel, onClose: () -> 
 }
 
 @Composable
-private fun modelName(m: StemModel) = stringResource(when (m) { StemModel.SPLEETER -> R.string.stems_model_spleeter; StemModel.OPEN_UNMIX -> R.string.stems_model_umx; StemModel.BOTH -> R.string.stems_model_both; StemModel.SCNET -> R.string.stems_model_scnet })
+internal fun modelName(m: StemModel) = stringResource(when (m) { StemModel.SPLEETER -> R.string.stems_model_spleeter; StemModel.OPEN_UNMIX -> R.string.stems_model_umx; StemModel.BOTH -> R.string.stems_model_both; StemModel.SCNET -> R.string.stems_model_scnet })
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SeparateControls(model: StemModel, power: Int, onPower: (Int) -> Unit, onSeparate: () -> Unit) {
-    Text(stringResource(R.string.stems_chosen, modelName(model)), style = MaterialTheme.typography.bodyMedium)
+private fun SeparateControls(model: StemModel, auto: Boolean, onSeparate: () -> Unit) {
+    Text(if (auto) stringResource(R.string.stems_chosen, modelName(model)) else modelName(model), style = MaterialTheme.typography.bodyMedium)
     Text(stringResource(when (model) { StemModel.SPLEETER -> R.string.stems_spleeter_text; StemModel.OPEN_UNMIX -> R.string.stems_umx_text; StemModel.BOTH -> R.string.stems_both_text; StemModel.SCNET -> R.string.stems_scnet_text }),
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    // How steep the cut between the stems is: steeper lets less of one stem into another, and sounds a little more grainy.
-    if (model != StemModel.SCNET) Text(stringResource(R.string.stems_sharpness), style = MaterialTheme.typography.bodyMedium)
-    if (model != StemModel.SCNET) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        listOf(2 to R.string.stems_sharp_standard, 3 to R.string.stems_sharp_sharper, 4 to R.string.stems_sharp_sharpest).forEachIndexed { i, (p, name) ->
-            SegmentedButton(p == power, { onPower(p) }, SegmentedButtonDefaults.itemShape(i, 3)) { Text(stringResource(name), fontSize = 12.sp, maxLines = 1) }
-        }
-    }
     Button(onSeparate, Modifier.fillMaxWidth()) { Text(stringResource(R.string.stems_separate)) }
 }
 

@@ -47,6 +47,9 @@ class ScnetSeparator(private val network: ScnetNetwork, private val size: Int = 
         // How many of the four frames that cover a sample reach it: the first and the last samples of a chunk have fewer.
         val weight = FloatArray(length) { i -> val p = i + pad; min(4, min(p / hop + 1, (span - 1 - p) / hop + 1)).toFloat() / 4f }
         val fade = FloatArray(length) { 1f }
+        // The crack of the drums is kept out of the voice (see [DrumLeak]): in the network's order the drums are stem 0 and the voice stem 3.
+        val leak = DrumLeak(size)
+        val drumHigh = FloatArray(frames); val voiceHigh = FloatArray(frames); val moved = FloatArray(frames)
         val pool = java.util.concurrent.Executors.newFixedThreadPool(threads) { r -> Thread(r, "scnet").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 } }
         fun parallel(count: Int, work: (Int) -> Unit) {
             if (threads == 1) { for (i in 0 until count) work(i); return }
@@ -89,15 +92,34 @@ class ScnetSeparator(private val network: ScnetNetwork, private val size: Int = 
                     val fadeOut = if (!last && i >= length - overlap) (length - i - .5f) / overlap else 1f
                     fade[i] = min(fadeIn, fadeOut) / weight[i]
                 }
-                parallel(4) { s ->
-                    val t = transforms[s]
-                    for (c in 0 until 2) {
+                for (c in 0 until 2) {
+                    parallel(4) { s ->
                         for (f in 0 until frames) for (b in 0 until bins) {
                             sr[s][f * bins + b] = (out[((s * 4 + c * 2) * bins + b) * frames + f] * d + m) * scale
                             si[s][f * bins + b] = (out[((s * 4 + c * 2 + 1) * bins + b) * frames + f] * d + m) * scale
                         }
+                    }
+                    for (f in 0 until frames) {
+                        var dh = 0f; var vh = 0f
+                        for (b in leak.from until bins) {
+                            val i = f * bins + b
+                            dh += sr[0][i] * sr[0][i] + si[0][i] * si[0][i]; vh += sr[3][i] * sr[3][i] + si[3][i] * si[3][i]
+                        }
+                        drumHigh[f] = dh; voiceHigh[f] = vh
+                    }
+                    leak.amounts(drumHigh, voiceHigh, frames, moved)
+                    for (f in 0 until frames) {
+                        val a = moved[f]
+                        if (a <= 0f) continue
+                        for (b in leak.from until bins) {
+                            val i = f * bins + b
+                            sr[0][i] += a * sr[3][i]; si[0][i] += a * si[3][i]
+                            sr[3][i] *= 1 - a; si[3][i] *= 1 - a
+                        }
+                    }
+                    parallel(4) { s ->
                         java.util.Arrays.fill(temp[s], 0f)
-                        t.inverse(sr[s], si[s], frames, temp[s])
+                        transforms[s].inverse(sr[s], si[s], frames, temp[s])
                         val a = acc[s][c]; val y = temp[s]
                         for (i in 0 until length) a[i] += y[i + pad] * fade[i]
                     }

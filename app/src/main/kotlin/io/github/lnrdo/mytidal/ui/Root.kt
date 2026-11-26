@@ -171,6 +171,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                     SettingsPage.Statistics -> StatisticsPage(vm)
                     SettingsPage.Hardware -> HardwarePage(state, vm)
                     SettingsPage.Cache -> CachePage(state, vm)
+                    SettingsPage.Stems -> StemsPage(state, vm)
                     SettingsPage.Effects -> ImageEffectsPage(state, vm)
                     SettingsPage.Licenses -> LicencesPage { settingsPage = it.name }
                     SettingsPage.Apache, SettingsPage.DmSans, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)

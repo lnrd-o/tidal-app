@@ -1190,4 +1190,17 @@
     <string name="spatial_render_speakers">The app places the channels: widened past the speakers.</string>
     <string name="spatial_use_system">Use the system\'s spatializer</string>
     <string name="spatial_use_system_text">Where the phone spatializes surround sound itself (Dolby Atmos on some devices). Some phones say they can and fold it to stereo; then leave this off.</string>
+    <string name="stems_settings_summary">The songs with stems, the model and where it runs</string>
+    <string name="stems_page_model">Model</string>
+    <string name="stems_page_auto">Automatic</string>
+    <string name="stems_page_auto_text">Automatic uses %1$s on this device: the best that is installed and that it runs well.</string>
+    <string name="stems_page_npu">Use the NPU</string>
+    <string name="stems_page_npu_text">Quicker where the chip has one. Off, every model runs on the CPU.</string>
+    <string name="stems_page_space">Space for stems</string>
+    <string name="stems_page_used">%1$s used by %2$d songs, at most %3$s. The songs separated longest ago go first.</string>
+    <string name="stems_page_songs">Songs with stems</string>
+    <string name="stems_page_empty">No song has stems yet. Open a song\'s menu and choose Stems.</string>
+    <string name="stems_page_unknown">A song separated before its details were kept</string>
+    <string name="stems_page_delete">Delete these stems</string>
+    <string name="stems_page_delete_all">Delete all stems</string>
 </resources>

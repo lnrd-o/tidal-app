@@ -37,6 +37,10 @@ class StemManagerTest {
         val player = io.github.lnrdo.mytidal.stems.StemPlayer(app.stems.store, track.id)
         Log.i("StemManagerTest", "the mixer opens the stems: ${player.durationMs / 1000} s")
         assertTrue(player.durationMs > 1000)
+        // A few seconds of playback: the player logs its underruns when it is released.
+        player.seekTo(30_000); player.play(); Thread.sleep(8_000)
         player.release()
+        Log.i("StemManagerTest", "kept: ${app.stems.store.list().firstOrNull()?.let { "${it.track?.title} by ${it.track?.artist}, ${it.model}, ${it.bytes / 1_000_000} MB" }}")
+        Unit
     }
 }

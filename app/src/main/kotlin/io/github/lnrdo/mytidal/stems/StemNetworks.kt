@@ -33,6 +33,13 @@ enum class StemModel(val id: String, val file: String, val frames: Int, val bins
     SCNET("scnet", "scnet_4stems.onnx", 474, 2049, false);
 
     fun path(context: Context) = File(File(context.filesDir, "stems"), file)
+
+    /**
+     * Whether the device has the memory for the model. SCNet takes about 2.5 GB while it separates: on a phone with less than 7 GB the app ran out of memory
+     * or the system closed it.
+     */
+    fun fits(context: Context): Boolean = this != SCNET ||
+        android.app.ActivityManager.MemoryInfo().also { context.getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(it) }.totalMem >= 7_000_000_000L
     fun installed(context: Context): Boolean = when (this) {
         BOTH -> SPLEETER.installed(context) && OPEN_UNMIX.installed(context)
         SCNET -> path(context).let { it.isFile && it.length() > 1_000_000 } || File(partsFolder(context), "manifest.json").isFile
@@ -46,16 +53,17 @@ enum class StemModel(val id: String, val file: String, val frames: Int, val bins
          * The one model that this device uses: the best that is installed and that it runs well. SCNet gives the cleanest stems, but takes about 2.2 GB while
          * it separates, so it goes first only on a device with 7 GB of memory or more; then the two that vote (Both), then Spleeter, then Open-Unmix.
          */
-        /** The model to use: the one that [choice] names (an id, from the settings) when it is installed, else the best for the device. */
-        fun chosen(context: Context, choice: String): StemModel? = entries.firstOrNull { it.id == choice }?.takeIf { it.installed(context) } ?: best(context)
+        /** The model to use: the one that [choice] names (an id, from the settings) when it can be used, else the best for the device. */
+        fun chosen(context: Context, choice: String): StemModel? = entries.firstOrNull { it.id == choice }?.takeIf { it.installed(context) && it.fits(context) } ?: best(context)
 
         fun best(context: Context): StemModel? {
-            val memory = android.app.ActivityManager.MemoryInfo().also { context.getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(it) }.totalMem
-            val order = if (memory >= 7_000_000_000L) listOf(SCNET, BOTH, SPLEETER, OPEN_UNMIX) else listOf(BOTH, SPLEETER, OPEN_UNMIX, SCNET)
-            return order.firstOrNull { it.installed(context) }
+            return listOf(SCNET, BOTH, SPLEETER, OPEN_UNMIX).firstOrNull { it.installed(context) && it.fits(context) }
         }
         /** The two parts of SCNet, as tools/model/export_scnet_two.py writes them. */
         fun partsFolder(context: Context) = File(File(context.filesDir, "stems"), "scnet_two")
+
+        /** SCNet's front with 8-bit LSTMs (tools/model/quantize_scnet_front.py): about a third quicker and further from the full network. */
+        fun fastFront(context: Context) = File(partsFolder(context), "scnet_front_int8.onnx")
     }
 }
 
@@ -110,21 +118,28 @@ class OrtScnetNetwork internal constructor(private val env: OrtEnvironment, priv
     override val frames get() = StemModel.SCNET.frames
     override val bins get() = StemModel.SCNET.bins
     private val inputName = session.inputNames.first()
-    private var output = FloatArray(0)
+    private val outputName = session.outputNames.first()
+    private val output = ScnetOutput(env, bins, frames)
 
     @Synchronized
-    override fun run(input: FloatArray): FloatArray {
+    override fun run(input: FloatArray): FloatBuffer {
         OnnxTensor.createTensor(env, FloatBuffer.wrap(input), longArrayOf(1, 4, bins.toLong(), frames.toLong())).use { tensor ->
-            session.run(mapOf(inputName to tensor)).use { result ->
-                val out = (result[0] as OnnxTensor).floatBuffer
-                if (output.size != out.remaining()) output = FloatArray(out.remaining())
-                out.get(output)
-                return output
-            }
+            session.run(mapOf(inputName to tensor), mapOf(outputName to output.tensor)).close()
         }
+        return output.buffer
     }
 
-    override fun close() { session.close() }
+    override fun close() { session.close(); output.close() }
+}
+
+/**
+ * Where SCNet writes its result: one buffer, made once and reused for every chunk. Reading a result through [OnnxTensor.getFloatBuffer] copies it, which is
+ * 62 MB more for each chunk, and ran a phone with a 512 MB heap out of memory.
+ */
+class ScnetOutput(env: OrtEnvironment, bins: Int, frames: Int) : AutoCloseable {
+    val buffer: FloatBuffer = java.nio.ByteBuffer.allocateDirect(16 * bins * frames * 4).order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer()
+    val tensor: OnnxTensor = OnnxTensor.createTensor(env, buffer, longArrayOf(1, 16, bins.toLong(), frames.toLong()))
+    override fun close() { tensor.close() }
 }
 
 /**
@@ -137,28 +152,31 @@ class ScnetChain internal constructor(private val env: OrtEnvironment, private v
     override val frames get() = StemModel.SCNET.frames
     override val bins get() = StemModel.SCNET.bins
     override val where get() = if (parts.any { it.onNpu }) Accelerator.NPU else Accelerator.CPU
-    private var result = FloatArray(0)
+    private val result = ScnetOutput(env, bins, frames)
 
     @Synchronized
-    override fun run(input: FloatArray): FloatArray {
+    override fun run(input: FloatArray): FloatBuffer {
         val results = ArrayList<OrtSession.Result>(parts.size)
         val spec = OnnxTensor.createTensor(env, FloatBuffer.wrap(input), longArrayOf(1, 4, bins.toLong(), frames.toLong()))
         try {
             val values = HashMap<String, OnnxTensor>()
             values[this.input] = spec
             for (part in parts) {
-                val r = part.session.run(part.inputs.associateWith { values.getValue(it) })
-                results += r
-                for (name in part.outputs) values[name] = r.get(name).get() as OnnxTensor
+                val feed = part.inputs.associateWith { values.getValue(it) }
+                if (output in part.outputs) {
+                    // The last part writes the stems straight into the reused buffer.
+                    results += part.session.run(feed, mapOf(output to result.tensor))
+                } else {
+                    val r = part.session.run(feed)
+                    results += r
+                    for (name in part.outputs) values[name] = r.get(name).get() as OnnxTensor
+                }
             }
-            val out = values.getValue(output).floatBuffer
-            if (result.size != out.remaining()) result = FloatArray(out.remaining())
-            out.get(result)
-            return result
+            return result.buffer
         } finally { results.forEach { runCatching { it.close() } }; spec.close() }
     }
 
-    override fun close() { parts.forEach { runCatching { it.session.close() } } }
+    override fun close() { parts.forEach { runCatching { it.session.close() } }; result.close() }
 }
 
 /** What a song's separation with SCNet holds: the network, which goes back to the pool when this is closed. */
@@ -228,6 +246,7 @@ object StemNetworks {
 
     private var scnet: OpenScnet? = null
     private var scnetWanted: Accelerator? = null
+    private var scnetFast = false
 
     /** Where the NPU graph of SCNet's decoder is kept: it is built once, in a few seconds, and read back in a fraction of one. */
     private fun npuGraphs(context: Context) = File(context.noBackupFilesDir, "stems_npu").apply { mkdirs() }
@@ -261,16 +280,17 @@ object StemNetworks {
      * Close what it returns when the song is done.
      */
     @Synchronized
-    fun openScnet(context: Context, wanted: Accelerator = Accelerator.NPU, preparing: (Float) -> Unit = {}): ScnetLease? {
+    fun openScnet(context: Context, wanted: Accelerator = Accelerator.NPU, fast: Boolean = false, preparing: (Float) -> Unit = {}): ScnetLease? {
         if (!StemModel.SCNET.installed(context)) return null
-        if (scnet != null && scnetWanted != wanted && users == 0) { runCatching { scnet?.close() }; scnet = null }
-        val network = scnet ?: runCatching { buildScnet(context, wanted, preparing) }.onFailure { Log.w(TAG, "scnet cannot run: ${it.message}") }.getOrNull() ?: return null
-        scnet = network; scnetWanted = wanted
+        val quick = fast && StemModel.fastFront(context).isFile
+        if (scnet != null && (scnetWanted != wanted || scnetFast != quick) && users == 0) { runCatching { scnet?.close() }; scnet = null }
+        val network = scnet ?: runCatching { buildScnet(context, wanted, quick, preparing) }.onFailure { Log.w(TAG, "scnet cannot run: ${it.message}") }.getOrNull() ?: return null
+        scnet = network; scnetWanted = wanted; scnetFast = quick
         users++
         return ScnetLease(network) { synchronized(this) { users--; lastUsed = SystemClock.elapsedRealtime(); if (!pooling) closeAll() } }
     }
 
-    private fun buildScnet(context: Context, wanted: Accelerator, preparing: (Float) -> Unit): OpenScnet {
+    private fun buildScnet(context: Context, wanted: Accelerator, fast: Boolean, preparing: (Float) -> Unit): OpenScnet {
         val env = OrtEnvironment.getEnvironment()
         val threads = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
         // Four threads, on the big cores: more, or the default, puts work on the small cores and is slower (measured on the S24 Ultra).
@@ -278,7 +298,7 @@ object StemNetworks {
         val whole = StemModel.SCNET.path(context)
         val manifest = File(StemModel.partsFolder(context), "manifest.json")
         // On the CPU the network in one piece is quicker than its parts.
-        if (!manifest.isFile || (wanted != Accelerator.NPU && whole.isFile)) return OrtScnetNetwork(env, cpu().use { env.createSession(whole.path, it) })
+        if (!manifest.isFile || (wanted != Accelerator.NPU && !fast && whole.isFile)) return OrtScnetNetwork(env, cpu().use { env.createSession(whole.path, it) })
         val json = org.json.JSONObject(manifest.readText())
         val list = json.getJSONArray("parts")
         val output = json.getString("output")
@@ -290,7 +310,7 @@ object StemNetworks {
             val file = p.getString("file")
             val inputs = names(p.getJSONArray("inputs"))
             val outputs = names(p.getJSONArray("outputs"))
-            val path = File(StemModel.partsFolder(context), file).path
+            val path = if (fast && p.getString("kind") == "front") StemModel.fastFront(context).path else File(StemModel.partsFolder(context), file).path
             val mark = partCrashMark(context, file)
             val npu = wanted == Accelerator.NPU && npuPart(p.getString("kind"), outputs, output) && !mark.exists()
             var session: OrtSession? = null
@@ -314,7 +334,7 @@ object StemNetworks {
             }
             ScnetChain.Part(file, session ?: cpu().use { env.createSession(path, it) }, inputs, outputs, session != null)
         }
-        Log.i(TAG, "scnet in ${parts.size} parts, ${parts.count { it.onNpu }} on the NPU")
+        Log.i(TAG, "scnet in ${parts.size} parts, ${parts.count { it.onNpu }} on the NPU${if (fast) ", 8-bit front" else ""}")
         return ScnetChain(env, parts, json.getString("input"), output)
     }
 

@@ -7,6 +7,7 @@ import io.github.lnrdo.mytidal.OpenTuneApp
 import io.github.lnrdo.mytidal.core.Track
 import io.github.lnrdo.mytidal.core.stems.ScnetNetwork
 import io.github.lnrdo.mytidal.core.stems.ScnetSeparator
+import io.github.lnrdo.mytidal.core.stems.StageClock
 import io.github.lnrdo.mytidal.core.stems.Stem
 import io.github.lnrdo.mytidal.core.stems.StemSeparator
 import io.github.lnrdo.mytidal.core.stems.StemSink
@@ -145,7 +146,7 @@ class StemManager(private val app: OpenTuneApp) {
     private fun set(id: String, p: StemProgress?) = mutable.update { if (p == null) it - id else it + (id to p) }
 
     /** Separates [track] with [model]; with [npu] off every network runs on the CPU. */
-    fun separate(track: Track, model: StemModel, limitMb: Int = 1500, power: Int = 2, npu: Boolean = true) {
+    fun separate(track: Track, model: StemModel, limitMb: Int = 1500, power: Int = 2, npu: Boolean = true, fast: Boolean = false) {
         val wanted = if (npu) Accelerator.NPU else Accelerator.CPU
         if (jobs[track.id]?.isActive == true) return
         set(track.id, StemProgress(StemProgress.Phase.WAITING, model = model))
@@ -156,29 +157,34 @@ class StemManager(private val app: OpenTuneApp) {
                     // The first time, SCNet's NPU graph is built before anything else, with its own progress.
                     val prepared: AutoCloseable? = if (npu && model == StemModel.SCNET && StemNetworks.scnetNeedsPreparing(app)) {
                         set(track.id, StemProgress(StemProgress.Phase.PREPARING, 0f, model, Accelerator.NPU))
-                        StemNetworks.openScnet(app, Accelerator.NPU) { set(track.id, StemProgress(StemProgress.Phase.PREPARING, it, model, Accelerator.NPU)) }
+                        StemNetworks.openScnet(app, Accelerator.NPU, fast) { set(track.id, StemProgress(StemProgress.Phase.PREPARING, it, model, Accelerator.NPU)) }
                     } else null
                     set(track.id, StemProgress(StemProgress.Phase.READING, 0f, model))
                     // The network is opened while the song is read: on the NPU it takes several seconds to build, and the song takes longer to arrive.
                     val opening = async<AutoCloseable?>(Dispatchers.Default) {
-                        prepared ?: if (model == StemModel.SCNET) StemNetworks.openScnet(app, wanted) else StemNetworks.open(app, model, if (model == StemModel.OPEN_UNMIX) Accelerator.CPU else wanted)
+                        prepared ?: if (model == StemModel.SCNET) StemNetworks.openScnet(app, wanted, fast) else StemNetworks.open(app, model, if (model == StemModel.OPEN_UNMIX) Accelerator.CPU else wanted)
                     }
-                    val song = SongCapture.read(app, track, { set(track.id, StemProgress(StemProgress.Phase.READING, it * .2f, model)) }, { !jobs.containsKey(track.id) })
+                    // The song is read while it is separated: the separation reads what has arrived and waits for the rest, so reading costs no time of its own.
+                    val song = LiveSong(SongCapture.estimate(track))
+                    val reading = async(Dispatchers.Default) { SongCapture.capture(app, track, song, { if (song.length == 0) set(track.id, StemProgress(StemProgress.Phase.READING, it * .2f, model)) }, { !jobs.containsKey(track.id) }) }
                     val network = opening.await()
-                    if (song == null || network == null) { network?.close(); return@coroutineScope set(track.id, StemProgress(StemProgress.Phase.FAILED, model = model)) }
+                    if (network == null) { reading.cancel(); return@coroutineScope set(track.id, StemProgress(StemProgress.Phase.FAILED, model = model)) }
                     network.use {
                         val writer = store.Writer(track, model.id)
                         val where = (network as? OpenNetwork)?.where ?: (network as? OpenScnet)?.where ?: Accelerator.CPU
-                        val progress = { it: Float -> set(track.id, StemProgress(StemProgress.Phase.SEPARATING, .2f + .8f * it, model, where)) }
-                        val cancelled = { jobs[track.id]?.isActive != true }
-                        val ok = when (network) {
-                            is ScnetNetwork -> ScnetSeparator(network).separate(song, writer, progress, cancelled)
+                        val progress = { it: Float -> set(track.id, StemProgress(StemProgress.Phase.SEPARATING, it, model, where)) }
+                        val cancelled = { jobs[track.id]?.isActive != true || song.failed }
+                        val clock = StageClock(ScnetSeparator.STAGES)
+                        val separated = when (network) {
+                            is ScnetNetwork -> ScnetSeparator(network, clock = clock).separate(song, writer, progress, cancelled)
                             else -> StemSeparator(network as OpenNetwork, power = power.coerceIn(2, 4)).separate(song, writer, progress, cancelled)
                         }
+                        val ok = separated && reading.await() && !song.failed
+                        Log.i("OpenTuneStems", "${track.title}: ${model.id} in ${(System.currentTimeMillis() - began) / 1000.0} s" + (if (network is ScnetNetwork) " ($clock)" else ""))
                         if (ok) {
                             writer.finish(); store.evict(limitMb * 1_000_000L, keep = track.id)
                             set(track.id, StemProgress(StemProgress.Phase.DONE, 1f, model, where, (System.currentTimeMillis() - began) / 1000f))
-                        } else { writer.abort(); set(track.id, null) }
+                        } else { writer.abort(); set(track.id, if (song.failed) StemProgress(StemProgress.Phase.FAILED, model = model) else null) }
                     }
                 } } catch (e: CancellationException) { set(track.id, null); throw e }
                 catch (e: Throwable) { Log.w("OpenTuneStems", "separating ${track.title} failed", e); set(track.id, StemProgress(StemProgress.Phase.FAILED, model = model)) }

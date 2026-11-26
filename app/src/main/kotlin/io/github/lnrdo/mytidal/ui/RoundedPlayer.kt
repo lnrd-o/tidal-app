@@ -257,7 +257,7 @@ private fun RoundedPlayerBody(
             }
         }
         if (menu) GlassMenu(track, saved, lyrics, onDismiss = { menu = false }, onLike = { vm.favorite(track) }, onSpectrum = { spectrum = true }, onShare = { storyShare = true },
-            onTimer = { timer = true }, onPath = { path = true }, onStems = { stemsOpen = true }, onSpatial = { spatialOpen = true }, onDj = { djSheet = true }, onLyrics = { lyrics = !lyrics }, onQueue = onQueue,
+            onTimer = { timer = true }, onPath = { path = true }, onStems = { stemsOpen = true }, stemsOn = state.settings.stemsOn, onSpatial = { spatialOpen = true }, onDj = { djSheet = true }, onLyrics = { lyrics = !lyrics }, onQueue = onQueue,
             onAlbum = { onAlbum(track) }, onArtist = { onArtist(track) }, onMore = { onMenu(track) })
     }
 
@@ -595,7 +595,7 @@ private fun rememberOutputName(): String {
 @Composable
 private fun GlassMenu(
     track: Track, saved: Boolean, lyrics: Boolean, onDismiss: () -> Unit,
-    onLike: () -> Unit, onSpectrum: () -> Unit, onShare: () -> Unit, onTimer: () -> Unit, onPath: () -> Unit, onStems: () -> Unit, onSpatial: () -> Unit, onDj: () -> Unit, onLyrics: () -> Unit, onQueue: () -> Unit,
+    onLike: () -> Unit, onSpectrum: () -> Unit, onShare: () -> Unit, onTimer: () -> Unit, onPath: () -> Unit, onStems: () -> Unit, stemsOn: Boolean, onSpatial: () -> Unit, onDj: () -> Unit, onLyrics: () -> Unit, onQueue: () -> Unit,
     onAlbum: () -> Unit, onArtist: () -> Unit, onMore: () -> Unit,
 ) {
     fun act(action: () -> Unit) { onDismiss(); action() }
@@ -616,7 +616,7 @@ private fun GlassMenu(
                 MenuRow(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title)) { act(onQueue) }
                 MenuRow(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label)) { act(onTimer) }
                 MenuRow(OpenTuneIcons.Tune, stringResource(R.string.rounded_menu_path)) { act(onPath) }
-                MenuRow(OpenTuneIcons.Equalizer, stringResource(R.string.stems_title)) { act(onStems) }
+                MenuRow(OpenTuneIcons.Equalizer, stringResource(R.string.stems_title), if (stemsOn) stringResource(R.string.stems_on_chip) else null) { act(onStems) }
                 MenuRow(OpenTuneIcons.Spatial, stringResource(R.string.spatial_menu)) { act(onSpatial) }
                 HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), color = Ink.copy(alpha = .12f))
                 if (track.albumId.isNotBlank() && !track.isFile) MenuRow(OpenTuneIcons.Album, stringResource(R.string.track_go_album), track.album) { act(onAlbum) }

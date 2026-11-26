@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package io.github.lnrdo.mytidal.ui
 
 import android.net.Uri
@@ -29,7 +31,7 @@ import io.github.lnrdo.mytidal.core.Track
 import io.github.lnrdo.mytidal.core.formatDuration
 import io.github.lnrdo.mytidal.core.stems.Stem
 import io.github.lnrdo.mytidal.stems.StemModel
-import io.github.lnrdo.mytidal.stems.StemPlayer
+import io.github.lnrdo.mytidal.stems.StemSwitch
 import io.github.lnrdo.mytidal.stems.StemProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -83,12 +85,12 @@ fun StemsSheet(track: Track, state: AppState, vm: MainViewModel, onClose: () -> 
                 job != null && job.phase != StemProgress.Phase.DONE && job.phase != StemProgress.Phase.FAILED -> Working(job) { manager.cancel(track.id) }
                 job?.phase == StemProgress.Phase.FAILED && !ready -> {
                     Text(stringResource(R.string.stems_failed), color = MaterialTheme.colorScheme.error)
-                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu) }
+                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu, state.settings.stemsFast) }
                 }
                 ready -> Mixer(track, state, vm, manager.store.model(track.id), job, onAgain = { manager.delete(track.id); version++ })
                 else -> {
                     Text(stringResource(R.string.stems_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu) }
+                    SeparateControls(model, auto) { manager.separate(track, model, state.settings.stemsCacheMb, power, state.settings.stemsNpu, state.settings.stemsFast) }
                 }
             }
         }
@@ -118,39 +120,34 @@ private fun Working(job: StemProgress, onCancel: () -> Unit) {
 }
 
 /** Four faders with a mute and a solo each, and a small transport. */
-@androidx.annotation.OptIn(UnstableApi::class)
+/**
+ * The mix of a song with stems. It plays through the app's own player: the switch turns the stems on for every song that has them, the faders, mutes and
+ * solo are heard at once and kept, and Reset puts them back to 100%.
+ */
 @Composable
 private fun Mixer(track: Track, state: AppState, vm: MainViewModel, model: String?, job: StemProgress?, onAgain: () -> Unit) {
-    val context = LocalContext.current
-    val manager = vm.app.stems
-    val player = remember(track.id) { runCatching { StemPlayer(manager.store, track.id) }.getOrNull() }
-    val wasPlaying = remember { state.playback.playing }
-    val startAt = remember { 0L }.let { LocalPlaybackPosition.current.value }
-    var playing by remember { mutableStateOf(false) }
-    var position by remember { mutableLongStateOf(startAt) }
-    var seeking by remember { mutableStateOf<Float?>(null) }
-    val gains = remember { mutableStateListOf(1f, 1f, 1f, 1f) }
-    val muted = remember { mutableStateListOf(false, false, false, false) }
-    var solo by remember { mutableIntStateOf(-1) }
-    if (player == null) { Text(stringResource(R.string.stems_failed), color = MaterialTheme.colorScheme.error); return }
-    DisposableEffect(player) {
-        // The app's player gives way to the mixer, and takes the song back, from where the mixer is, when the sheet closes.
-        if (wasPlaying) vm.togglePlay()
-        player.seekTo(startAt)
-        player.play(); playing = true
-        onDispose {
-            val at = player.positionMs
-            player.release()
-            vm.seek(at)
-            if (wasPlaying) vm.togglePlay()
-        }
+    val settings = state.settings
+    val (levels, mutedBits, soloStem) = remember(settings.stemsMix) { StemSwitch.decode(settings.stemsMix) }
+    val gains = remember(settings.stemsMix) { mutableStateListOf(*levels.toTypedArray()) }
+    fun keep(g: List<Float> = gains, muted: Int = mutedBits, solo: Int = soloStem) {
+        StemSwitch.set(g.toFloatArray(), muted, solo)
+        vm.settings { it.copy(stemsMix = StemSwitch.encode(g.toFloatArray(), muted, solo)) }
     }
-    LaunchedEffect(player) { while (true) { position = player.positionMs; playing = player.isPlaying; delay(200) } }
+    val playingThis = state.playback.track?.id == track.id
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.stems_switch), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.stems_switch_text), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(settings.stemsOn, { on -> StemSwitch.enabled = on; vm.settings { it.copy(stemsOn = on) } })
+        }
+        if (!playingThis) OutlinedButton({ vm.play(listOf(track)) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.stems_play_song)) }
         for (stem in Stem.entries) {
             val i = stem.ordinal
-            // The stem is greyed while it is muted or another one is on solo, so what is heard can be read at a glance.
-            val heard = if (solo >= 0) solo == i else !muted[i]
+            // The stem is greyed while the stems are off, while it is muted, or while another one is on solo, so what is heard can be read at a glance.
+            val muted = mutedBits and (1 shl i) != 0
+            val heard = settings.stemsOn && (if (soloStem >= 0) soloStem == i else !muted)
             Row(Modifier.fillMaxWidth().alpha(if (heard) 1f else .45f), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(StemColours.getValue(stem).copy(alpha = .18f)), contentAlignment = Alignment.Center) {
                     Icon(StemIcons.getValue(stem), null, Modifier.size(24.dp), tint = StemColours.getValue(stem))
@@ -160,27 +157,20 @@ private fun Mixer(track: Track, state: AppState, vm: MainViewModel, model: Strin
                         Text(stringResource(StemNames.getValue(stem)), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text("%d%%".format((gains[i] * 100).toInt()), fontFamily = AppFonts.mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Slider(gains[i], { gains[i] = it; player.setGain(stem, it) }, Modifier.height(28.dp), valueRange = 0f..1.5f,
-                        colors = SliderDefaults.colors(thumbColor = StemColours.getValue(stem), activeTrackColor = StemColours.getValue(stem)))
+                    // Heard while it is dragged; kept when the finger lifts.
+                    Slider(gains[i], { gains[i] = it; StemSwitch.set(gains.toFloatArray(), mutedBits, soloStem) }, Modifier.height(28.dp), valueRange = 0f..1.5f,
+                        onValueChangeFinished = { keep() }, colors = SliderDefaults.colors(thumbColor = StemColours.getValue(stem), activeTrackColor = StemColours.getValue(stem)))
                 }
-                ToggleChip("M", muted[i]) { muted[i] = !muted[i]; player.setMuted(stem, muted[i]) }
+                ToggleChip("M", muted) { keep(muted = mutedBits xor (1 shl i)) }
                 Spacer(Modifier.width(6.dp))
-                ToggleChip("S", solo == i) { solo = if (solo == i) -1 else i; player.setSolo(if (solo == -1) null else stem) }
+                ToggleChip("S", soloStem == i) { keep(solo = if (soloStem == i) -1 else i) }
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton({ if (player.isPlaying) player.pause() else player.play() }) {
-                Icon(if (playing) OpenTuneIcons.PauseSolid else OpenTuneIcons.PlaySolid, stringResource(if (playing) R.string.player_pause else R.string.player_play))
-            }
-            Text(formatDuration(seeking?.toLong() ?: position), fontFamily = AppFonts.mono, fontSize = 12.sp)
-            Slider(seeking ?: position.toFloat(), { seeking = it }, Modifier.weight(1f).padding(horizontal = 8.dp), valueRange = 0f..player.durationMs.coerceAtLeast(1).toFloat(),
-                onValueChangeFinished = { seeking?.let { player.seekTo(it.toLong()) }; seeking = null })
-            Text(formatDuration(player.durationMs), fontFamily = AppFonts.mono, fontSize = 12.sp)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             val detail = listOfNotNull(model?.let { modelName(StemModel.entries.firstOrNull { m -> m.id == it } ?: StemModel.SPLEETER) },
                 job?.ranOn?.name, job?.takeIf { it.seconds > 0 }?.let { stringResource(R.string.stems_took, it.seconds.toInt()) }).joinToString(" · ")
             Text(detail, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton({ keep(listOf(1f, 1f, 1f, 1f), 0, -1) }) { Text(stringResource(R.string.stems_reset)) }
             TextButton(onAgain) { Text(stringResource(R.string.stems_again)) }
         }
     }

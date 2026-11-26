@@ -102,6 +102,40 @@ class Stft(val size: Int = 4096, val hop: Int = 1024, rectangular: Boolean = fal
         }
     }
 
+    /**
+     * The spectra of frames [first] until [end] of two blocks at once, [a] and [b], with one complex transform per frame: [a] goes in as the real part and
+     * [b] as the imaginary part, and the two spectra are taken apart by symmetry. Half the work of two calls to [forward], and the same result.
+     */
+    fun forwardPair(a: FloatArray, b: FloatArray, first: Int, end: Int, reA: FloatArray, imA: FloatArray, reB: FloatArray, imB: FloatArray) {
+        for (f in first until end) {
+            val origin = f * hop
+            for (n in 0 until size) { r[n] = a[origin + n] * window[n]; i[n] = b[origin + n] * window[n] }
+            fft.transform(r, i)
+            val base = f * bins
+            for (k in 0 until bins) {
+                val m = if (k == 0) 0 else size - k
+                reA[base + k] = ((r[k] + r[m]) * .5).toFloat(); imA[base + k] = ((i[k] - i[m]) * .5).toFloat()
+                reB[base + k] = ((i[k] + i[m]) * .5).toFloat(); imB[base + k] = ((r[m] - r[k]) * .5).toFloat()
+            }
+        }
+    }
+
+    /**
+     * Overlaps [count] spectra of two signals at once into [outA] and [outB] (each [span] samples, cleared): one inverse transform per frame of A + iB, whose
+     * real part is A's signal and imaginary part B's. Half the work of two calls to [inverse], and the same result.
+     */
+    fun inversePair(reA: FloatArray, imA: FloatArray, reB: FloatArray, imB: FloatArray, count: Int, outA: FloatArray, outB: FloatArray) {
+        for (f in 0 until count) {
+            val base = f * bins
+            for (k in 0 until bins) { r[k] = (reA[base + k] - imB[base + k]).toDouble(); i[k] = (imA[base + k] + reB[base + k]).toDouble() }
+            // Above the middle the spectra are the mirror of their halves: conj(A) + i conj(B).
+            for (k in 1 until size - bins + 1) { r[size - k] = (reA[base + k] + imB[base + k]).toDouble(); i[size - k] = (reB[base + k] - imA[base + k]).toDouble() }
+            fft.transform(r, i, inverse = true)
+            val origin = f * hop
+            for (n in 0 until size) { outA[origin + n] += (r[n] * synthesis[n]).toFloat(); outB[origin + n] += (i[n] * synthesis[n]).toFloat() }
+        }
+    }
+
     /** Overlaps [count] spectra into [out], which must hold [span] samples and have been cleared. */
     fun inverse(re: FloatArray, im: FloatArray, count: Int, out: FloatArray) {
         for (f in 0 until count) {
@@ -136,20 +170,20 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
 
     /** Separates [source] into [sink]; progress goes from 0 to 1. Returns false if [cancelled] stopped it. */
     fun separate(source: StereoSource, sink: StemSink, progress: (Float) -> Unit = {}, cancelled: () -> Boolean = { false }): Boolean {
-        val n = source.length
+        // The source may still be arriving (a song that is being read): its length is asked again after every read, which waits for what it asks for.
         val size = stftSize
         // Each worker has its own transform, which keeps scratch space: the four stems and the two channels are done at the same time.
         val transforms = Array(4) { Stft(size, hop) }
         val bins = transforms[0].bins; val frames = network.frames; val covered = network.bins
-        val total = (n + size + hop - 1) / hop
+        fun total() = (source.length + size + hop - 1) / hop
         val step = frames - overlap
-        val chunks = max(1, (total - overlap + step - 1) / step)
         val spanFull = transforms[0].span(frames)
         val inL = FloatArray(spanFull); val inR = FloatArray(spanFull)
         val re = Array(2) { FloatArray(frames * bins) }; val im = Array(2) { FloatArray(frames * bins) }
         val magnitude = FloatArray(2 * frames * covered)
-        val sr = Array(4) { FloatArray(frames * bins) }; val si = Array(4) { FloatArray(frames * bins) }
-        val temp = Array(4) { FloatArray(spanFull) }
+        // The spectra and the signals of the stems for each channel, [stem][channel]: both channels of a stem go through one inverse transform.
+        val sr = Array(4) { Array(2) { FloatArray(frames * bins) } }; val si = Array(4) { Array(2) { FloatArray(frames * bins) } }
+        val temp = Array(4) { Array(2) { FloatArray(spanFull) } }
         val denominator = FloatArray(2 * frames * covered)
         // The signal that the stems are cut into: [accOrigin] is where the first sample of each accumulator lies, in samples of the song.
         val acc = Array(4) { Array(2) { FloatArray(spanFull) } }
@@ -169,24 +203,28 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
         fun flush(upTo: Int) {
             // Writes the samples of the accumulators that are final: from the song's sample 0 (or what was left) up to the sample [upTo] (exclusive).
             val from = max(accOrigin, 0)
-            val end = min(upTo, n)
+            val end = min(upTo, source.length)
             if (end > from) for (s in 0 until 4) for (c in 0 until 2) sink.write(s, c, from, acc[s][c].copyOfRange(from - accOrigin, end - accOrigin), end - from)
         }
 
         try {
             var start = 0; var chunk = 0
-            while (start < total) {
+            while (true) {
                 if (cancelled()) return false
-                val count = min(frames, total - start)
                 val origin = start * hop - size
                 source.read(origin.coerceAtLeast(0), spanFull, inL, inR)
+                // Asked after the read: a song still arriving is then either whole or longer than this chunk.
+                val total = total()
+                if (start >= total) break
+                val count = min(frames, total - start)
                 if (origin < 0) {
                     // [read] was asked from 0: move what it gave to where it belongs, behind the zeros.
                     val shift = -origin
                     System.arraycopy(inL, 0, inL, shift, spanFull - shift); java.util.Arrays.fill(inL, 0, shift, 0f)
                     System.arraycopy(inR, 0, inR, shift, spanFull - shift); java.util.Arrays.fill(inR, 0, shift, 0f)
                 }
-                parallel(2) { c -> transforms[c].forward(if (c == 0) inL else inR, count, re[c], im[c]) }
+                // Both channels in one transform per frame, the frames shared by two workers.
+                parallel(2) { w -> transforms[w].forwardPair(inL, inR, w * count / 2, (w + 1) * count / 2, re[0], im[0], re[1], im[1]) }
                 for (c in 0 until 2) for (f in 0 until frames) for (b in 0 until covered) {
                     magnitude[(c * frames + f) * covered + b] = if (f < count) hypot(re[c][f * bins + b], im[c][f * bins + b]) else 0f
                 }
@@ -234,19 +272,18 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
                                     else k += a * w * (pow(estimate[((0 + c) * frames + f) * covered + b]) + SHARE_FLOOR) / denominator[(c * frames + f) * covered + b]
                                 }
                                 if (b >= covered - top) carried += k
-                                sr[s][base + b] = re[c][base + b] * k; si[s][base + b] = im[c][base + b] * k
+                                sr[s][c][base + b] = re[c][base + b] * k; si[s][c][base + b] = im[c][base + b] * k
                             }
                             carried /= top
-                            for (b in covered until bins) { sr[s][base + b] = re[c][base + b] * carried; si[s][base + b] = im[c][base + b] * carried }
+                            for (b in covered until bins) { sr[s][c][base + b] = re[c][base + b] * carried; si[s][c][base + b] = im[c][base + b] * carried }
                         }
-                        java.util.Arrays.fill(temp[s], 0f)
-                        t.inverse(sr[s], si[s], count, temp[s])
-                        val a = acc[s][c]; val x = temp[s]
-                        for (i in 0 until t.span(count)) a[i] += x[i]
                     }
+                    java.util.Arrays.fill(temp[s][0], 0f); java.util.Arrays.fill(temp[s][1], 0f)
+                    t.inversePair(sr[s][0], si[s][0], sr[s][1], si[s][1], count, temp[s][0], temp[s][1])
+                    for (c in 0 until 2) { val a = acc[s][c]; val x = temp[s][c]; for (i in 0 until t.span(count)) a[i] += x[i] }
                 }
                 chunk++
-                progress(chunk.toFloat() / chunks)
+                progress(min(1f, chunk.toFloat() / max(1, (total - overlap + step - 1) / step)))
                 if (start + count >= total) break
                 // The samples before the next chunk's first sample are final: write them and move the rest down.
                 val advance = step * hop
@@ -258,7 +295,7 @@ class StemSeparator(private val network: StemNetwork, private val stftSize: Int 
                 accOrigin += advance
                 start += step
             }
-            flush(n)
+            flush(source.length)
             return true
         } finally { pool.shutdownNow() }
     }

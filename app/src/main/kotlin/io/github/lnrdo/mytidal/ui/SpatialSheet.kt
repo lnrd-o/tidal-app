@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package io.github.lnrdo.mytidal.ui
 
 import androidx.compose.foundation.Canvas

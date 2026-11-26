@@ -42,12 +42,13 @@ fun StemsPage(state: AppState, vm: MainViewModel) {
     // A song that finishes separating appears in the list.
     LaunchedEffect(version, progress.values.count { it.phase == io.github.lnrdo.mytidal.stems.StemProgress.Phase.DONE }) { songs = withContext(Dispatchers.IO) { store.list() } }
     var open by remember { mutableStateOf<Track?>(null) }
-    val installed = remember { StemModel.entries.filter { it.installed(context) } }
+    val installed = remember { StemModel.entries.filter { it.installed(context) && it.fits(context) } }
     val best = remember { StemModel.best(context) }
     val settings = state.settings
     val list = songs
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item { SwitchRow(OpenTuneIcons.Equalizer, stringResource(R.string.stems_switch), settings.stemsOn, { on -> vm.settings { it.copy(stemsOn = on) } }, stringResource(R.string.stems_switch_text)) }
         item { SectionTitle(stringResource(R.string.stems_page_model)) }
         item {
             Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -59,6 +60,8 @@ fun StemsPage(state: AppState, vm: MainViewModel) {
             }
         }
         item { SwitchRow(OpenTuneIcons.Device, stringResource(R.string.stems_page_npu), settings.stemsNpu, { on -> vm.settings { it.copy(stemsNpu = on) } }, stringResource(R.string.stems_page_npu_text)) }
+        // Shown when the 8-bit front of SCNet is on the device.
+        if (StemModel.fastFront(context).isFile) item { SwitchRow(OpenTuneIcons.FastForward, stringResource(R.string.stems_page_fast), settings.stemsFast, { on -> vm.settings { it.copy(stemsFast = on) } }, stringResource(R.string.stems_page_fast_text)) }
         item {
             // How steep the cut between the stems is, for the models that share every bin by masks (not SCNet).
             Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

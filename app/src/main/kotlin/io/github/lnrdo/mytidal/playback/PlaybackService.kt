@@ -116,6 +116,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** Hands the stems switch of the settings to the processor of the players. */
+    private fun applyStems(settings: io.github.lnrdo.mytidal.data.Settings) {
+        io.github.lnrdo.mytidal.stems.StemSwitch.store = app.stems.store
+        io.github.lnrdo.mytidal.stems.StemSwitch.decode(settings.stemsMix).let { (levels, muted, solo) -> io.github.lnrdo.mytidal.stems.StemSwitch.set(levels, muted, solo) }
+        io.github.lnrdo.mytidal.stems.StemSwitch.enabled = settings.stemsOn
+    }
+
     private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
     private var retryJob: Job? = null
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -144,11 +151,11 @@ class PlaybackService : MediaLibraryService() {
                 if (analysis && app.settings.state.value.djFastAnalysis) return io.github.lnrdo.mytidal.playback.dj.FastAnalysisSink(slot)
                 // Else it only taps, and always, and plays silence at a fast speed.
                 val chain = if (analysis) arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot, always = true))
-                    else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot), SpatialProcessor(slot)) }
+                    else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(io.github.lnrdo.mytidal.stems.StemProcessor(slot), DeckTapProcessor(slot), SpectrumProcessor(slot), SpatialProcessor(slot)) }
                 val default = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
                 // With the app's own USB driver on, a song that the DAC can take goes to it untouched; the rest goes to Android as usual.
-                return if (!analysis) io.github.lnrdo.mytidal.playback.usb.UsbRoutingSink(default) else default
+                return if (!analysis) io.github.lnrdo.mytidal.playback.usb.UsbRoutingSink(default) { io.github.lnrdo.mytidal.stems.StemSwitch.streamOffsets[slot] = it } else default
             }
         }
         // The decoder hands over 24-bit songs in full only as floating point samples, which carry 24 bits exactly; the USB driver needs them whole. The routing
@@ -335,7 +342,7 @@ class PlaybackService : MediaLibraryService() {
         io.github.lnrdo.mytidal.playback.usb.UsbDac.init(this)
         io.github.lnrdo.mytidal.playback.dj.neural.RhythmStore.init(this)
         io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.init(this)
-        scope.launch { app.settings.state.collect { applySpatial(); io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+        scope.launch { app.settings.state.collect { applyStems(it); applySpatial(); io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.lnrdo.mytidal.playback.dj.DjOptions(roll = false, cues = it.djCues, echo = false, filters = it.djFilters, groove = it.djGroove,
                     arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural, genreAi = it.djGenreAi)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }

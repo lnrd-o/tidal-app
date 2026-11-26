@@ -152,7 +152,11 @@ class UsbAudioSink : AudioSink {
  * its own sound) goes to Android's usual output. The choice is made each time the format changes.
  */
 @UnstableApi
-class UsbRoutingSink(private val fallback: AudioSink) : AudioSink {
+class UsbRoutingSink(private val fallback: AudioSink,
+    /** Hears the player's offset of the stream: positions that it hands on are shifted by it. */
+    private val onStreamOffset: (Long) -> Unit = {}) : AudioSink {
+    override fun setOutputStreamOffsetUs(outputStreamOffsetUs: Long) { onStreamOffset(outputStreamOffsetUs); fallback.setOutputStreamOffsetUs(outputStreamOffsetUs); usb.setOutputStreamOffsetUs(outputStreamOffsetUs) }
+
     private val usb = UsbAudioSink()
     private var active: AudioSink = fallback
     private var listener: AudioSink.Listener? = null

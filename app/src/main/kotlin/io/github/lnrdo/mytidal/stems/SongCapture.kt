@@ -34,12 +34,52 @@ class SongPcm(val left: ShortArray, val right: ShortArray) : StereoSource {
 }
 
 /**
+ * A song that is being read, which a separation can read at the same time: what is asked before it has arrived is waited for. Its length is the song's
+ * [estimate] (from its duration) until it is whole, then the true one. A capture that fails ends it as [failed], and every wait returns.
+ */
+class LiveSong(private val estimate: Int) : StereoSource {
+    private val lock = Object()
+    private var left = ShortArray(1 shl 20); private var right = ShortArray(1 shl 20)
+    private var size = 0
+    private var finished = false
+    @Volatile var failed = false
+        private set
+
+    override val length: Int get() = synchronized(lock) { if (finished) size else maxOf(size, estimate) }
+    val whole: Boolean get() = synchronized(lock) { finished }
+
+    fun append(l: ShortArray, r: ShortArray, n: Int) {
+        if (n <= 0) return
+        synchronized(lock) {
+            if (finished) return
+            if (size + n > left.size) { val grown = maxOf(left.size * 2, size + n); left = left.copyOf(grown); right = right.copyOf(grown) }
+            System.arraycopy(l, 0, left, size, n); System.arraycopy(r, 0, right, size, n); size += n
+            lock.notifyAll()
+        }
+    }
+
+    fun finish(ok: Boolean) { synchronized(lock) { finished = true; failed = !ok; lock.notifyAll() } }
+
+    override fun read(offset: Int, count: Int, left: FloatArray, right: FloatArray) {
+        synchronized(lock) {
+            while (!finished && size < offset + count) lock.wait(200)
+            for (i in 0 until count) {
+                val p = offset + i
+                if (p < size) { left[i] = this.left[p] * (1f / 32768f); right[i] = this.right[p] * (1f / 32768f) } else { left[i] = 0f; right[i] = 0f }
+            }
+        }
+    }
+
+    fun toPcm(): SongPcm = synchronized(lock) { SongPcm(left.copyOf(size), right.copyOf(size)) }
+}
+
+/**
  * The sink of a hidden player that only captures a song. Like the sink that D'JAI reads songs with, it plays nothing and takes the decoded audio as fast
  * as it comes, but it keeps all of it: each channel is brought to 44.1 kHz by a windowed-sinc resampler (a song that already is at 44.1 kHz is only converted)
  * and held as 16-bit samples, which is what the separation network needs and half of what floats would take.
  */
 @UnstableApi
-internal class CaptureSink : AudioSink {
+internal class CaptureSink(private val live: LiveSong) : AudioSink {
     private var encoding = C.ENCODING_INVALID
     private var channels = 2
     private var rate = 44_100
@@ -52,18 +92,28 @@ internal class CaptureSink : AudioSink {
     private var attributes = AudioAttributes.DEFAULT
     private var skip = false
     private var resamplers: Array<StreamingResampler>? = null
-    private var direct = arrayOf(ShortArrayList(), ShortArrayList())
     private var block = FloatArray(1 shl 14)
+    private var shortsL = ShortArray(1 shl 13); private var shortsR = ShortArray(1 shl 13)
+    /** How much of each resampler's output has been handed to [live]. */
+    private var taken = 0
     private var startedAt = 0L
 
-    /** What was captured, at 44.1 kHz. Call it once the player has ended. */
-    fun result(): SongPcm {
-        val r = resamplers
-        return if (r == null) SongPcm(direct[0].toArray(), direct[1].toArray())
-        else { r.forEach { it.finish() }; SongPcm(shorts(r[0].result()), shorts(r[1].result())) }
+    /** Ends the capture: what the resamplers still hold goes to the song, which is then whole (or failed, when [ok] is false). */
+    fun finish(ok: Boolean) {
+        resamplers?.let { r -> r.forEach { it.finish() }; drain(r) }
+        live.finish(ok)
     }
 
-    private fun shorts(x: FloatArray) = ShortArray(x.size) { (x[it] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort() }
+    /** Hands to the song what both resamplers have made since the last time. */
+    private fun drain(r: Array<StreamingResampler>) {
+        val end = minOf(r[0].outCount, r[1].outCount)
+        val n = end - taken
+        if (n <= 0) return
+        if (shortsL.size < n) { shortsL = ShortArray(n); shortsR = ShortArray(n) }
+        r[0].copyOut(taken, end, shortsL); r[1].copyOut(taken, end, shortsR)
+        live.append(shortsL, shortsR, n)
+        taken = end
+    }
 
     override fun setListener(listener: AudioSink.Listener) {}
     // Floating point is not offered: a sink that says it takes it makes the player ask the decoder for it, and decoders that give 16-bit samples anyway
@@ -112,10 +162,15 @@ internal class CaptureSink : AudioSink {
                 at += frame
             }
             val resample = resamplers
-            if (resample == null) for (f in 0 until take) {
-                direct[0].add((block[f] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()); direct[1].add((block[take + f] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort())
+            if (resample == null) {
+                if (shortsL.size < take) { shortsL = ShortArray(take); shortsR = ShortArray(take) }
+                for (f in 0 until take) {
+                    shortsL[f] = (block[f] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort(); shortsR[f] = (block[take + f] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()
+                }
+                live.append(shortsL, shortsR, take)
             } else {
                 resample[0].feed(block.copyOfRange(0, take), take); resample[1].feed(block.copyOfRange(take, 2 * take), take)
+                drain(resample)
             }
             done += take
         }
@@ -173,13 +228,30 @@ object SongCapture {
     /** The longest song that is read: its 16-bit stereo copy takes about 10 MB for each minute. */
     const val MAX_MINUTES = 12
 
+    /** The length of [track] at 44.1 kHz as its duration gives it, for a [LiveSong] that is not whole yet. */
+    fun estimate(track: Track): Int = (track.durationMs.coerceAtLeast(0) * 44_100 / 1000).toInt()
+
     /**
      * Reads [track] and returns it at 44.1 kHz, or null when it could not be read in a reasonable time. [progress] goes from 0 to 1 as the song is read;
      * [cancelled] is asked while it waits.
      */
     suspend fun read(app: OpenTuneApp, track: Track, progress: (Float) -> Unit, cancelled: () -> Boolean): SongPcm? {
+        val live = LiveSong(estimate(track))
+        return if (capture(app, track, live, progress, cancelled)) live.toPcm() else null
+    }
+
+    /**
+     * Reads [track] into [live], which a separation may read at the same time, and returns whether it was read whole. [live] is ended either way, as failed
+     * when it was not.
+     */
+    suspend fun capture(app: OpenTuneApp, track: Track, live: LiveSong, progress: (Float) -> Unit, cancelled: () -> Boolean): Boolean {
+        val sink = CaptureSink(live)
+        var ok = false
+        try { ok = play(app, track, sink, progress, cancelled); return ok } finally { sink.finish(ok) }
+    }
+
+    private suspend fun play(app: OpenTuneApp, track: Track, sink: CaptureSink, progress: (Float) -> Unit, cancelled: () -> Boolean): Boolean {
         val item = app.sources.resolve(track)
-        val sink = CaptureSink()
         val renderers = object : DefaultRenderersFactory(app) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink = sink
         }
@@ -204,13 +276,13 @@ object SongCapture {
                     if (duration > 0) progress((player.currentPosition.toFloat() / duration).coerceIn(0f, 1f))
                     if (player.playerError != null) -1 else player.playbackState
                 }
-                if (state == -1) { android.util.Log.w("OpenTuneStems", "the song could not be read", withContext(Dispatchers.Main.immediate) { player.playerError?.cause ?: player.playerError }); return null }
+                if (state == -1) { android.util.Log.w("OpenTuneStems", "the song could not be read", withContext(Dispatchers.Main.immediate) { player.playerError?.cause ?: player.playerError }); return false }
                 if (state == Player.STATE_ENDED) break
-                if (cancelled()) { android.util.Log.w("OpenTuneStems", "reading was cancelled"); return null }
-                if (System.currentTimeMillis() - began > limit) { android.util.Log.w("OpenTuneStems", "reading took too long"); return null }
+                if (cancelled()) { android.util.Log.w("OpenTuneStems", "reading was cancelled"); return false }
+                if (System.currentTimeMillis() - began > limit) { android.util.Log.w("OpenTuneStems", "reading took too long"); return false }
                 delay(200)
             }
-            return sink.result()
+            return true
         } finally {
             withContext(Dispatchers.Main.immediate) { runCatching { player.release() } }
         }

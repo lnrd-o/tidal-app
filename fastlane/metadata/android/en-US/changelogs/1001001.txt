@@ -1,0 +1,2 @@
+- Stems: separate a song into vocals, drums, bass and other on the phone, with SCNet (the cleanest, on phones with 7 GB of memory or more), Spleeter, Open-Unmix or both. A switch turns the stems on for every song that has them: the app's own player plays your mix, with a fader, mute and solo for each stem and a Reset button, in both designs. Settings has a Stems page with the options and the songs that have stems.
+- Faster SCNet (8-bit), an option: about a third quicker, a little less clean.

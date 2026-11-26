@@ -73,6 +73,10 @@ class StreamingResampler(private val from: Int, private val to: Int = LogMel.SAM
     /** The audio at the new rate, as floats. */
     @Synchronized
     fun result(): FloatArray = FloatArray(outCount) { out[it] / 32768f }
+
+    /** Copies the samples made so far from [from] until [end] into [dest], as they are (16-bit); for a reader that takes them while they are made. */
+    @Synchronized
+    fun copyOut(from: Int, end: Int, dest: ShortArray) { System.arraycopy(out, from, dest, 0, end - from) }
 }
 
 /** One answer from the listener: what the network said, and the tempo that the listener confirmed or corrected to. */

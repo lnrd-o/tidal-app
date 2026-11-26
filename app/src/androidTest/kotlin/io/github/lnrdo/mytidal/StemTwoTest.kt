@@ -33,7 +33,7 @@ class StemTwoTest {
         val env = OrtEnvironment.getEnvironment()
         val providers = OrtEnvironment.getAvailableProviders()
         Log.i("StemTwo", "providers: $providers")
-        val label = "front $ep threads $threads, decoder $decoderOn"
+        val label = "front ${args.getString("front") ?: "scnet_front.onnx"} $ep threads $threads, decoder $decoderOn"
 
         val frontOptions = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
@@ -45,7 +45,8 @@ class StemTwoTest {
             }
         }
         var t = System.nanoTime()
-        val front = frontOptions.use { env.createSession(File(folder, "scnet_front.onnx").path, it) }
+        val frontFile = args.getString("front") ?: "scnet_front.onnx"
+        val front = frontOptions.use { env.createSession(File(folder, frontFile).path, it) }
         Log.i("StemTwo", "$label: front opened in ${(System.nanoTime() - t) / 1_000_000} ms")
 
         val graph = File(context.cacheDir, "two_npu_scnet_decoder.onnx")

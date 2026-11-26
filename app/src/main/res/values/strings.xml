@@ -1203,4 +1203,11 @@
     <string name="stems_page_unknown">A song separated before its details were kept</string>
     <string name="stems_page_delete">Delete these stems</string>
     <string name="stems_page_delete_all">Delete all stems</string>
+    <string name="stems_page_fast">Faster SCNet (8-bit)</string>
+    <string name="stems_page_fast_text">About a third quicker. The stems are a little less clean than with full precision.</string>
+    <string name="stems_switch">Stems on</string>
+    <string name="stems_switch_text">Songs with stems play your mix, until you turn this off.</string>
+    <string name="stems_reset">Reset</string>
+    <string name="stems_play_song">Play this song</string>
+    <string name="stems_on_chip">On</string>
 </resources>

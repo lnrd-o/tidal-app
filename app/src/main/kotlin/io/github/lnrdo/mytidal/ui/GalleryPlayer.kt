@@ -194,6 +194,7 @@ fun NowPlayingScreen(
     var storyShare by remember { mutableStateOf(false) }
     var spectrum by remember { mutableStateOf(false) }
     var djSheet by remember { mutableStateOf(false) }
+    var stemsSheet by remember { mutableStateOf(false) }
     // The text and the controls always stay on screen.
     val chrome = true
     val context = LocalContext.current
@@ -322,6 +323,7 @@ fun NowPlayingScreen(
                                 TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title), false) { onQueue() }
                                 val marker = rhythmMarker(state.settings.djai && state.settings.djNeural)
                                 TextTool(OpenTuneIcons.Djai, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { djSheet = true; poke() }
+                                TextTool(OpenTuneIcons.Equalizer, stringResource(R.string.stems_title), state.settings.stemsOn) { stemsSheet = true; poke() }
                             }
                             UpNext(state, vm, onQueue)
                         }
@@ -380,6 +382,7 @@ fun NowPlayingScreen(
     if (djSheet) DjaiSheet(state.settings.djai, state.settings.djNeural, track.id, cues, state.playback.duration, { value -> vm.settings { it.copy(djai = value) } }) { djSheet = false }
     if (spectrum) SpectrumScreen(state, accent, onStyle = { next -> vm.settings { it.copy(spectrumStyle = next.id) } }) { spectrum = false }
     if (timer) SleepTimerSheet(state, vm) { timer = false }
+    if (stemsSheet) StemsSheet(track, state, vm) { stemsSheet = false }
     if (storyShare) StoryShareSheet(track, state.playback.quality, vm::storyDetails) { storyShare = false }
 }
 

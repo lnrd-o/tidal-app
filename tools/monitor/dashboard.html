@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone monitor</title>
+<style>
+  :root { color-scheme: dark; --bg:#101114; --card:#181a1f; --line:#272a31; --text:#e8e8ea; --dim:#9a9da6; --a:#6ea8fe; --b:#f2a65a; --c:#6fd0a5; --d:#e5718a; --e:#c4a1ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, sans-serif; padding:16px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  h1 { font-size:18px; margin:0; } h2 { font-size:12px; margin:0 0 8px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
+  .dim { color:var(--dim); } .bad { color:var(--d); } .ok { color:var(--c); }
+  button, select, a.btn { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 10px; font:inherit; cursor:pointer; text-decoration:none; }
+  .tiles { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); margin-bottom:10px; }
+  .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; min-width:0; }
+  .value { font-size:24px; font-variant-numeric:tabular-nums; }
+  canvas { width:100%; height:150px; display:block; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--dim); margin-top:6px; }
+  .legend i { display:inline-block; width:10px; height:3px; margin-right:4px; vertical-align:middle; }
+  .core { display:grid; grid-template-columns:46px 1fr 120px; gap:8px; align-items:center; font-size:12px; font-variant-numeric:tabular-nums; margin:3px 0; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; } .bar b { display:block; height:100%; background:var(--a); }
+  table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; } td, th { text-align:left; padding:2px 6px; border-bottom:1px solid var(--line); } th { color:var(--dim); font-weight:500; }
+  pre { margin:0; font:11px/1.4 ui-monospace, Consolas, monospace; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  @media (max-width:480px) { .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="name">Phone monitor</h1><div class="dim" id="status">connecting…</div></div>
+  <div>
+    <select id="span" aria-label="Time span"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option><option value="1800">30 min</option></select>
+    <button id="pause">Pause</button> <button id="mark">Mark</button> <a class="btn" href="/csv">CSV</a>
+  </div>
+</header>
+<section class="tiles" id="tiles"></section>
+<section class="grid">
+  <div class="card"><h2>Temperatures °C</h2><canvas id="temps"></canvas><div class="legend" id="temps-legend"></div></div>
+  <div class="card"><h2>Load %</h2><canvas id="load"></canvas><div class="legend" id="load-legend"></div></div>
+  <div class="card"><h2>App CPU, % of one core</h2><canvas id="appcpu"></canvas><div class="legend" id="appcpu-legend"></div></div>
+  <div class="card"><h2>Memory MB</h2><canvas id="mem"></canvas><div class="legend" id="mem-legend"></div></div>
+  <div class="card"><h2>Battery power W</h2><canvas id="power"></canvas><div class="legend" id="power-legend"></div></div>
+  <div class="card"><h2>Cores</h2><div id="cores"></div></div>
+  <div class="card"><h2>App's busiest threads</h2><table><thead><tr><th>Thread</th><th>Core</th><th>% of a core</th></tr></thead><tbody id="threads"></tbody></table></div>
+  <div class="card" style="grid-column:1/-1"><h2>App log</h2><pre id="log"></pre></div>
+</section>
+<script>
+const $ = id => document.getElementById(id);
+let samples = [], since = 0, paused = false, marks = [];
+const charts = [
+  { id: 'temps', series: [['CPU', s => s.temps.cpu, '--d'], ['GPU', s => s.temps.gpu, '--b'], ['NPU', s => s.temps.npu, '--e'], ['Skin', s => s.temps.skin, '--c'], ['Battery', s => s.temps.battery, '--a']] },
+  { id: 'load', max: 100, series: [['CPU', s => s.cpu, '--a'], ['GPU', s => s.gpu, '--b']] },
+  { id: 'appcpu', min: 0, series: [['App', s => s.appCpu, '--e']] },
+  { id: 'mem', min: 0, series: [['App RSS', s => s.appRSS, '--a'], ['App swap', s => s.appSwap, '--b'], ['Available', s => s.memAvailable, '--c']] },
+  { id: 'power', min: 0, series: [['Watts', s => s.watts, '--b']] },
+];
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (v, d = 0, unit = '') => v === null || v === undefined ? '–' : v.toFixed(d) + unit;
+
+function draw(chart) {
+  const canvas = $(chart.id), ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * ratio; canvas.height = h * ratio;
+  const g = canvas.getContext('2d'); g.scale(ratio, ratio);
+  const span = +$('span').value, end = samples.length ? samples[samples.length - 1].t : 0, start = end - span;
+  const shown = samples.filter(s => s.t >= start);
+  const values = shown.flatMap(s => chart.series.map(x => x[1](s))).filter(v => v !== null && v !== undefined);
+  let low = chart.min ?? (values.length ? Math.floor(Math.min(...values) / 5) * 5 : 0);
+  let high = chart.max ?? (values.length ? Math.ceil(Math.max(...values) * 1.05 / 5) * 5 : 1);
+  if (high <= low) high = low + 5;
+  const left = 40, x = t => left + (t - start) / span * (w - left), y = v => h - 4 - (v - low) / (high - low) * (h - 12);
+  g.font = '11px system-ui'; g.fillStyle = css('--dim'); g.strokeStyle = css('--line'); g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const v = low + (high - low) * i / 4; g.beginPath(); g.moveTo(left, y(v)); g.lineTo(w, y(v)); g.stroke(); g.fillText(Math.round(v), 0, y(v) + 4); }
+  g.strokeStyle = css('--dim'); g.setLineDash([3, 3]);
+  for (const m of marks) if (m >= start) { g.beginPath(); g.moveTo(x(m), 0); g.lineTo(x(m), h); g.stroke(); }
+  g.setLineDash([]);
+  for (const [, get, colour] of chart.series) {
+    g.strokeStyle = css(colour); g.lineWidth = 1.6; g.beginPath(); let pen = false, last = 0;
+    for (const s of shown) { const v = get(s); if (v === null || v === undefined) { pen = false; continue; } if (pen && s.t - last < 6) g.lineTo(x(s.t), y(v)); else g.moveTo(x(s.t), y(v)); pen = true; last = s.t; }
+    g.stroke();
+  }
+  const latest = shown[shown.length - 1];
+  $(chart.id + '-legend').innerHTML = chart.series.map(([label, get, colour]) => {
+    const all = shown.map(get).filter(v => v !== null && v !== undefined);
+    return `<span><i style="background:${css(colour)}"></i>${label} ${fmt(latest ? get(latest) : null, 1)}<span class="dim"> (max ${fmt(all.length ? Math.max(...all) : null, 1)})</span></span>`;
+  }).join('');
+}
+
+const tile = (title, value, note = '', kind = '') => `<div class="card"><h2>${title}</h2><div class="value ${kind}">${value}</div><div class="dim">${note}</div></div>`;
+const escape = t => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const THROTTLE = ['none', 'light', 'moderate', 'severe', 'critical', 'emergency', 'shutdown'];
+
+function render(log) {
+  const s = samples[samples.length - 1];
+  if (!s) return;
+  const t = s.temps;
+  $('tiles').innerHTML =
+    tile('CPU', fmt(s.cpu, 0, '%'), fmt(t.cpu, 1, ' °C hottest core'), t.cpu >= 70 ? 'bad' : '') +
+    tile('GPU', fmt(s.gpu, 0, '%'), fmt(t.gpu, 1, ' °C') + (s.gpuMhz ? ' · ' + fmt(s.gpuMhz, 0, ' MHz') : '')) +
+    tile('Throttling', THROTTLE[s.throttling] ?? '–', fmt(t.skin, 1, ' °C skin'), s.throttling > 0 ? 'bad' : 'ok') +
+    tile('App', s.pid ? fmt(s.appCpu, 0, '%') : 'not running', s.pid ? `${fmt(s.appRSS, 0, ' MB')} · ${s.appThreads ?? '–'} threads` : '') +
+    tile('Free memory', fmt(s.memAvailable, 0, ' MB'), `of ${fmt(s.memTotal, 0)} MB · swap ${fmt(s.swapUsed, 0)} MB`) +
+    tile('Battery', s.level + '%', `${fmt(t.battery, 1, ' °C')} · ${fmt(s.watts, 2, ' W')}${s.charging ? ' · on power' : ''}`);
+  charts.forEach(draw);
+  $('cores').innerHTML = s.cores.map(c => `<div class="core"><span>cpu${c.id}</span><div class="bar"><b style="width:${c.load ?? 0}%"></b></div><span>${fmt(c.load, 0, '%')} · ${fmt(c.mhz, 0)}/${fmt(c.maxMhz, 0)} MHz</span></div>`).join('');
+  $('threads').innerHTML = (s.busiest || []).map(x => `<tr><td>${escape(x.name)} <span class="dim">${x.tid}</span></td><td>${x.core ?? '–'}</td><td>${fmt(x.cpu, 1)}</td></tr>`).join('');
+  const box = $('log'), bottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  box.textContent = log.join('\n');
+  if (bottom) box.scrollTop = box.scrollHeight;
+}
+
+async function poll() {
+  try {
+    const data = await (await fetch('/data?since=' + since)).json();
+    if (data.samples.length) since = data.samples[data.samples.length - 1].t;
+    samples = samples.concat(data.samples).slice(-1800);
+    $('name').textContent = data.info.name || 'Phone monitor';
+    $('status').innerHTML = data.connected ? `<span class="ok">live</span> · ${data.info.chip} · Android ${data.info.android}` : '<span class="bad">phone not connected</span>';
+    if (!paused) render(data.log);
+  } catch { $('status').innerHTML = '<span class="bad">dashboard server not reachable</span>'; }
+  setTimeout(poll, 1000);
+}
+$('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? 'Resume' : 'Pause'; };
+$('mark').onclick = () => { if (samples.length) marks.push(samples[samples.length - 1].t); };
+$('span').onchange = () => charts.forEach(draw);
+poll();
+</script>
+</body>
+</html>

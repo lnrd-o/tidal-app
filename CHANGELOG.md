@@ -4,6 +4,25 @@ All notable changes to OpenTune are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-25
+
+### Added
+
+- Stems: separate a song into vocals, drums, bass and other on the phone, with SCNet (the cleanest, on phones with 7 GB of memory or more), Spleeter, Open-Unmix or both. A switch turns the stems on for every song that has them: the app's own player plays your mix, with a fader, mute and solo for each stem and a Reset button, in both designs. Settings has a Stems page with the options and the songs that have stems.
+- Faster SCNet (8-bit), an option: about a third quicker, a little less clean.
+- Spatial sound: stereo upmixed to 5.1 or 7.1 for headphones and speakers, with four modes and a view of where the instruments come from.
+- The Rounded design, with light, dark and system modes; halftone, dither and pixel effects; a video player with a quality selector; the buffered part on the seek bar and a page of the songs in the cache.
+- A live monitor of the phone for development (tools/monitor).
+
+### Changed
+
+- Stem separation runs while the song is still being read, and its transforms do half the work.
+
+### Fixed
+
+- SCNet no longer runs on phones with less than 7 GB of memory, where the app ran out of memory.
+- Voice stems no longer crack: stems are kept with headroom and drum hits stay out of the voice.
+
 ## [1.0.2] - 2026-11-19
 
 ### Fixed

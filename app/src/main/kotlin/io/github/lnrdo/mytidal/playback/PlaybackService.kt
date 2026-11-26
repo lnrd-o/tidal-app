@@ -96,10 +96,16 @@ class PlaybackService : MediaLibraryService() {
     private fun applySpatial() {
         val mode = io.github.lnrdo.mytidal.core.spatial.SpatialMode.of(app.settings.state.value.spatialMode)
         val report = SpatialSupport.report(this)
-        val layout = if (mode != null && report.usable) report.channels else 0
+        val wanted = app.settings.state.value.spatialLayout
+        // The system places the channels where it can and does; else the app does, for headphones or for speakers.
+        val system = if (app.settings.state.value.spatialSystem) SpatialSupport.layout(report, wanted).takeIf { it > 0 } else null
+        val render = when { system != null -> SpatialRender.SYSTEM; report.output == SpatialReport.Output.HEADPHONES -> SpatialRender.HEADPHONES; else -> SpatialRender.SPEAKERS }
+        val layout = if (mode == null) 0 else system ?: wanted
         SpatialState.mode = mode.takeIf { layout != 0 }
-        android.util.Log.i("OpenTuneSpatial", "mode ${mode?.id}, layout $layout, $report")
-        if (SpatialState.layout == layout) return
+        val renderChanged = SpatialState.render != render
+        SpatialState.render = render
+        android.util.Log.i("OpenTuneSpatial", "mode ${mode?.id}, layout $layout, render $render, $report")
+        if (SpatialState.layout == layout && !(renderChanged && layout != 0)) return
         SpatialState.layout = layout
         if (!this::player.isInitialized) return
         // The audio of a song is configured once, when it starts: preparing a player that already plays does nothing. Stopping it and preparing it again at the

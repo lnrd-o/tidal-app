@@ -46,6 +46,17 @@ class Upmixer(private val rate: Int, val channels: Int = 6) {
     /** The level of each channel (RMS of the last block, with a short hold), in [SpatialChannel] order; the unused ones stay 0. */
     val levels = FloatArray(8)
 
+    /**
+     * What sounds in each channel, by band, for a display of where the instruments come from: for channel k, [k * 3] is the bass (below 200 Hz), [k * 3 + 1]
+     * the middle (200 Hz to 4 kHz: the voice, guitars, keys) and [k * 3 + 2] the highs (above 4 kHz: cymbals, hi-hats, the snap of the drums). RMS, with a
+     * quick rise and a slow fall, as [levels].
+     */
+    val bands = FloatArray(8 * 3)
+    private val bandLow = (1.0 - exp(-2 * PI * 200 / rate)).toFloat()
+    private val bandHigh = (1.0 - exp(-2 * PI * 4000 / rate)).toFloat()
+    private val lowState = FloatArray(8); private val highState = FloatArray(8)
+    private val bandSum = FloatArray(8 * 3)
+
     private val smooth = exp(-1.0 / (.04 * rate)).toFloat()
     private var ll = 0f; private var rr = 0f; private var lr = 0f
     private val size = (rate * .06).toInt() + 1
@@ -57,7 +68,7 @@ class Upmixer(private val rate: Int, val channels: Int = 6) {
     private val bass = Biquad.lowPass(rate, 110.0)
     private val gain = .8f
 
-    fun reset() { ll = 0f; rr = 0f; lr = 0f; delayL.fill(0f); delayR.fill(0f); darkL = 0f; darkR = 0f; bass.reset(); levels.fill(0f) }
+    fun reset() { ll = 0f; rr = 0f; lr = 0f; delayL.fill(0f); delayR.fill(0f); darkL = 0f; darkR = 0f; bass.reset(); levels.fill(0f); bands.fill(0f); lowState.fill(0f); highState.fill(0f) }
 
     /** Upmixes [frames] frames of interleaved stereo from [input] to [output], interleaved with [channels] channels. */
     fun process(input: FloatArray, inputOffset: Int, frames: Int, output: FloatArray, outputOffset: Int) {
@@ -89,12 +100,19 @@ class Upmixer(private val rate: Int, val channels: Int = 6) {
             output[o] = fl; output[o + 1] = fr; output[o + 2] = c; output[o + 3] = low * gain
             if (channels == 8) { output[o + 4] = bl; output[o + 5] = br; output[o + 6] = sl; output[o + 7] = sr }
             else { output[o + 4] = bl + sl * .7f; output[o + 5] = br + sr * .7f }
-            for (k in 0 until channels) sum[k] += output[o + k] * output[o + k]
+            for (k in 0 until channels) {
+                val x = output[o + k]
+                sum[k] += x * x
+                lowState[k] += bandLow * (x - lowState[k]); highState[k] += bandHigh * (x - highState[k])
+                val low = lowState[k]; val mid = highState[k] - low; val high = x - highState[k]
+                bandSum[k * 3] += low * low; bandSum[k * 3 + 1] += mid * mid; bandSum[k * 3 + 2] += high * high
+            }
         }
         // The meter: the level of the block, with a quick rise and a slow fall.
         if (frames > 0) for (k in 0 until channels) {
             val level = sqrt(sum[k] / frames)
             levels[k] = max(level, levels[k] * .85f)
+            for (b in 0 until 3) { val i = k * 3 + b; bands[i] = max(sqrt(bandSum[i] / frames), bands[i] * .85f); bandSum[i] = 0f }
         }
     }
 

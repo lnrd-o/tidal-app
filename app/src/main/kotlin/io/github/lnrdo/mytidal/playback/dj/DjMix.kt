@@ -180,30 +180,40 @@ class DjOutput {
         val buffer = FloatArray(chunk * 2)
         var failed = false
         // The track is made again when the surround upmix is turned on or off, or changes its layout.
-        fun layout() = if (io.github.lnrdo.mytidal.playback.SpatialState.mode != null) io.github.lnrdo.mytidal.playback.SpatialState.layout else 0
+        // The layout and who renders it, in one number: a change of either makes the track again.
+        fun layout() = io.github.lnrdo.mytidal.playback.SpatialState.let { s -> if (s.mode != null && s.layout != 0) s.layout * 10 + s.render.ordinal else 0 }
         while (running && !failed) {
-            val layout = layout()
+            val key = layout()
+            val upmix = key / 10
+            val render = io.github.lnrdo.mytidal.playback.SpatialRender.entries[key % 10]
+            val virtual = upmix != 0 && render != io.github.lnrdo.mytidal.playback.SpatialRender.SYSTEM
+            val layout = if (virtual) 0 else upmix
             val channels = if (layout == 0) 2 else layout
             val mask = when (layout) { 0 -> AudioFormat.CHANNEL_OUT_STEREO; 6 -> AudioFormat.CHANNEL_OUT_5POINT1; else -> AudioFormat.CHANNEL_OUT_7POINT1_SURROUND }
-            val upmixer = if (layout == 0) null else io.github.lnrdo.mytidal.core.spatial.Upmixer(rate, layout)
-            val surround = FloatArray(chunk * channels)
+            val upmixer = if (upmix == 0) null else io.github.lnrdo.mytidal.core.spatial.Upmixer(rate, upmix)
+            val virtualizer = if (virtual) io.github.lnrdo.mytidal.core.spatial.Virtualizer(rate, upmix, render == io.github.lnrdo.mytidal.playback.SpatialRender.SPEAKERS) else null
+            val surround = FloatArray(chunk * maxOf(channels, upmix))
+            val rendered = FloatArray(chunk * 2)
             val minimum = AudioTrack.getMinBufferSize(rate, mask, AudioFormat.ENCODING_PCM_FLOAT)
             val track = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(mask).build())
                 .setBufferSizeInBytes(maxOf(minimum, chunk * channels * 4 * 6))
                 .setTransferMode(AudioTrack.MODE_STREAM)
+                // A low-latency ("fast") track never reaches the system's spatializer: with the upmix on, the track asks for the deep buffer instead.
+                .apply { if (layout != 0) setPerformanceMode(AudioTrack.PERFORMANCE_MODE_POWER_SAVING) }
                 .build()
             if (upmixer != null) io.github.lnrdo.mytidal.playback.SpatialState.upmixer = upmixer
             try {
                 track.play()
-                while (running && layout() == layout) {
+                while (running && layout() == key) {
                     DjMix.mixer.render(buffer, chunk)
                     if (AudioSpectrum.enabled) for (i in 0 until chunk) AudioSpectrum.write((buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f, rate)
                     val out: FloatArray
                     if (upmixer == null) out = buffer else {
                         io.github.lnrdo.mytidal.playback.SpatialState.mode?.let { upmixer.mode = it }
-                        upmixer.process(buffer, 0, chunk, surround, 0); out = surround
+                        upmixer.process(buffer, 0, chunk, surround, 0)
+                        out = if (virtualizer != null) { virtualizer.process(surround, 0, chunk, rendered, 0); rendered } else surround
                     }
                     if (track.write(out, 0, chunk * channels, AudioTrack.WRITE_BLOCKING) < 0) { failed = true; break }
                 }

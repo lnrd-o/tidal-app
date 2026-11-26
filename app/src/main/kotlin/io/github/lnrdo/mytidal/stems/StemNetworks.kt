@@ -41,6 +41,16 @@ enum class StemModel(val id: String, val file: String, val frames: Int, val bins
 
     companion object {
         fun of(id: String?) = entries.firstOrNull { it.id == id } ?: SPLEETER
+
+        /**
+         * The one model that this device uses: the best that is installed and that it runs well. SCNet gives the cleanest stems, but takes about 2.2 GB while
+         * it separates, so it goes first only on a device with 7 GB of memory or more; then the two that vote (Both), then Spleeter, then Open-Unmix.
+         */
+        fun best(context: Context): StemModel? {
+            val memory = android.app.ActivityManager.MemoryInfo().also { context.getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(it) }.totalMem
+            val order = if (memory >= 7_000_000_000L) listOf(SCNET, BOTH, SPLEETER, OPEN_UNMIX) else listOf(BOTH, SPLEETER, OPEN_UNMIX, SCNET)
+            return order.firstOrNull { it.installed(context) }
+        }
         /** The two parts of SCNet, as tools/model/export_scnet_two.py writes them. */
         fun partsFolder(context: Context) = File(File(context.filesDir, "stems"), "scnet_two")
     }

@@ -1174,12 +1174,20 @@
     <string name="spatial_out_speaker">Speakers</string>
     <string name="spatial_out_other">Other output</string>
     <string name="spatial_dolby">Dolby</string>
-    <string name="spatial_ready_51">spatial audio ready, 5.1</string>
-    <string name="spatial_ready_71">spatial audio ready, 7.1</string>
     <string name="spatial_system_off">spatial audio is off in the system sound settings</string>
     <string name="spatial_unavailable">this output cannot spatialize sound</string>
-    <string name="spatial_waiting">The upmix is waiting: this output cannot spatialize sound now. It starts by itself when the output can.</string>
     <string name="spatial_menu">Spatial sound</string>
     <string name="spatial_on_mode">On</string>
     <string name="stems_preparing">Preparing the %1$s for SCNet, only the first time…</string>
+    <string name="spatial_ready">spatial audio ready</string>
+    <string name="spatial_layout_51">5.1</string>
+    <string name="spatial_layout_71">7.1</string>
+    <string name="stems_chosen">%1$s, chosen for this device</string>
+    <string name="spatial_instruments">Instruments</string>
+    <string name="spatial_drums">Drums</string>
+    <string name="spatial_render_system">The system places the channels around you.</string>
+    <string name="spatial_render_headphones">The app places the channels around you: binaural, for headphones.</string>
+    <string name="spatial_render_speakers">The app places the channels: widened past the speakers.</string>
+    <string name="spatial_use_system">Use the system\'s spatializer</string>
+    <string name="spatial_use_system_text">Where the phone spatializes surround sound itself (Dolby Atmos on some devices). Some phones say they can and fold it to stereo; then leave this off.</string>
 </resources>

@@ -103,6 +103,59 @@ class StemsTest {
         assertEquals(0.0, maxDiff(sink.out[0][0], FloatArray(n) { l[it] / 4 }).toDouble(), 5e-4)
     }
 
+    @Test fun sharingTheWorkAcrossThreadsGivesTheSameStems() {
+        val n = 40_000
+        val l = signal(n, 12); val r = signal(n, 13)
+        val net = { SharesNetwork(16, 512) { s, b -> when (s) { 0 -> if (b < 100) 1f else .1f; 1 -> if (b < 100) .2f else 1f; 2 -> .5f; else -> .3f } } }
+        val one = ArraySink(n); val four = ArraySink(n)
+        StemSeparator(net(), overlap = 4, threads = 1).separate(ArraySource(l, r), one)
+        StemSeparator(net(), overlap = 4, threads = 4).separate(ArraySource(l, r), four)
+        for (s in 0 until 4) for (c in 0 until 2) assertEquals(0.0, maxDiff(one.out[s][c], four.out[s][c]).toDouble(), 0.0)
+    }
+
+    @Test fun aHigherPowerMakesTheCutBetweenStemsSteeper() {
+        val n = 30_000
+        val l = signal(n, 14); val r = signal(n, 15)
+        fun stemZeroShare(power: Int): Double {
+            val sink = ArraySink(n)
+            StemSeparator(SharesNetwork(16, 1024) { s, _ -> when (s) { 0 -> .8f; 1 -> .4f; else -> 0f } }, overlap = 4, power = power).separate(ArraySource(l, r), sink)
+            val a = (4096 until n - 4096).sumOf { (sink.out[0][0][it] * l[it]).toDouble() }
+            val m = (4096 until n - 4096).sumOf { (l[it] * l[it]).toDouble() }
+            return a / m
+        }
+        assertEquals(.64 / (.64 + .16), stemZeroShare(2), .01)
+        assertEquals(.512 / (.512 + .064), stemZeroShare(3), .01)
+        assertEquals(.4096 / (.4096 + .0256), stemZeroShare(4), .01)
+    }
+
+    @Test fun twoNetworksThatDisagreeAreAveragedAndTheStemsStillAddUpToTheMix() {
+        val n = 50_000
+        val l = signal(n, 16); val r = signal(n, 17)
+        val a = SharesNetwork(16, 512) { s, b -> if (b < 300) (if (s == 0) 1f else 0f) else (if (s == 1) 1f else 0f) }
+        val b = SharesNetwork(8, 1024) { s, k -> if (k < 300) (if (s == 1) 1f else 0f) else if (k < 512) (if (s == 0) 1f else 0f) else (if (s < 2) 1f else 0f) }
+        val sink = ArraySink(n)
+        StemSeparator(EnsembleNetwork(a, b), overlap = 4).separate(ArraySource(l, r), sink)
+        for (c in 0 until 2) {
+            val sum = FloatArray(n) { i -> (0 until 4).sumOf { sink.out[it][c][i].toDouble() }.toFloat() }
+            assertEquals(0.0, maxDiff(sum, if (c == 0) l else r).toDouble(), 6e-4)
+        }
+        // They split every bin evenly between stems 0 and 1 (above the first network's bins the second splits them so itself), and give nothing to the others.
+        assertEquals(0.0, maxDiff(sink.out[0][0], FloatArray(n) { l[it] / 2 }).toDouble(), 2e-3)
+        assertTrue(sink.out[2][0].all { abs(it) < 1e-5f })
+    }
+
+    @Test fun theSecondNetworkAloneCarriesTheBinsAboveTheFirst() {
+        val n = 30_000
+        val l = signal(n, 18)
+        val a = SharesNetwork(16, 512) { s, _ -> if (s == 0) 1f else 0f }
+        val b = SharesNetwork(8, 1024) { s, _ -> if (s == 1) 1f else 0f }
+        val sink = ArraySink(n)
+        StemSeparator(EnsembleNetwork(a, b), overlap = 4).separate(ArraySource(l, l), sink)
+        val e0 = (4096 until n - 4096).sumOf { (sink.out[0][0][it] * sink.out[0][0][it]).toDouble() }
+        val e1 = (4096 until n - 4096).sumOf { (sink.out[1][0][it] * sink.out[1][0][it]).toDouble() }
+        assertTrue(e1 > e0)
+    }
+
     @Test fun cancellingStopsTheSeparation() {
         val n = 40_000
         val sink = ArraySink(n)

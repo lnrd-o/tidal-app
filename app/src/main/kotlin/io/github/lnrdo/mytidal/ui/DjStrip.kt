@@ -1,5 +1,7 @@
 package io.github.lnrdo.mytidal.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -47,8 +49,8 @@ fun DjStrip(modifier: Modifier = Modifier) {
     val ui by DjMix.ui.collectAsStateWithLifecycle()
     if (ui.phase == DjPhase.OFF) return
     // The colour tells how good the mix is: white when it is not a really good one, cyan when it is good, gold when it is almost perfect.
-    val tint by animateColorAsState(matchColor(ui.match ?: ui.changedMatch), tween(300), label = "djai-tint")
-    Column(modifier.fillMaxWidth().background(tint.copy(alpha = .08f)).border(1.dp, tint.copy(alpha = .45f), RectangleShape).padding(12.dp).testTag("djai-strip")) {
+    val tint by animateColorAsState(matchColor(ui.match ?: ui.changedMatch, MaterialTheme.colorScheme.onSurface), tween(300), label = "djai-tint")
+    Column(modifier.fillMaxWidth().background(tint.copy(alpha = .08f)).border(1.dp, tint.copy(alpha = .45f), MaterialTheme.shapes.medium).padding(12.dp).testTag("djai-strip")) {
         DjHeader(ui, tint)
         if (ui.phase != DjPhase.WAITING) {
             Spacer(Modifier.height(10.dp))
@@ -61,7 +63,7 @@ fun DjStrip(modifier: Modifier = Modifier) {
 private fun DjHeader(ui: DjUi, tint: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.djai_name), Modifier.background(tint).padding(horizontal = 6.dp, vertical = 2.dp),
-            fontFamily = AppFonts.body, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = Color.Black)
+            fontFamily = AppFonts.body, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.surface)
         Spacer(Modifier.width(10.dp))
         Text(when (ui.phase) {
             DjPhase.WAITING -> if (ui.album) stringResource(R.string.djai_album)
@@ -178,9 +180,9 @@ private val Gold = Color(0xFFE3B341)
 private val Cyan = Color(0xFF22D3EE)
 
 /** White below 70 percent, cyan from 70 percent, gold from 90 percent. Without a match yet it is white. */
-fun matchColor(match: Double?): Color = when {
-    match == null -> Color.White
+fun matchColor(match: Double?, ink: Color = Color.White): Color = when {
+    match == null -> ink
     match >= MixPlanner.PERFECT_MATCH -> Gold
     match >= MixPlanner.MIN_MATCH -> Cyan
-    else -> Color.White
+    else -> ink
 }

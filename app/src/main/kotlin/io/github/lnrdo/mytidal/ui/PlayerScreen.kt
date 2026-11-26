@@ -94,7 +94,7 @@ fun QueueSheet(state: AppState, vm: MainViewModel, onClose: () -> Unit) {
         if (dragStart >= 0 && end >= 0 && end != dragStart) vm.moveQueue(dragStart, end)
         dragged = null; dragStart = -1; dragOffset = 0f
     }
-    ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(shape = SheetShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding().testTag("queue-list"), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "title") { SectionTitle(stringResource(R.string.queue_title), if (queue.isNotEmpty()) stringResource(R.string.action_clear) else null, { confirmClear = true }) }
             if (queue.isNotEmpty()) item(key = "tools") {

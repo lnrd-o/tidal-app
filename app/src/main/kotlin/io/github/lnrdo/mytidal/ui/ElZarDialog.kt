@@ -108,7 +108,7 @@ private val speedNames = intArrayOf(R.string.vinyl_33, R.string.vinyl_45)
 @Composable
 private fun VoicePanel(settings: Settings, onChange: ((Settings) -> Settings) -> Unit) {
     val voice = settings.elzarVoice.coerceIn(1, 3)
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, Color.White.copy(alpha = .18f)).padding(12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .18f)).padding(12.dp)) {
         Text(stringResource(voiceTitles[voice]).uppercase(), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.4.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         for (i in 0 until 3) {
             val (title, hint) = voiceControls[voice][i]
@@ -129,9 +129,9 @@ private fun Chips(title: Int, names: IntArray, hints: IntArray?, selected: Int, 
         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (i in names.indices) {
                 val on = i == selected
-                Box(Modifier.border(1.dp, if (on) Color.White else Color.White.copy(alpha = .18f)).clickable(enabled = enabled) { onSelect(i) }.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                Box(Modifier.border(1.dp, if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .18f)).clickable(enabled = enabled) { onSelect(i) }.padding(horizontal = 10.dp, vertical = 7.dp)) {
                     Text(stringResource(names[i]), fontSize = 12.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -146,6 +146,7 @@ private fun ReductionMeter() {
     LaunchedEffect(Unit) { while (isActive) withFrameNanos { frame++ } }
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         Text(stringResource(R.string.elzar_reduction).uppercase(), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.4.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val ink = MaterialTheme.colorScheme.onSurface
         Canvas(Modifier.fillMaxWidth().height(16.dp).padding(top = 6.dp)) {
             frame
             val reduction = DjMix.mixer.elzar.reductionDb
@@ -153,7 +154,7 @@ private fun ReductionMeter() {
             val pitch = size.width / cells
             for (i in 0 until cells) {
                 val lit = reduction > i + 0.5f
-                drawRect(if (lit) Color.White else Color.White.copy(alpha = .1f), Offset(i * pitch + 1f, 0f), Size(pitch - 2f, size.height))
+                drawRect(if (lit) ink else ink.copy(alpha = .1f), Offset(i * pitch + 1f, 0f), Size(pitch - 2f, size.height))
             }
         }
     }

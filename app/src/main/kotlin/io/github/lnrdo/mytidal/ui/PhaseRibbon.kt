@@ -37,6 +37,7 @@ fun phaseName(kind: CueKind): Int = when (kind) {
 fun PhaseRibbon(cues: List<Cue>, duration: Long, position: Long, accent: Color, modifier: Modifier = Modifier) {
     val phases = remember(cues, duration) { SongPhases.build(cues, duration) }
     if (phases.isEmpty()) return
+    val ink = androidx.compose.material3.LocalContentColor.current
     Canvas(modifier) {
         val edge = 5.dp.toPx()
         val span = size.width - 2 * edge
@@ -50,8 +51,8 @@ fun PhaseRibbon(cues: List<Cue>, duration: Long, position: Long, accent: Color, 
             val lit = phase === now
             val color = when (phase.level) {
                 PhaseLevel.ENERGETIC -> accent.copy(alpha = if (lit) 1f else .75f)
-                PhaseLevel.RISING -> Color.White.copy(alpha = if (lit) .85f else .5f)
-                PhaseLevel.SOFT -> Color.White.copy(alpha = if (lit) .6f else .28f)
+                PhaseLevel.RISING -> ink.copy(alpha = if (lit) .85f else .5f)
+                PhaseLevel.SOFT -> ink.copy(alpha = if (lit) .6f else .28f)
             }
             drawRect(color, Offset(x0, base - height), Size((x1 - x0 - gap).coerceAtLeast(1f), height))
         }

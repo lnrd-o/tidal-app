@@ -28,6 +28,7 @@ class OpenTuneApp : Application() {
     val exporter by lazy { OfflineExporter(this) }
     val downloadFiles by lazy { io.github.lnrdo.mytidal.data.DownloadFiles(this) }
     val sources by lazy { AudioSources(this) }
+    val stems by lazy { io.github.lnrdo.mytidal.stems.StemManager(this) }
     val aiEngine by lazy { io.github.lnrdo.mytidal.data.AiRecommendationEngine(this, library, tidal) }
 
     /** Counts the times that the device regained a network, so that screens can request again what failed while it was away. */
@@ -51,6 +52,12 @@ class OpenTuneApp : Application() {
                 override fun onAvailable(network: android.net.Network) { networkEpoch.value += 1 }
             })
         }
+    }
+
+    /** When the system runs short of memory the stem networks, which take a lot of it, are freed if no song is using them. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) io.github.lnrdo.mytidal.stems.StemNetworks.closeIfIdle(0)
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {

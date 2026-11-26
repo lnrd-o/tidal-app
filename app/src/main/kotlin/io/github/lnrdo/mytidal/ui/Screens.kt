@@ -304,7 +304,7 @@ fun LibraryScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onNew
                 if (page != null) pageContent(page, entry, mixes.key, context, viewAll = true)
                 else item(key = "mixes-state") {
                     when {
-                        !state.signedIn -> EmptyState(OpenTuneIcons.Waves, stringResource(R.string.mixes_none), stringResource(R.string.mixes_connect), stringResource(R.string.action_connect_tidal), onLogin)
+                        !state.signedIn -> EmptyState(OpenTuneIcons.Djai, stringResource(R.string.mixes_none), stringResource(R.string.mixes_connect), stringResource(R.string.action_connect_tidal), onLogin)
                         state.settings.offline -> EmptyState(OpenTuneIcons.CloudOff, stringResource(R.string.mixes_offline), stringResource(R.string.mixes_offline_text))
                         entry?.error != null -> ErrorCard(entry.error) { pages.load(mixes, force = true) }
                         else -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 1.5.dp) }
@@ -374,6 +374,8 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
     var mobile by remember { mutableStateOf(false) }
     var signOut by remember { mutableStateOf(false) }
     var normalization by remember { mutableStateOf(false) }
+    var spatial by remember { mutableStateOf(false) }
+    if (spatial) SpatialSheet(state, vm) { spatial = false }
     var crossfade by remember { mutableStateOf(false) }
     var elzarOpen by remember { mutableStateOf(false) }
     var cacheOpen by remember { mutableStateOf(false) }
@@ -398,10 +400,11 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.settings_adapt_color), settings.adaptColor, { value -> vm.settings { it.copy(adaptColor = value) } }, stringResource(R.string.settings_adapt_color_text)) }
         item { SettingRow(OpenTuneIcons.Download, stringResource(R.string.settings_cache),
             if (settings.cacheMb == 0) stringResource(R.string.settings_off) else stringResource(R.string.settings_cache_value, formatSize(settings.cacheMb.toLong() * 1024 * 1024)), { cacheOpen = true }) }
+        item { SettingRow(OpenTuneIcons.LibraryMusic, stringResource(R.string.cache_title), stringResource(R.string.cache_summary), { onOpenPage(SettingsPage.Cache) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         item { SettingRow(OpenTuneIcons.GraphicEq, stringResource(R.string.elzar_name),
             if (settings.elzar) stringResource(R.string.path_elzar_detail, settings.elzarGlue, settings.elzarTape, settings.elzarVinyl) else stringResource(R.string.settings_off), { elzarOpen = true }) }
-        item { SettingRow(OpenTuneIcons.Tune, stringResource(R.string.look_title), stringResource(themeFor(settings.appTheme, true).nameRes), { onOpenPage(SettingsPage.Look) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
-        item { SettingRow(OpenTuneIcons.Waves, stringResource(R.string.djai_name), djaiSummary(settings), { onOpenPage(SettingsPage.Djai) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
+        item { SettingRow(OpenTuneIcons.Tune, stringResource(R.string.look_title), stringResource(if (settings.rounded) R.string.look_rounded else R.string.look_classic), { onOpenPage(SettingsPage.Look) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
+        item { SettingRow(OpenTuneIcons.Djai, stringResource(R.string.djai_name), djaiSummary(settings), { onOpenPage(SettingsPage.Djai) }, trailing = { Icon(OpenTuneIcons.ChevronRight, null) }) }
         // These settings change how TIDAL is streamed and downloaded, so they appear once an account is connected.
         if (state.signedIn) {
             item { SectionTitle(stringResource(R.string.settings_tidal)) }
@@ -423,6 +426,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
         item { SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.settings_clear_history), stringResource(R.string.settings_clear_history_text), { clearHistory = true }) }
         item { SectionTitle(stringResource(R.string.settings_experimental)) }
         item { SettingRow(OpenTuneIcons.Lyrics, stringResource(R.string.scrobble_title), if (settings.scrobble) stringResource(R.string.settings_scrobble_on, settings.scrobbleServer.removePrefix("https://")) else stringResource(R.string.settings_off), { scrobbling = true }) }
+        item { SettingRow(OpenTuneIcons.Spatial, stringResource(R.string.spatial_title), stringResource(if (settings.spatialMode == "off") R.string.spatial_off else R.string.spatial_on_mode), { spatial = true }) }
         item { UsbDriverRow(settings.usbDriver) { value -> vm.settings { it.copy(usbDriver = value) } } }
         if (android.os.Build.VERSION.SDK_INT >= 34) item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_bitperfect), settings.bitPerfect, { value -> vm.settings { it.copy(bitPerfect = value) } }, stringResource(R.string.settings_bitperfect_text)) }
         if (state.signedIn) {
@@ -484,7 +488,7 @@ fun SettingsScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit, onOp
 private val CACHE_SIZES = intArrayOf(0, 128, 256, 512, 1024, 2048, 4096, 8192)
 
 @Composable
-private fun formatSize(bytes: Long): String {
+internal fun formatSize(bytes: Long): String {
     val context = LocalContext.current
     // The system formatter fails on phones without a locale: the number alone is the fallback.
     return runCatching { android.text.format.Formatter.formatShortFileSize(context, bytes) }.getOrElse { (bytes / (1024 * 1024)).toString() }

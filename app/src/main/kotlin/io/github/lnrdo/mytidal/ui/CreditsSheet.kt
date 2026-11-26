@@ -17,7 +17,7 @@ import io.github.lnrdo.mytidal.core.Contributor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreditsSheet(credits: CreditsUi, onClose: () -> Unit, onPerson: (Contributor) -> Unit) {
-    ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(shape = SheetShape, dragHandle = { SheetHandle() }, onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.navigationBarsPadding(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             item(key = "title") {
                 Text(stringResource(R.string.credits_title), style = AppFonts.title(32, 38))

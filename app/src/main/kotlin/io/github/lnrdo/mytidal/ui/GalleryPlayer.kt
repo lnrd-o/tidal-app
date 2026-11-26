@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -90,7 +91,9 @@ import kotlin.math.absoluteValue
 @Composable
 fun PlayControl(playing: Boolean, buffering: Boolean = false, size: Dp = 72.dp, tint: Color = Color.White, onClick: () -> Unit) {
     val description = stringResource(if (playing) R.string.player_pause else R.string.player_play)
-    Box(Modifier.size(size).background(tint).clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button }, contentAlignment = Alignment.Center) {
+    // A white square in the classic design, a white circle in the rounded one.
+    val shape = if (LocalRound.current) androidx.compose.foundation.shape.CircleShape else RectangleShape
+    Box(Modifier.size(size).clip(shape).background(tint).clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button }, contentAlignment = Alignment.Center) {
         if (buffering) CircularProgressIndicator(Modifier.size(size * .35f), color = Color.Black, strokeWidth = 2.dp)
         else Icon(if (playing) OpenTuneIcons.PauseSolid else OpenTuneIcons.PlaySolid, null, Modifier.size(size * .42f), tint = Color.Black)
     }
@@ -98,6 +101,9 @@ fun PlayControl(playing: Boolean, buffering: Boolean = false, size: Dp = 72.dp, 
 
 /** The playback position in milliseconds. The activity provides the position of the player and a preview provides a fixed one. */
 val LocalPlaybackPosition = staticCompositionLocalOf<StateFlow<Long>> { MutableStateFlow(0L) }
+
+/** How far into the song the player has loaded, in milliseconds. */
+val LocalBufferedPosition = staticCompositionLocalOf<StateFlow<Long>> { MutableStateFlow(0L) }
 
 /** The mini player. A swipe to the left skips and a swipe to the right dismisses. */
 @Composable
@@ -108,7 +114,10 @@ fun MiniPlayer(state: PlaybackState, position: State<Long>, onOpen: () -> Unit, 
     var dragging by remember { mutableStateOf(false) }
     val shown by animateFloatAsState(if (dragging) offset else 0f, spring(stiffness = Spring.StiffnessMedium), label = "mini-player-swipe")
     val stop = stringResource(R.string.player_stop)
-    Box(Modifier.testTag("mini-player").onSizeChanged { width = it.width.coerceAtLeast(1) }
+    // In the rounded design the mini player floats: a pill of glass over the page, with room around it.
+    val round = LocalRound.current
+    val pill = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
+    Box(Modifier.testTag("mini-player").then(if (round) Modifier.padding(horizontal = 10.dp, vertical = 6.dp) else Modifier).onSizeChanged { width = it.width.coerceAtLeast(1) }
         .graphicsLayer { translationX = shown; alpha = 1f - .7f * (shown.absoluteValue / width).coerceIn(0f, 1f) }
         .semantics { customActions = listOf(CustomAccessibilityAction(stop) { onDismiss(); true }) }
         .pointerInput(Unit) {
@@ -118,7 +127,8 @@ fun MiniPlayer(state: PlaybackState, position: State<Long>, onOpen: () -> Unit, 
                 onDragCancel = { dragging = false; offset = 0f },
             ) { change, amount -> change.consume(); offset += amount }
         }) {
-        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Column(Modifier.fillMaxWidth().then(if (round) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .92f), pill).blurPane(pill, fill = .4f)
+            else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh))) {
             Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 TrackArtwork(track, null, Modifier.size(40.dp))
                 Column(Modifier.weight(1f).padding(start = 12.dp, end = 6.dp)) {
@@ -133,9 +143,12 @@ fun MiniPlayer(state: PlaybackState, position: State<Long>, onOpen: () -> Unit, 
                 IconButton(onClick = onNext, enabled = state.nextIndex >= 0) { Icon(OpenTuneIcons.SkipNextSolid, stringResource(R.string.player_next), Modifier.size(20.dp)) }
             }
             // The line moves with the song. Reading the position here redraws only this line.
-            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .12f))) {
+            val bufferedNow = LocalBufferedPosition.current
+            Box(Modifier.fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .12f))) {
+                Box(Modifier.fillMaxHeight().graphicsLayer { transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f); scaleX = if (state.duration > 0) (bufferedNow.value.toFloat() / state.duration).coerceIn(0f, 1f) else 0f }
+                    .fillMaxWidth().background(MaterialTheme.colorScheme.onSurface.copy(alpha = .28f)))
                 Box(Modifier.fillMaxHeight().graphicsLayer { transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f); scaleX = if (state.duration > 0) (position.value.toFloat() / state.duration).coerceIn(0f, 1f) else 0f }
-                    .fillMaxWidth().background(Color.White))
+                    .fillMaxWidth().background(MaterialTheme.colorScheme.onSurface))
             }
         }
     }
@@ -162,6 +175,17 @@ fun NowPlayingScreen(
     initialLyrics: Boolean = false,
 ) {
     val track = state.playback.track ?: return
+    if (state.settings.rounded) { NowPlayingRounded(state, vm, onClose, onQueue, onMenu, onAlbum, onArtist, onCredits, initialLyrics); return }
+    // The classic player is a dark stage for the cover, also when the app is light: it is drawn in the dark scheme.
+    if (!LocalAppTheme.current.dark) {
+        val stage = appThemes.first()
+        CompositionLocalProvider(LocalAppTheme provides stage) {
+            MaterialTheme(colorScheme = stage.scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+                NowPlayingScreen(state, vm, onClose, onQueue, onMenu, onAlbum, onArtist, onCredits, initialLyrics)
+            }
+        }
+        return
+    }
     val queue = state.playback.queue.ifEmpty { listOf(track) }
     val currentIndex = state.playback.index.coerceIn(0, queue.lastIndex)
     var lyrics by rememberSaveable { mutableStateOf(initialLyrics) }
@@ -201,7 +225,7 @@ fun NowPlayingScreen(
             withFrameNanos { }
             WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
         }
-        Box(Modifier.fillMaxSize().background(Color(0xFF0A0A0A)).pointerInput(Unit) {
+        Box(Modifier.fillMaxSize().appEffect().background(Color(0xFF0A0A0A)).pointerInput(Unit) {
             // A swipe up opens the queue and a swipe down closes the player. Each counts once, when the finger lifts.
             var total = 0f
             detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = {
@@ -219,6 +243,8 @@ fun NowPlayingScreen(
             BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                 val landscape = maxWidth > maxHeight && maxWidth >= 480.dp
                 val scale = 1f
+                // Air between the rows of the panel: none to spare on a short screen, more on a tall one, so that the foot of the player is not crowded.
+                val air = if (landscape) 0.dp else ((maxHeight - 700.dp) / 6).coerceIn(4.dp, 18.dp)
 
                 // The cover, or the lyrics in its place. The caller decides how much room there is.
                 val coverContent: @Composable (Dp) -> Unit = { coverSize ->
@@ -259,7 +285,7 @@ fun NowPlayingScreen(
                 val panelContent: @Composable (Modifier) -> Unit = { panelModifier ->
                         AnimatedVisibility(chrome, panelModifier,
                         enter = fadeIn(tween(160)) + slideInVertically(spring(dampingRatio = .85f, stiffness = 420f)) { it / 3 }, exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 3 }) {
-                        Column(Modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = .9f, stiffness = 500f)).padding(horizontal = 24.dp).padding(bottom = 8.dp)) {
+                        Column(Modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = .9f, stiffness = 500f)).padding(horizontal = 24.dp).padding(bottom = 12.dp + air)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     AnimatedContent(track, contentKey = { it.id }, transitionSpec = { (slideInVertically(tween(220)) { it / 3 } + fadeIn(tween(200))) togetherWith (slideOutVertically(tween(160)) { -it / 3 } + fadeOut(tween(120))) }, label = "title") { shown ->
@@ -276,9 +302,9 @@ fun NowPlayingScreen(
                                     Icon(if (saved) OpenTuneIcons.Favorite else OpenTuneIcons.FavoriteBorder, stringResource(if (saved) R.string.track_unsave else R.string.track_save), Modifier.size(26.dp), tint = if (saved) Color.White else Color.White.copy(alpha = .7f))
                                 }
                             }
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(4.dp + air))
                             SeekLine(vm, track.id, state.playback.duration, accent, cues) { poke() }
-                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp + air / 2), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 ToggleIcon(OpenTuneIcons.Shuffle, stringResource(R.string.player_shuffle), state.playback.shuffle) { vm.toggleShuffle(); poke() }
                                 IconButton(onClick = { vm.previous(); poke() }, Modifier.size(52.dp)) { Icon(OpenTuneIcons.FastRewind, stringResource(R.string.player_previous), Modifier.size(30.dp), tint = Color.White) }
                                 PlayControl(playing, state.playback.buffering, 60.dp, accent) { vm.togglePlay(); poke() }
@@ -289,13 +315,13 @@ fun NowPlayingScreen(
                                     stringResource(when (state.playback.repeat) { Player.REPEAT_MODE_ONE -> R.string.player_repeat_one; Player.REPEAT_MODE_ALL -> R.string.player_repeat_all; else -> R.string.player_repeat_off }),
                                     state.playback.repeat != Player.REPEAT_MODE_OFF) { vm.toggleRepeat(); poke() }
                             }
-                            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().padding(top = 2.dp + air / 2, bottom = 12.dp + air), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 val timerOn = state.sleepEndsAt > 0 || state.sleepAtTrackEnd
                                 TextTool(OpenTuneIcons.Lyrics, stringResource(R.string.player_lyrics), lyrics) { lyrics = !lyrics; poke() }
                                 TextTool(OpenTuneIcons.Timer, stringResource(R.string.player_timer_label), timerOn) { timer = true }
                                 TextTool(OpenTuneIcons.QueueMusic, stringResource(R.string.queue_title), false) { onQueue() }
                                 val marker = rhythmMarker(state.settings.djai && state.settings.djNeural)
-                                TextTool(OpenTuneIcons.Waves, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { djSheet = true; poke() }
+                                TextTool(OpenTuneIcons.Djai, stringResource(R.string.djai_name), state.settings.djai, marker?.first, marker?.second) { djSheet = true; poke() }
                             }
                             UpNext(state, vm, onQueue)
                         }
@@ -399,7 +425,7 @@ private fun TextTool(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 
 /** The colour of the square on the D'JAI button: white while the rhythm model runs on the CPU, blue on the GPU, gold on the NPU. Null when it does not run. */
 @Composable
-private fun rhythmMarker(on: Boolean): Pair<Color, String>? {
+internal fun rhythmMarker(on: Boolean): Pair<Color, String>? {
     val model by io.github.lnrdo.mytidal.playback.dj.neural.BeatModel.state.collectAsStateWithLifecycle()
     if (!on) return null
     return when (model.loaded) {
@@ -443,8 +469,12 @@ private fun UpNext(state: AppState, vm: MainViewModel, onQueue: () -> Unit) {
 private fun SeekLine(vm: MainViewModel, trackId: String, duration: Long, accent: Color = Color.White, cues: List<Cue> = emptyList(), onTouch: () -> Unit) {
     val position by LocalPlaybackPosition.current.collectAsStateWithLifecycle()
     var seeking by remember(trackId) { mutableStateOf<Float?>(null) }
-    val colors = SliderDefaults.colors(activeTrackColor = accent, inactiveTrackColor = Color.White.copy(alpha = .25f), thumbColor = accent)
+    val colors = SliderDefaults.colors(activeTrackColor = accent, inactiveTrackColor = Color.Transparent, thumbColor = accent)
+    val buffered by LocalBufferedPosition.current.collectAsStateWithLifecycle()
     Box(Modifier.fillMaxWidth().height(32.dp)) {
+        // The track under the slider: the whole song faint, and what is already loaded brighter, so that it shows how far a seek can go without waiting.
+        Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .18f)))
+        Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(if (duration > 0) (buffered.toFloat() / duration).coerceIn(0f, 1f) else 0f).height(2.dp).background(Color.White.copy(alpha = .42f)))
         Slider(seeking ?: position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()), { seeking = it; onTouch() }, Modifier.fillMaxWidth().height(32.dp),
             enabled = duration > 0, valueRange = 0f..duration.coerceAtLeast(1).toFloat(), onValueChangeFinished = { seeking?.let { vm.seek(it.toLong()) }; seeking = null },
             thumb = { Box(Modifier.size(10.dp, 14.dp).background(accent)) },

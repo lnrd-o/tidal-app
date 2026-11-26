@@ -137,8 +137,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?.let { runCatching { org.json.JSONArray(it).let { array -> (0 until array.length()).map(array::getString) } }.getOrNull() }.orEmpty()))
     val state = ui.asStateFlow()
     private val clock = MutableStateFlow(0L)
+    private val bufferClock = MutableStateFlow(0L)
     /** The playback position in milliseconds. It changes twice a second and has its own flow, so that only the views which show it redraw. */
     val position = clock.asStateFlow()
+
+    /** How far into the song the player has loaded, in milliseconds. */
+    val buffered = bufferClock.asStateFlow()
     private val query = MutableStateFlow("")
     private val searchRetry = MutableStateFlow(0L)
     private val preferences = application.getSharedPreferences("playback", Application.MODE_PRIVATE)
@@ -199,6 +203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(500)
                 controller?.let { player ->
                     clock.value = player.currentPosition.coerceAtLeast(0)
+                    bufferClock.value = player.bufferedPosition.coerceAtLeast(0)
                     // The whole screen reads this state, so it is written only when the quality or the length changed.
                     val current = ui.value.playback
                     val quality = current.track?.let { track -> app.sources.quality(track.id) ?: track.quality }.orEmpty()
@@ -352,6 +357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 favoriteSyncLock.withLock {
                     drainFavorites(account)
                     cloudFavorites = app.tidal.allFavorites(); favoritesOffset = cloudFavorites.size
+                    android.util.Log.i("OpenTune", "liked songs: ${cloudFavorites.size} read, TIDAL reports ${app.tidal.lastFavoritesTotal}")
                     withContext(Dispatchers.IO) { app.library.cache(account, "favorites", JsonCodec.encodeTracks(cloudFavorites)) }
                 }
                 ui.update { it.copy(hasMoreFavorites = false) }
@@ -368,6 +374,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ui.update { it.copy(artists = artists) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
+                android.util.Log.w("OpenTune", "sync failed", error)
                 ui.update { it.copy(error = userMessage(error)) }
             } finally { ui.update { it.copy(syncing = false) } }
         }
@@ -573,6 +580,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The permissions page was answered. */
     fun finishSetup() { settings { it.copy(setupPending = false) } }
+
+    /** The songs in the cache of listened songs, with what is known of each, and what the cache holds of them in all. */
+    suspend fun cachedSongs(): List<Pair<io.github.lnrdo.mytidal.playback.AudioSources.CachedSong, Track?>> = withContext(Dispatchers.IO) {
+        app.sources.cachedSongs().map { it to app.library.get(it.id) }
+    }
+    fun removeCachedSong(id: String) = viewModelScope.launch(Dispatchers.IO) { app.sources.removeCachedSong(id) }
 
     fun download(track: Track, quiet: Boolean = false) = viewModelScope.launch {
         if (track.onDevice || withContext(Dispatchers.IO) { app.library.get(track.id)?.onDevice == true }) { if (!quiet) notify(app.getString(R.string.notify_already_local)); return@launch }

@@ -59,3 +59,17 @@ fun rememberArtworkAccent(url: String?, enabled: Boolean): Color {
     }
     return animateColorAsState(target, tween(450), label = "artwork-accent").value
 }
+
+/**
+ * The seed of the colours of the rounded player: the main colour of the cover that plays, or a neutral grey for a cover without colour. It changes at once:
+ * the backdrop fades from one cover to the next, so the change is soft, and the player is not composed again on every frame of a colour animation.
+ */
+@Composable
+fun rememberCoverSeed(url: String?): Color {
+    val context = LocalContext.current.applicationContext
+    var target by remember { mutableStateOf(Color(0xFF808080)) }
+    LaunchedEffect(url) {
+        target = if (url.isNullOrBlank()) Color(0xFF808080) else ArtworkColors.of(context, url)?.let { Color(it) } ?: Color(0xFF808080)
+    }
+    return target
+}

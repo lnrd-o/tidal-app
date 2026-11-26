@@ -109,9 +109,12 @@ class TidalClient(
             topTrack = if (topType == "TRACKS") topValue?.let(JsonCodec::track) else null)
     }
 
+    /** The number of liked songs that TIDAL reported last, for the log. */
+    @Volatile var lastFavoritesTotal: Int? = null
+
     suspend fun favoritesPage(offset: Int = 0): PageOf<Track> {
         val data = request("users/${userId()}/favorites/tracks", mapOf("limit" to "100", "offset" to "$offset", "order" to "DATE", "orderDirection" to "DESC"))
-        return PageOf(JsonCodec.items(data).map(JsonCodec::track), data.optInt("totalNumberOfItems", -1).takeIf { it >= 0 })
+        return PageOf(JsonCodec.items(data).map(JsonCodec::track), data.optInt("totalNumberOfItems", -1).takeIf { it >= 0 }.also { lastFavoritesTotal = it })
     }
 
     suspend fun favorites(offset: Int = 0): List<Track> = favoritesPage(offset).items

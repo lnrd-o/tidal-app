@@ -51,10 +51,36 @@ class AudioSources(private val app: OpenTuneApp) {
     /** A silent connection fails after twelve seconds, so the player retries before its buffer runs dry. */
     private val streamingHttp by lazy { app.http.newBuilder().connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS).readTimeout(12, java.util.concurrent.TimeUnit.SECONDS).build() }
     private val upstream: DataSource.Factory by lazy { DefaultDataSource.Factory(app, OkHttpDataSource.Factory(streamingHttp)) }
-    fun dataSource(offlineOnly: Boolean = false): CacheDataSource.Factory = CacheDataSource.Factory()
+    /** A song that the cache of listened songs holds some of: its id, the bytes of it, and when it was last played or read. */
+    class CachedSong(val id: String, val bytes: Long, val touched: Long)
+
+    /** The songs in the cache of listened songs, most recently used first. Pieces that were cached before songs were told apart are not listed (they count in [cacheBytes]). */
+    fun cachedSongs(): List<CachedSong> {
+        val bytes = HashMap<String, Long>(); val touched = HashMap<String, Long>()
+        for (key in streamingCache.keys.toList()) {
+            val bar = key.indexOf(KEY_SEPARATOR)
+            if (bar <= 0) continue
+            val id = key.substring(0, bar)
+            for (span in streamingCache.getCachedSpans(key)) {
+                if (!span.isCached) continue
+                bytes[id] = (bytes[id] ?: 0L) + span.length
+                touched[id] = maxOf(touched[id] ?: 0L, span.lastTouchTimestamp)
+            }
+        }
+        return bytes.map { (id, b) -> CachedSong(id, b, touched[id] ?: 0L) }.sortedByDescending { it.touched }
+    }
+
+    /** Removes what the cache holds of one song. */
+    fun removeCachedSong(id: String) { streamingCache.keys.toList().filter { it.startsWith(id + KEY_SEPARATOR) }.forEach(streamingCache::removeResource) }
+
+    /** The data source of the player: the offline copies first, then the cache of listened songs, then the network. Its pieces are named after [trackId]. */
+    fun dataSource(offlineOnly: Boolean = false, trackId: String? = null): CacheDataSource.Factory = CacheDataSource.Factory()
         .setCache(cache).setCacheWriteDataSinkFactory(null)
         .setUpstreamDataSourceFactory(if (offlineOnly) DefaultDataSource.Factory(app, androidx.media3.datasource.PlaceholderDataSource.FACTORY)
-            else CacheDataSource.Factory().setCache(streamingCache).setUpstreamDataSourceFactory(upstream))
+            else CacheDataSource.Factory().setCache(streamingCache).setUpstreamDataSourceFactory(upstream).also { inner ->
+                // What is cached from the network is named after its song, so that the songs in the cache can be told apart, shown, saved or removed.
+                if (trackId != null) inner.setCacheKeyFactory { spec -> trackId + KEY_SEPARATOR + (spec.key ?: spec.uri.toString()) }
+            })
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     fun downloadSource(): CacheDataSource.Factory = CacheDataSource.Factory().setCache(cache).setUpstreamDataSourceFactory(upstream)
@@ -129,6 +155,8 @@ class AudioSources(private val app: OpenTuneApp) {
     }
 
     companion object {
+        /** Between the id of a song and the rest of the name of a piece of it in the cache. */
+        const val KEY_SEPARATOR = "|"
         private const val MEGABYTE = 1024L * 1024L
         fun safeId(id: String): String = MessageDigest.getInstance("SHA-256").digest(id.toByteArray())
             .joinToString("") { "%02x".format(it) }.take(32)

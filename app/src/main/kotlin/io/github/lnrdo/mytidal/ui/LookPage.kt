@@ -18,16 +18,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.lnrdo.mytidal.R
 
-/** The look of the app: its theme, the way that the lyrics are shown, and the style of the spectrum. Each choice acts at once. */
+/** The look of the app: the design of the player, the way that the lyrics are shown, and the style of the spectrum. Each choice acts at once. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun LookPage(state: AppState, vm: MainViewModel) {
+fun LookPage(state: AppState, vm: MainViewModel, onEffects: () -> Unit = {}) {
     val settings = state.settings
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { SectionTitle(stringResource(R.string.look_section_theme)) }
-        for (theme in appThemes) item(key = "theme-${theme.id}") {
-            ChoiceRow(stringResource(theme.nameRes), stringResource(theme.hintRes), settings.appTheme == theme.id) { vm.settings { it.copy(appTheme = theme.id) } }
+        item { SectionTitle(stringResource(R.string.look_section_mode)) }
+        for ((id, name, hint) in listOf(Triple("system", R.string.look_mode_system, R.string.look_mode_system_text), Triple("light", R.string.look_mode_light, R.string.look_mode_light_text),
+            Triple("dark", R.string.look_mode_dark, R.string.look_mode_dark_text))) item(key = "mode-$id") {
+            ChoiceRow(stringResource(name), stringResource(hint), settings.appearance == id) { vm.settings { it.copy(appearance = id) } }
         }
+        item { SectionTitle(stringResource(R.string.fx_title)) }
+        item { SettingRow(OpenTuneIcons.Contrast, stringResource(R.string.fx_title), stringResource(R.string.fx_summary), onEffects, trailing = { androidx.compose.material3.Icon(OpenTuneIcons.ChevronRight, null) }) }
+        item { SectionTitle(stringResource(R.string.look_section_player)) }
+        item { SwitchRow(OpenTuneIcons.AutoAwesome, stringResource(R.string.look_rounded), settings.rounded, { value -> vm.settings { it.copy(rounded = value) } }, stringResource(R.string.look_rounded_text)) }
         item { SectionTitle(stringResource(R.string.look_section_lyrics)) }
         for (style in LyricStyle.entries) item(key = "lyric-${style.id}") {
             ChoiceRow(stringResource(style.nameRes), stringResource(style.hintRes), settings.lyricStyle == style.id) { vm.settings { it.copy(lyricStyle = style.id) } }

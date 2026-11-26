@@ -25,10 +25,35 @@ object OpenTuneIcons {
     val Equalizer by lazy { glyph("Equalizer", "M4 7H20 M4 17H20 M8 4V10 M16 14V20") }
     val Video by lazy { glyph("Video", "M3.5 6.5H15V17.5H3.5Z M15 10.5L20.5 7.5V16.5L15 13.5") }
     val Person by lazy { glyph("Person", "M16 8A4 4 0 1 1 8 8A4 4 0 0 1 16 8Z M4.5 20.5C5.5 16.5 8.5 15 12 15C15.5 15 18.5 16.5 19.5 20.5") }
+    val AspectRatio by lazy { glyph("AspectRatio", "M3 6H21V18H3Z M7 9.5H10 M7 9.5V12 M17 14.5H14 M17 14.5V12") }
+    val ScreenRotation by lazy { glyph("ScreenRotation", "M4 12A8 8 0 0 1 18.5 7.5 M18.5 3V7.5H14 M20 12A8 8 0 0 1 5.5 16.5 M5.5 21V16.5H10") }
     val Fullscreen by lazy { glyph("Fullscreen", "M4 9V4H9 M15 4H20V9 M20 15V20H15 M9 20H4V15") }
     val Folder by lazy { glyph("Folder", "M3 6.5H10L12 9H21V19H3Z") }
     val Device by lazy { glyph("Device", "M8 3H16A1.5 1.5 0 0 1 17.5 4.5V19.5A1.5 1.5 0 0 1 16 21H8A1.5 1.5 0 0 1 6.5 19.5V4.5A1.5 1.5 0 0 1 8 3Z M10.5 17.5H13.5") }
     val Brand by lazy { glyph("OpenTune", "M18.4 5.8A9 9 0 1 0 20.5 15 M9.3 5.5V10.2A2.7 2.7 0 0 0 14.7 10.2V5.5 M12 12.9V20") }
+    /**
+     * D'JAI: two records, one for each deck, that overlap; where they overlap is the mix, filled solid. A spark of four points over the deck that comes in
+     * says that the mix is chosen by a machine that listens. The strokes keep the weight of the grid, the mix and the spark are filled.
+     */
+    val Djai by lazy {
+        ImageVector.Builder("D'JAI", 24.dp, 24.dp, 24f, 24f)
+            .addPath(PathParser().parsePathString("M14.8 13.6A6.2 6.2 0 1 1 2.4 13.6A6.2 6.2 0 0 1 14.8 13.6Z M21.6 13.6A6.2 6.2 0 1 1 9.2 13.6A6.2 6.2 0 0 1 21.6 13.6Z").toNodes(),
+                stroke = SolidColor(Color.Black), strokeLineWidth = 1.5f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)
+            .addPath(PathParser().parsePathString(
+                "M12 8.415A6.2 6.2 0 0 1 12 18.785A6.2 6.2 0 0 1 12 8.415Z " +
+                    "M7.9 13.6A1 1 0 1 1 5.9 13.6A1 1 0 0 1 7.9 13.6Z M18.1 13.6A1 1 0 1 1 16.1 13.6A1 1 0 0 1 18.1 13.6Z " +
+                    "M19.6 1.4C19.9 3.5 20.5 4.1 22.6 4.4C20.5 4.7 19.9 5.3 19.6 7.4C19.3 5.3 18.7 4.7 16.6 4.4C18.7 4.1 19.3 3.5 19.6 1.4Z").toNodes(),
+                fill = SolidColor(Color.Black))
+            .build()
+    }
+
+    /** The icons of the four stems: a microphone, a drum with its sticks, a bass guitar and a note. */
+    val Mic by lazy { glyph("Vocals", "M9 5A3 3 0 0 1 15 5V11A3 3 0 0 1 9 11Z M5.5 11A6.5 6.5 0 0 0 18.5 11 M12 17.5V21 M8.5 21H15.5") }
+    val Drum by lazy { glyph("Drums", "M3.5 11.5A8.5 3 0 1 0 20.5 11.5A8.5 3 0 1 0 3.5 11.5Z M3.5 11.5V17C3.5 18.7 7.3 20 12 20C16.7 20 20.5 18.7 20.5 17V11.5 M8 14V19.5 M12 14.5V20 M16 14V19.5 M7 2.5L11 8.5 M17 2.5L13 8.5") }
+    val Bass by lazy { glyph("Bass", "M9.5 11.5C7.5 9.8 4.5 11 4 14C3.6 16.5 4.8 19.5 7.5 19.8C10.2 20.1 12.6 18.4 12.6 16.2 M10.2 13.8L19 5 M17 3.3L20.7 7 M18 4.3L19.7 6 M7.8 15.5H9.2") }
+    val Spatial by lazy { glyph("Spatial", "M12 10.5A1.5 1.5 0 1 1 12 13.5A1.5 1.5 0 0 1 12 10.5Z M7.5 7.5A6.4 6.4 0 0 0 7.5 16.5 M16.5 7.5A6.4 6.4 0 0 1 16.5 16.5 M4.7 4.7A10.3 10.3 0 0 0 4.7 19.3 M19.3 4.7A10.3 10.3 0 0 1 19.3 19.3") }
+    val Note by lazy { glyph("Other", "M9 18V5L20 3V16 M9 18A2.5 2.5 0 1 1 4 18A2.5 2.5 0 0 1 9 18Z M20 16A2.5 2.5 0 1 1 15 16A2.5 2.5 0 0 1 20 16Z M9 9L20 7") }
+
     val Headphones by lazy { glyph("Listen", "M4 13V11A8 8 0 0 1 20 11V13 M4 12H6.4V20H4.8A1.8 1.8 0 0 1 3 18.2V13.8A1.8 1.8 0 0 1 4.8 12 M20 12H17.6V20H19.2A1.8 1.8 0 0 0 21 18.2V13.8A1.8 1.8 0 0 0 19.2 12") }
     val Search by lazy { glyph("Search", "M16 16L21 21 M18 10.8A7.2 7.2 0 1 1 3.6 10.8A7.2 7.2 0 0 1 18 10.8Z") }
     val LibraryMusic by lazy { glyph("Library", "M3.5 4V20 M8 4V20 M12.5 5L17.5 3.8L21 18.6L16 19.8Z") }

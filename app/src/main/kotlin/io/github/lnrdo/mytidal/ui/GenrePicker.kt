@@ -38,8 +38,8 @@ fun GenrePicker(trackId: String, current: MusicGenre?, onClose: () -> Unit) {
             FlowRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (genre in MusicGenre.entries) {
                     val on = genre == current
-                    Box(Modifier.border(1.dp, if (on) Color.White else Color.White.copy(alpha = .2f)).clickable { GenreStore.fromListener(trackId, genre); onClose() }.padding(horizontal = 10.dp, vertical = 7.dp)) {
-                        Text(stringResource(genreName(genre)), fontSize = 12.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Box(Modifier.border(1.dp, if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .2f)).clickable { GenreStore.fromListener(trackId, genre); onClose() }.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        Text(stringResource(genreName(genre)), fontSize = 12.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

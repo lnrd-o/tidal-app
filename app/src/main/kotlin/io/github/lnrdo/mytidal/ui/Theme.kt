@@ -11,19 +11,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 
 /** The theme that is active, for the parts of the interface that depend on whether it is dark. */
 val LocalAppTheme = staticCompositionLocalOf { appThemes.first { it.id == "dark" } }
 
-/** Applies the one theme of the app. */
+/** True in the rounded design: round corners and blurred panes. */
+val LocalRound = staticCompositionLocalOf { false }
+
+/** The shape of a bottom sheet: square in the classic design, round at its top in the rounded one. */
+val SheetShape: androidx.compose.ui.graphics.Shape
+    @Composable get() = if (LocalRound.current) androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) else androidx.compose.ui.graphics.RectangleShape
+
+/**
+ * Applies the theme of the app: light or [dark], and [rounded] or square. The colours are plain in both designs, black and white; only the player of the
+ * rounded design takes its colours from the cover.
+ */
 @Composable
-fun OpenTuneTheme(themeId: String = "dark", content: @Composable () -> Unit) {
-    val theme = themeFor(themeId, true)
-    CompositionLocalProvider(LocalAppTheme provides theme, LocalThemeFonts provides theme.fonts) {
-        MaterialTheme(colorScheme = theme.scheme, typography = themeTypography(theme.fonts), shapes = theme.shapes) {
-            // The backdrop of the theme is painted once, behind everything: the screens above it are clear in the themes that have one.
-            val base = theme.scheme.background
-            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().drawBehind { drawBackdrop(theme.look, base) }) { content() }
+fun OpenTuneTheme(themeId: String = "dark", dark: Boolean = true, rounded: Boolean = false, effect: io.github.lnrdo.mytidal.core.effects.EffectOptions = io.github.lnrdo.mytidal.core.effects.EffectOptions(), content: @Composable () -> Unit) {
+    val base = themeFor(themeId, true)
+    val scheme = if (dark) base.scheme else studioLightScheme()
+    val theme = AppTheme(base.id, base.nameRes, base.hintRes, dark, scheme, if (rounded) 18 else base.radius, base.fonts, base.look)
+    CompositionLocalProvider(LocalAppTheme provides theme, LocalThemeFonts provides theme.fonts, LocalRound provides rounded, LocalImageEffect provides effect) {
+        MaterialTheme(colorScheme = scheme, typography = themeTypography(theme.fonts), shapes = if (rounded) RoundShapes else theme.shapes) {
+            val background = scheme.background
+            // The whole app is drawn through the image effect, when one is chosen.
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().appEffect().drawBehind { drawBackdrop(theme.look, background) }) { content() }
         }
     }
 }

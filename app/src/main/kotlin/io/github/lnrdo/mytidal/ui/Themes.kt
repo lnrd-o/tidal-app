@@ -87,7 +87,7 @@ private fun studioScheme(): ColorScheme {
 }
 
 /** A palette in one hue: the surfaces rise from [bg] toward [fg], and [primary] is the accent of buttons and switches. */
-private fun palette(bg: Color, fg: Color, secondary: Color, primary: Color, onPrimary: Color): ColorScheme {
+internal fun palette(bg: Color, fg: Color, secondary: Color, primary: Color, onPrimary: Color): ColorScheme {
     fun tone(amount: Float) = lerp(bg, fg, amount)
     return darkColorScheme(
         primary = primary, onPrimary = onPrimary, primaryContainer = tone(.16f), onPrimaryContainer = fg,
@@ -163,3 +163,50 @@ fun themeFor(id: String, systemDark: Boolean): AppTheme = appThemes.firstOrNull 
 /** Settings from older versions named a theme and a palette. Every one of them now maps to the single dark theme. */
 @Suppress("UNUSED_PARAMETER")
 fun migrateTheme(theme: String, palette: String?): String = "dark"
+
+/** The light studio palette of the first design: black on a pale grey, square and monochrome. */
+fun studioLightScheme(): ColorScheme {
+    val bg = c(0xF4F4F4); val fg = c(0x111111)
+    return palette(bg, fg, c(0x5E5E5E), c(0x111111), Color.White).copy(surfaceContainerLowest = Color.White, error = c(0xC62828), onError = Color.White, errorContainer = c(0xFDE7E7), onErrorContainer = c(0x5C0A0A))
+}
+
+/**
+ * The colours of the rounded player, taken from its cover. [seed] is the main colour of the cover. Dark: the background is that hue, deep
+ * and quiet, the text nearly white, and the accent the hue made light. Light: the background is the hue made pale, the text nearly black with a breath of
+ * the hue, and the accent the hue made strong. The panels are glass: a little of the text colour over the backdrop, so that the colours of the cover show
+ * through them. A cover without colour gives a neutral grey app.
+ */
+fun coverScheme(seed: Color, dark: Boolean = true): ColorScheme {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(android.graphics.Color.argb(255, (seed.red * 255).toInt(), (seed.green * 255).toInt(), (seed.blue * 255).toInt()), hsv)
+    val hue = hsv[0]
+    val sat = hsv[1]
+    fun hsv(s: Float, v: Float) = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, s.coerceIn(0f, 1f), v.coerceIn(0f, 1f))))
+    val colourful = sat > .12f
+    val tint = if (colourful) 1f else 0f
+    val bg = if (dark) hsv((sat * .7f).coerceIn(.25f, .55f) * tint, .11f) else hsv(.10f * tint, .97f)
+    val fg = if (dark) hsv(.05f * tint, .97f) else hsv(.35f * tint, .12f)
+    val secondary = if (dark) hsv(.16f * tint, .72f) else hsv(.22f * tint, .40f)
+    val primary = when {
+        !colourful -> if (dark) Color.White else c(0x111111)
+        dark -> hsv((sat * .8f).coerceIn(.28f, .55f), .95f)
+        else -> hsv((sat * 1.1f).coerceIn(.55f, .85f), .48f)
+    }
+    val onPrimary = if (dark) bg else Color.White
+    // Glass: white over a dark backdrop, white too over a light one, so that the panels read as frosted in both.
+    val glass = if (dark) fg else Color.White
+    val solid = if (dark) lerp(bg, fg, .1f) else lerp(bg, Color.White, .7f)
+    return palette(bg, fg, secondary, primary, onPrimary).copy(
+        surfaceVariant = glass.copy(alpha = if (dark) .09f else .5f), surfaceContainerLowest = Color.Transparent,
+        surfaceContainerLow = glass.copy(alpha = if (dark) .05f else .45f), surfaceContainer = glass.copy(alpha = if (dark) .08f else .55f),
+        surfaceContainerHigh = solid, surfaceContainerHighest = if (dark) lerp(bg, fg, .14f) else Color.White, surfaceBright = glass.copy(alpha = if (dark) .16f else .75f),
+        outline = fg.copy(alpha = .4f), outlineVariant = fg.copy(alpha = .14f), secondaryContainer = glass.copy(alpha = if (dark) .12f else .6f),
+        primaryContainer = primary.copy(alpha = .18f), onPrimaryContainer = fg,
+        error = if (dark) c(0xFF6B6B) else c(0xC62828), onError = if (dark) Color.Black else Color.White,
+    )
+}
+
+/** The corners of the rounded design: soft on small things, round on cards and sheets, and buttons as pills. */
+val RoundShapes = androidx.compose.material3.Shapes(
+    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(28.dp),
+)

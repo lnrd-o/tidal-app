@@ -1,6 +1,7 @@
 package io.github.lnrdo.mytidal
 
 import android.os.Bundle
+import io.github.lnrdo.mytidal.ui.effectOptions
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -56,7 +57,11 @@ class MainActivity : ComponentActivity() {
                 withFrameNanos { }
                 WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
             }
-            OpenTuneTheme(state.settings.appTheme) { CompositionLocalProvider(LocalOfflineMode provides state.settings.offline, LocalNetworkEpoch provides networkEpoch, LocalPlaybackPosition provides model.position,
+            val dark = when (state.settings.appearance) { "light" -> false; "dark" -> true; else -> androidx.compose.foundation.isSystemInDarkTheme() }
+            LaunchedEffect(dark) {
+                WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark }
+            }
+            OpenTuneTheme("dark", dark, state.settings.rounded, state.settings.effectOptions()) { CompositionLocalProvider(LocalOfflineMode provides state.settings.offline, LocalNetworkEpoch provides networkEpoch, LocalPlaybackPosition provides model.position, io.github.lnrdo.mytidal.ui.LocalBufferedPosition provides model.buffered,
                 io.github.lnrdo.mytidal.ui.LocalDjKnown provides djKnown, io.github.lnrdo.mytidal.ui.LocalDjPulse provides state.settings.djPulse, io.github.lnrdo.mytidal.ui.LocalShowDjData provides state.settings.showDjData,
                 io.github.lnrdo.mytidal.ui.LocalTrackActions provides io.github.lnrdo.mytidal.ui.TrackActions(playNext = { model.queue(it, true) }, addToQueue = { model.queue(it) })) { OpenTuneRoot(model, state) } }
         }

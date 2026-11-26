@@ -59,14 +59,14 @@ fun ListenScreen(state: AppState, vm: MainViewModel, onLogin: () -> Unit,
         item {
             Card(
                 onClick = { vm.startAiFlow(); onPlayer() },
-                shape = androidx.compose.ui.graphics.RectangleShape,
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)
             ) {
                 Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        shape = androidx.compose.ui.graphics.RectangleShape,
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(46.dp)
                     ) {
@@ -177,7 +177,7 @@ private fun ListeningArtwork(track: Track, quality: String, modifier: Modifier, 
     Box(modifier.clickable(onClick = onClick)) {
         TrackArtwork(track, stringResource(R.string.player_artwork, track.album.ifBlank { track.title }), Modifier.fillMaxWidth().aspectRatio(ratio))
         if (quality.isNotBlank()) Surface(Modifier.align(Alignment.TopStart).padding(12.dp),
-            color = androidx.compose.ui.graphics.Color(0xE0121213), shape = androidx.compose.ui.graphics.RectangleShape) {
+            color = androidx.compose.ui.graphics.Color(0xE0121213), shape = MaterialTheme.shapes.medium) {
             val readout = SourceReadout.from(quality)
             Text(listOfNotNull(readout.codec.ifBlank { null }, readout.bitsText(), readout.rateText()).joinToString(" · "), Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 fontFamily = AppFonts.body, fontSize = 9.sp, lineHeight = 14.sp, color = androidx.compose.ui.graphics.Color(0xFFF1EBDD))

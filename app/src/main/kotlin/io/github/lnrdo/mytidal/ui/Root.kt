@@ -47,6 +47,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     var nowPlaying by rememberSaveable { mutableStateOf(initialPlayer) }
     var queue by rememberSaveable { mutableStateOf(false) }
     var trackMenu by remember { mutableStateOf<Track?>(null) }
+    var stemsTrack by remember { mutableStateOf<Track?>(null) }
     var addToPlaylist by remember { mutableStateOf<Track?>(null) }
     var newPlaylist by remember { mutableStateOf(false) }
     var addSongs by remember { mutableStateOf(false) }
@@ -103,6 +104,10 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
     else if (setup) SetupScreen(onContinue = vm::finishSetup)
     else Row(Modifier.fillMaxSize().then(if (landscape) Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start)) else Modifier)) {
     if (rail && navigation) OpenTuneRail(destinations, destination, select)
+    // In the rounded design the pages are the backdrop of the floating bars: the bars blur what scrolls under them.
+    val round = LocalRound.current
+    val pageBackdrop = rememberBackdrop()
+    CompositionLocalProvider(LocalBackdrop provides if (round) pageBackdrop else null) {
     Scaffold(modifier = Modifier.weight(1f), containerColor = if (LocalAppTheme.current.look == ThemeLook.Flat) MaterialTheme.colorScheme.background else Color.Transparent,
         topBar = {
             val title = if (settings) stringResource(settingsPageOpen?.title ?: R.string.nav_settings) else state.detail?.let {
@@ -154,14 +159,19 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) { Box(Modifier.fillMaxSize().widthIn(max = 960.dp)) {
+        // The page reaches a little under the floating bars, so that what scrolls there is seen blurred through them.
+        val under = if (round) 30.dp else 0.dp
+        Box(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding(), bottom = (padding.calculateBottomPadding() - under).coerceAtLeast(0.dp))
+            .then(if (round) Modifier.backdropSource(pageBackdrop) else Modifier), contentAlignment = Alignment.TopCenter) { Box(Modifier.fillMaxSize().widthIn(max = 960.dp)) {
             when {
                 settings -> when (settingsPageOpen) {
                     SettingsPage.Repeats -> AvoidRepeatsPage(state, vm)
                     SettingsPage.Djai -> DjaiPage(state, vm)
-                    SettingsPage.Look -> LookPage(state, vm)
+                    SettingsPage.Look -> LookPage(state, vm) { settingsPage = SettingsPage.Effects.name }
                     SettingsPage.Statistics -> StatisticsPage(vm)
                     SettingsPage.Hardware -> HardwarePage(state, vm)
+                    SettingsPage.Cache -> CachePage(state, vm)
+                    SettingsPage.Effects -> ImageEffectsPage(state, vm)
                     SettingsPage.Licenses -> LicencesPage { settingsPage = it.name }
                     SettingsPage.Apache, SettingsPage.DmSans, SettingsPage.Mono -> LicenceDocumentPage(settingsPageOpen)
                     null -> SettingsScreen(state, vm, openLogin) { settingsPage = it.name }
@@ -179,8 +189,9 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         } }
     }
     }
+    }
 
-    if (navigationMenu) ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = { navigationMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (navigationMenu) ModalBottomSheet(shape = SheetShape, dragHandle = { SheetHandle() }, onDismissRequest = { navigationMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             destinations.forEach { item -> NavigationDrawerItem(selected = destination == item, label = { Text(stringResource(item.title)) },
                 icon = { Icon(item.icon, null) }, modifier = Modifier.padding(horizontal = 12.dp),
@@ -188,13 +199,18 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         }
     }
 
+    stemsTrack?.let { track -> StemsSheet(track, state, vm) { stemsTrack = null } }
+
     // The sign-in finishes in the browser, so a bar shows while the app exchanges the answer.
     if (state.signingIn) LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding())
     if (nowPlaying && state.playback.track != null) NowPlayingScreen(state, vm, onClose = { nowPlaying = false }, onQueue = { queue = true }, onMenu = openTrackMenu, onCredits = { track -> vm.showCredits("track", track.id, "${track.title} · ${track.artist}") }, onAlbum = { track -> openRelease(Release(track.albumId, track.album, track.artist, track.artwork)) },
         onArtist = { track -> openRelease(Release(track.artistId, track.artist.substringBefore(","), "", type = ReleaseType.ARTIST)) }, initialLyrics = initialLyrics)
     if (queue) QueueSheet(state, vm) { queue = false }
     trackMenu?.let { track ->
-        ModalBottomSheet(shape = androidx.compose.ui.graphics.RectangleShape, dragHandle = { SheetHandle() }, onDismissRequest = { trackMenu = null; playlistPosition = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        val glass = LocalRound.current
+        ModalBottomSheet(shape = SheetShape,
+            containerColor = if (glass) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
+            dragHandle = { SheetHandle() }, onDismissRequest = { trackMenu = null; playlistPosition = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     TrackArtwork(track, null, Modifier.size(52.dp))
@@ -236,7 +252,8 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
                 if (!track.isFile) SettingRow(OpenTuneIcons.Share, stringResource(R.string.share_story_button), onClick = {
                     storyTrack = track; trackMenu = null
                 })
-                if (track.onDevice || (state.signedIn && !state.settings.offline)) SettingRow(OpenTuneIcons.Waves, stringResource(R.string.track_analyze), onClick = { vm.analyzeForDjai(track); trackMenu = null })
+                if (track.onDevice || (state.signedIn && !state.settings.offline)) SettingRow(OpenTuneIcons.Equalizer, stringResource(R.string.stems_title), onClick = { stemsTrack = track; trackMenu = null })
+                if (track.onDevice || (state.signedIn && !state.settings.offline)) SettingRow(OpenTuneIcons.Djai, stringResource(R.string.track_analyze), onClick = { vm.analyzeForDjai(track); trackMenu = null })
                 val stored = state.local.firstOrNull { it.id == track.id } ?: track.takeIf(Track::onDevice)
                 if (stored != null) SettingRow(OpenTuneIcons.RemoveCircleOutline, stringResource(R.string.track_remove_local), onClick = { removeTrack = stored; trackMenu = null })
             }
@@ -249,7 +266,7 @@ fun OpenTuneRoot(vm: MainViewModel, state: AppState, initialDestination: Destina
         confirmButton = { TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(found.url))) }; vm.dismissUpdate() }) { Text(stringResource(R.string.update_download)) } },
         dismissButton = { TextButton(onClick = vm::dismissUpdate) { Text(stringResource(R.string.update_later)) } }) }
     storyTrack?.let { track -> StoryShareSheet(track, track.quality.orEmpty(), vm::storyDetails) { storyTrack = null } }
-    state.video?.let { video -> VideoPlayerOverlay(video, state.settings.offline, vm::closeVideo) }
+    state.video?.let { video -> VideoPlayerOverlay(video, state.settings.offline, state.settings.videoQuality, { choice -> vm.settings { it.copy(videoQuality = choice) } }, vm::closeVideo) }
     state.credits?.let { credits -> CreditsSheet(credits, onClose = vm::dismissCredits, onPerson = { person ->
         vm.dismissCredits()
         openRelease(Release(person.id, person.name, "", type = ReleaseType.ARTIST))

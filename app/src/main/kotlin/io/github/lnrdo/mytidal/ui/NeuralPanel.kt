@@ -113,5 +113,5 @@ fun NeuralPanel(settings: Settings, change: ((Settings) -> Settings) -> Unit) {
 
 @Composable
 private fun Action(label: String, onClick: () -> Unit) {
-    Box(Modifier.border(1.dp, Color.White.copy(alpha = .35f)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)) { Text(label, fontSize = 12.sp) }
+    Box(Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .35f)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)) { Text(label, fontSize = 12.sp) }
 }

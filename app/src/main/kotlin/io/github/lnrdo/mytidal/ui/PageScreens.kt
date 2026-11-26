@@ -152,7 +152,7 @@ private fun LinksRow(module: LinksModule, ctx: PageContext) {
 
 @Composable
 fun LinkPill(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = androidx.compose.ui.graphics.RectangleShape, color = MaterialTheme.colorScheme.surfaceContainerLow,
+    Surface(onClick = onClick, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Text(label, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), fontFamily = AppFonts.body, fontSize = 12.sp, lineHeight = 16.sp)
     }

@@ -85,8 +85,29 @@ class PlaybackService : MediaLibraryService() {
     private var orderBeforeShuffle: List<MediaItem> = emptyList()
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = applyBitPerfect()
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = applyBitPerfect()
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { applyBitPerfect(); applySpatial() }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) { applyBitPerfect(); applySpatial() }
+    }
+
+    /**
+     * Sets the surround upmix from the setting and from what the present output can spatialize. The layout is read when a song's audio is configured, so a change
+     * that turns the upmix on or off, or changes its layout, has the song that is playing configured again.
+     */
+    private fun applySpatial() {
+        val mode = io.github.lnrdo.mytidal.core.spatial.SpatialMode.of(app.settings.state.value.spatialMode)
+        val report = SpatialSupport.report(this)
+        val layout = if (mode != null && report.usable) report.channels else 0
+        SpatialState.mode = mode.takeIf { layout != 0 }
+        android.util.Log.i("OpenTuneSpatial", "mode ${mode?.id}, layout $layout, $report")
+        if (SpatialState.layout == layout) return
+        SpatialState.layout = layout
+        if (!this::player.isInitialized) return
+        // The audio of a song is configured once, when it starts: preparing a player that already plays does nothing. Stopping it and preparing it again at the
+        // same place has the song's audio configured again, with or without the upmix; the queue, the position and play or pause are kept.
+        if (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING) {
+            val at = player.currentPosition
+            player.stop(); player.prepare(); player.seekTo(at)
+        }
     }
 
     private val connectivity by lazy { getSystemService(ConnectivityManager::class.java) }
@@ -117,7 +138,7 @@ class PlaybackService : MediaLibraryService() {
                 if (analysis && app.settings.state.value.djFastAnalysis) return io.github.lnrdo.mytidal.playback.dj.FastAnalysisSink(slot)
                 // Else it only taps, and always, and plays silence at a fast speed.
                 val chain = if (analysis) arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot, always = true))
-                    else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot)) }
+                    else { AudioSpectrum.sinks++; arrayOf<androidx.media3.common.audio.AudioProcessor>(DeckTapProcessor(slot), SpectrumProcessor(slot), SpatialProcessor(slot)) }
                 val default = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).setAudioProcessors(chain).build()
                 // With the app's own USB driver on, a song that the DAC can take goes to it untouched; the rest goes to Android as usual.
@@ -308,7 +329,7 @@ class PlaybackService : MediaLibraryService() {
         io.github.lnrdo.mytidal.playback.usb.UsbDac.init(this)
         io.github.lnrdo.mytidal.playback.dj.neural.RhythmStore.init(this)
         io.github.lnrdo.mytidal.playback.dj.neural.GenreStore.init(this)
-        scope.launch { app.settings.state.collect { io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
+        scope.launch { app.settings.state.collect { applySpatial(); io.github.lnrdo.mytidal.playback.usb.UsbDac.setEnabled(it.usbDriver); app.sources.setCacheLimit(it.cacheMb); updateButtons(); applyNormalization(); applyBitPerfect(); DjMix.mixer.setElZar(it.toElZarConfig())
             engine.configure(it.djai, it.crossfadeSeconds, it.elzar,
                 io.github.lnrdo.mytidal.playback.dj.DjOptions(roll = false, cues = it.djCues, echo = false, filters = it.djFilters, groove = it.djGroove,
                     arc = it.djArc, minMatch = it.djMinMatch / 100.0, listenAhead = it.djListenAhead, revalidate = it.djRevalidate, beatFirst = it.djBeatFirst, neural = it.djNeural, genreAi = it.djGenreAi)); engine.setEnabled(it.djai || it.crossfadeSeconds > 0 || it.elzar) } }

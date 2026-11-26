@@ -54,11 +54,11 @@ fun HardwarePage(state: AppState, vm: MainViewModel) {
         item { SectionTitle(stringResource(R.string.hw_section_djai)) }
         item {
             val tier = when (p.tier) { DeviceTier.HIGH -> R.string.hw_tier_high; DeviceTier.MID -> R.string.hw_tier_mid; DeviceTier.LOW -> R.string.hw_tier_low }
-            SettingRow(OpenTuneIcons.Waves, stringResource(R.string.hw_tier), stringResource(tier))
+            SettingRow(OpenTuneIcons.Djai, stringResource(R.string.hw_tier), stringResource(tier))
         }
         item {
             val r = p.recommendation
-            SettingRow(OpenTuneIcons.Waves, stringResource(R.string.hw_recommended), stringResource(R.string.hw_recommended_value,
+            SettingRow(OpenTuneIcons.Djai, stringResource(R.string.hw_recommended), stringResource(R.string.hw_recommended_value,
                 if (r.neuralRhythm) stringResource(R.string.hw_rhythm_npu) else stringResource(R.string.hw_rhythm_classic), if (r.genreAi) yes else no, r.workers, r.listenAhead))
         }
         item { SettingRow(OpenTuneIcons.Refresh, stringResource(R.string.hw_reset), stringResource(R.string.hw_reset_text), { vm.settings { it.withRecommendation(p) } }) }

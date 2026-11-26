@@ -47,6 +47,10 @@ data class Settings(
     val appTheme: String = "dark",
     val lyricStyle: String = "classic",
     val spectrumStyle: String = "blocks",
+    /** The rounded design: round corners and liquid glass in the whole app, and a player coloured by its cover. */
+    val rounded: Boolean = false,
+    /** Light, dark, or as the system is: "light", "dark" or "system". */
+    val appearance: String = "dark",
     /** Songs that mix on the beat are ranked first, and the ones that only blend softly go last. */
     val djBeatFirst: Boolean = true,
     /** The hidden players that prepare songs and listen ahead decode as fast as they can, and how many songs are prepared at once. */
@@ -62,6 +66,28 @@ data class Settings(
     val djLoadOverlay: Boolean = false,
     /** The fingerprint of the device that the recommended settings were last applied for, so that they are applied again on another device. */
     val djProfile: String = "",
+    /**
+     * How the whole app is drawn: "none", "halftone", "dither" or "pixel", with the size of a cell in density-independent pixels, the contrast and the
+     * brightness, the angle of the halftone grid, the shape of a dot ("circle", "square", "diamond"), and the duotone colours (ARGB) or the own colours.
+     */
+    /** The quality of music videos: "auto", which follows the connection, or a height in pixels such as "1080". */
+    val videoQuality: String = "auto",
+    /** The most that the stems of separated songs may take on the device, in megabytes. The songs used longest ago go first. */
+    val stemsCacheMb: Int = 1500,
+    /** The model that separates stems ("spleeter", "openunmix" or "both") and how steep the cut between stems is, from 2 (as Spleeter was trained) to 4. */
+    val stemsModel: String = "spleeter",
+    val stemsPower: Int = 2,
+    /** The surround upmix for the system spatializer: "off", or a mode of [io.github.lnrdo.mytidal.core.spatial.SpatialMode] ("stage", "surround", "immersive", "focus"). */
+    val spatialMode: String = "off",
+    val imageStyle: String = "none",
+    val imageCell: Int = 8,
+    val imageContrast: Float = 1.2f,
+    val imageBrightness: Int = 0,
+    val imageAngle: Int = 0,
+    val imageShape: String = "circle",
+    val imageDuotone: Boolean = true,
+    val imageShadow: Int = 0xFF0A0A0A.toInt(),
+    val imageLight: Int = 0xFFF2F2F2.toInt(),
     val djAccelerator: String = "AUTO",
     /** Shows the tempo, key and energy that D'JAI kept for a song in the lists. A mark shows in any case. */
     val showDjData: Boolean = true,
@@ -120,7 +146,12 @@ class AppSettings(context: Context) {
         elzarGlue = preferences.getInt("elzarGlue", 40).coerceIn(0, 100), elzarTape = preferences.getInt("elzarTape", 30).coerceIn(0, 100), elzarVinyl = preferences.getInt("elzarVinyl", 0).coerceIn(0, 100), elzarFlavor = preferences.getInt("elzarFlavor", 0).coerceIn(0, 6), cacheMb = preferences.getInt("cacheMb", 256).coerceIn(0, 8192), adaptColor = preferences.getBoolean("adaptColor", false), djRoll = preferences.getBoolean("djRoll", preferences.getBoolean("djEffects", true)),
         djCues = preferences.getBoolean("djCues", preferences.getBoolean("djEffects", true)), djEcho = preferences.getBoolean("djEcho", preferences.getBoolean("djEffects", true)),
         djFilters = preferences.getBoolean("djFilters", true), djGroove = preferences.getBoolean("djGroove", true), djArc = preferences.getBoolean("djArc", true),
-        djMinMatch = preferences.getInt("djMinMatch", 70).coerceIn(50, 90), djListenAhead = preferences.getInt("djListenAhead", 12).coerceIn(4, 16), djRevalidate = preferences.getBoolean("djRevalidate", true), djBeatFirst = preferences.getBoolean("djBeatFirst", true), djFastAnalysis = preferences.getBoolean("djFastAnalysis", true), djWorkers = preferences.getInt("djWorkers", 1).coerceIn(1, 3), djNeural = preferences.getBoolean("djNeural", false), djGenreAi = preferences.getBoolean("djGenreAi", true), djGenreGpu = preferences.getBoolean("djGenreGpu", false), djLoadOverlay = preferences.getBoolean("djLoadOverlay", false), djProfile = preferences.getString("djProfile", "") ?: "", djAccelerator = preferences.getString("djAccelerator", "AUTO") ?: "AUTO",
+        djMinMatch = preferences.getInt("djMinMatch", 70).coerceIn(50, 90), djListenAhead = preferences.getInt("djListenAhead", 12).coerceIn(4, 16), djRevalidate = preferences.getBoolean("djRevalidate", true), djBeatFirst = preferences.getBoolean("djBeatFirst", true), djFastAnalysis = preferences.getBoolean("djFastAnalysis", true), djWorkers = preferences.getInt("djWorkers", 1).coerceIn(1, 3), djNeural = preferences.getBoolean("djNeural", false), djGenreAi = preferences.getBoolean("djGenreAi", true), djGenreGpu = preferences.getBoolean("djGenreGpu", false), djLoadOverlay = preferences.getBoolean("djLoadOverlay", false), rounded = preferences.getBoolean("rounded", preferences.getBoolean("playerV2", false)), appearance = preferences.getString("appearance", "dark") ?: "dark", djProfile = preferences.getString("djProfile", "") ?: "",
+        videoQuality = preferences.getString("videoQuality", "auto") ?: "auto", stemsCacheMb = preferences.getInt("stemsCacheMb", 1500).coerceIn(200, 8000), stemsModel = preferences.getString("stemsModel", "spleeter") ?: "spleeter", stemsPower = preferences.getInt("stemsPower", 2).coerceIn(2, 4), spatialMode = preferences.getString("spatialMode", "off") ?: "off", imageStyle = preferences.getString("imageStyle", "none") ?: "none", imageCell = preferences.getInt("imageCell", 8).coerceIn(2, 40),
+        imageContrast = preferences.getFloat("imageContrast", 1.2f).coerceIn(.4f, 3f), imageBrightness = preferences.getInt("imageBrightness", 0).coerceIn(-80, 80),
+        imageAngle = preferences.getInt("imageAngle", 0).coerceIn(0, 90), imageShape = preferences.getString("imageShape", "circle") ?: "circle",
+        imageDuotone = preferences.getBoolean("imageDuotone", true), imageShadow = preferences.getInt("imageShadow", 0xFF0A0A0A.toInt()),
+        imageLight = preferences.getInt("imageLight", 0xFFF2F2F2.toInt()), djAccelerator = preferences.getString("djAccelerator", "AUTO") ?: "AUTO",
         appTheme = preferences.getString("appTheme", "dark") ?: "dark", lyricStyle = preferences.getString("lyricStyle", "classic") ?: "classic", spectrumStyle = preferences.getString("spectrumStyle", "blocks") ?: "blocks", showDjData = preferences.getBoolean("showDjData", true), djPulse = preferences.getBoolean("djPulse", true), onlineData = preferences.getInt("onlineData", 1).coerceIn(0, 2),
         elzarTapeType = preferences.getInt("elzarTapeType", 0).coerceIn(0, 3), elzarVinylCondition = preferences.getInt("elzarVinylCondition", 1).coerceIn(0, 2),
         elzarVinylFast = preferences.getBoolean("elzarVinylFast", false), elzarConsole = preferences.getInt("elzarConsole", 0).coerceIn(0, 100),
@@ -144,7 +175,10 @@ class AppSettings(context: Context) {
             .remove("theme").remove("colorTheme").remove("equalizer").remove("equalizerLevels").remove("equalizerCustom").remove("equalizerUsesCustom").remove("visualizer")
             .putString("normalization", next.normalization).putBoolean("bitPerfect", next.bitPerfect).putBoolean("usbDriver", next.usbDriver).putBoolean("djai", next.djai).putInt("crossfadeSeconds", next.crossfadeSeconds)
             .putBoolean("elzar", next.elzar).putInt("elzarGlue", next.elzarGlue).putInt("elzarTape", next.elzarTape).putInt("elzarVinyl", next.elzarVinyl).putInt("elzarFlavor", next.elzarFlavor).putInt("cacheMb", next.cacheMb).putBoolean("adaptColor", next.adaptColor).putBoolean("djRoll", next.djRoll).putBoolean("djCues", next.djCues).putBoolean("djEcho", next.djEcho).putBoolean("djFilters", next.djFilters)
-            .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putBoolean("djFastAnalysis", next.djFastAnalysis).putInt("djWorkers", next.djWorkers).putBoolean("djNeural", next.djNeural).putBoolean("djGenreAi", next.djGenreAi).putBoolean("djGenreGpu", next.djGenreGpu).putBoolean("djLoadOverlay", next.djLoadOverlay).putString("djProfile", next.djProfile).putString("djAccelerator", next.djAccelerator).putString("appTheme", next.appTheme).putString("lyricStyle", next.lyricStyle).putString("spectrumStyle", next.spectrumStyle).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
+            .putBoolean("djGroove", next.djGroove).putBoolean("djArc", next.djArc).putInt("djMinMatch", next.djMinMatch).putInt("djListenAhead", next.djListenAhead).putBoolean("djRevalidate", next.djRevalidate).putBoolean("djBeatFirst", next.djBeatFirst).putBoolean("djFastAnalysis", next.djFastAnalysis).putInt("djWorkers", next.djWorkers).putBoolean("djNeural", next.djNeural).putBoolean("djGenreAi", next.djGenreAi).putBoolean("djGenreGpu", next.djGenreGpu).putBoolean("djLoadOverlay", next.djLoadOverlay).putString("djProfile", next.djProfile)
+            .putString("videoQuality", next.videoQuality).putInt("stemsCacheMb", next.stemsCacheMb).putString("stemsModel", next.stemsModel).putInt("stemsPower", next.stemsPower).putString("spatialMode", next.spatialMode).putString("imageStyle", next.imageStyle).putInt("imageCell", next.imageCell).putFloat("imageContrast", next.imageContrast).putInt("imageBrightness", next.imageBrightness)
+            .putInt("imageAngle", next.imageAngle).putString("imageShape", next.imageShape).putBoolean("imageDuotone", next.imageDuotone).putInt("imageShadow", next.imageShadow)
+            .putInt("imageLight", next.imageLight).putBoolean("rounded", next.rounded).remove("playerV2").putString("appearance", next.appearance).putString("djAccelerator", next.djAccelerator).putString("appTheme", next.appTheme).putString("lyricStyle", next.lyricStyle).putString("spectrumStyle", next.spectrumStyle).putBoolean("showDjData", next.showDjData).putBoolean("djPulse", next.djPulse).putInt("onlineData", next.onlineData)
             .putInt("elzarTapeType", next.elzarTapeType).putInt("elzarVinylCondition", next.elzarVinylCondition).putBoolean("elzarVinylFast", next.elzarVinylFast)
             .putInt("elzarConsole", next.elzarConsole).putInt("elzarTube", next.elzarTube).putInt("elzarAir", next.elzarAir).putInt("elzarClip", next.elzarClip)
             .putBoolean("elzarMidSide", next.elzarMidSide).putInt("elzarVoice", next.elzarVoice).putString("elzarVoiceValues", next.elzarVoiceValues.joinToString(",")).putBoolean("elzarBypass", next.elzarBypass)

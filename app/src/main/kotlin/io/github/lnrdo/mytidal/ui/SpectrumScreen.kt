@@ -61,7 +61,7 @@ fun SpectrumScreen(state: AppState, accent: Color = Color.White, onStyle: (Spect
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         }
-        BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).safeDrawingPadding().testTag("spectrum-screen").pointerInput(Unit) {
+        BoxWithConstraints(Modifier.fillMaxSize().appEffect().background(Color.Black).safeDrawingPadding().testTag("spectrum-screen").pointerInput(Unit) {
             var total = 0f
             detectVerticalDragGestures(onDragStart = { total = 0f }, onDragEnd = { if (total > 150f) onClose() }) { _, amount -> total += amount }
         }) {

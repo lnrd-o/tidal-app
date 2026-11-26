@@ -55,7 +55,7 @@ fun DjaiPage(state: AppState, vm: MainViewModel) {
     var forget by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { SectionTitle(stringResource(R.string.djcfg_section_mix)) }
-        item { SwitchRow(OpenTuneIcons.Waves, stringResource(R.string.settings_djai), settings.djai, { value -> vm.settings { it.copy(djai = value) } }, stringResource(R.string.settings_djai_text)) }
+        item { SwitchRow(OpenTuneIcons.Djai, stringResource(R.string.settings_djai), settings.djai, { value -> vm.settings { it.copy(djai = value) } }, stringResource(R.string.settings_djai_text)) }
 
         item { SectionTitle(stringResource(R.string.djcfg_section_transitions)) }
         item { SwitchRow(OpenTuneIcons.Tune, stringResource(R.string.djcfg_filters), settings.djFilters, { value -> vm.settings { it.copy(djFilters = value) } }, stringResource(R.string.djcfg_filters_text)) }

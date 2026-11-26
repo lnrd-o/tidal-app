@@ -50,7 +50,7 @@ fun MixesScreen(state: AppState, vm: MainViewModel) {
     val list = cards
     if (list == null) return
     if (list.isEmpty()) {
-        EmptyState(OpenTuneIcons.Waves, stringResource(R.string.mixes_empty_title), stringResource(R.string.mixes_empty_text, io.github.lnrdo.mytidal.core.dj.AutoMixes.MIN_SONGS))
+        EmptyState(OpenTuneIcons.Djai, stringResource(R.string.mixes_empty_title), stringResource(R.string.mixes_empty_text, io.github.lnrdo.mytidal.core.dj.AutoMixes.MIN_SONGS))
         return
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -71,8 +71,8 @@ private fun MixRow(card: MixCard, onPlay: (String) -> Unit) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(stringResource(R.string.mixes_summary, card.tracks.size, minutes / 60, minutes % 60), fontFamily = AppFonts.mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(stringResource(R.string.action_play), Modifier.border(1.dp, Color.White).clickable { onPlay(title) }.padding(horizontal = 14.dp, vertical = 8.dp),
-                fontFamily = AppFonts.body, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White)
+            Text(stringResource(R.string.action_play), Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface).clickable { onPlay(title) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                fontFamily = AppFonts.body, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
         }
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (track in card.tracks.take(5)) TrackArtwork(track, null, Modifier.size(56.dp))

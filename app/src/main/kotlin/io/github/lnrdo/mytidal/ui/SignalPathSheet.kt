@@ -1,5 +1,6 @@
 package io.github.lnrdo.mytidal.ui
 
+import androidx.compose.material3.MaterialTheme
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -172,7 +173,7 @@ private fun khz(hz: Int): String = (hz / 1000.0).let { if (abs(it - it.roundToIn
 @OptIn(ExperimentalMaterial3Api::class)
 @UnstableApi
 @Composable
-fun SignalPathSheet(label: String, track: Track?, playing: Boolean, accent: Color = Color.White, onSpectrum: () -> Unit = {}, elzar: Triple<Int, Int, Int>? = null, onClose: () -> Unit) {
+fun SignalPathSheet(label: String, track: Track?, playing: Boolean, accent: Color = MaterialTheme.colorScheme.onSurface, onSpectrum: () -> Unit = {}, elzar: Triple<Int, Int, Int>? = null, onClose: () -> Unit) {
     val live by rememberLive()
     val output by rememberOutput()
     val source = SourceReadout.from(label)
@@ -237,21 +238,21 @@ fun SignalPathSheet(label: String, track: Track?, playing: Boolean, accent: Colo
     })
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), shape = RectangleShape,
-        containerColor = Color(0xFF161616), contentColor = Color.White, scrimColor = Color.Black.copy(alpha = .55f),
-        dragHandle = { Box(Modifier.padding(vertical = 10.dp).size(32.dp, 3.dp).background(Color.White.copy(alpha = .3f))) }) {
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface, scrimColor = Color.Black.copy(alpha = .55f),
+        dragHandle = { Box(Modifier.padding(vertical = 10.dp).size(32.dp, 3.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .3f))) }) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).testTag("signal-path")) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(stringResource(R.string.path_title), fontFamily = AppFonts.body, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text(" $verdict", fontFamily = AppFonts.body, fontSize = 22.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = .85f))
+                Text(" $verdict", fontFamily = AppFonts.body, fontSize = 22.sp, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .85f))
                 Spacer(Modifier.weight(1f))
                 FidelityMark(worst, Modifier.padding(bottom = 7.dp))
             }
-            Text(stringResource(R.string.path_hint), Modifier.padding(top = 4.dp, bottom = 18.dp), fontFamily = AppFonts.body, fontSize = 12.sp, color = Color.White.copy(alpha = .55f))
+            Text(stringResource(R.string.path_hint), Modifier.padding(top = 4.dp, bottom = 18.dp), fontFamily = AppFonts.body, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
             stages.forEachIndexed { index, stage -> StageRow(stage, first = index == 0, last = index == stages.lastIndex) }
             Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.path_spectrum).uppercase(), Modifier.weight(1f), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = .55f))
-                Text(stringResource(R.string.path_fullscreen).uppercase(), Modifier.border(1.dp, Color.White.copy(alpha = .35f), RectangleShape).clickable(role = Role.Button) { onSpectrum() }.padding(horizontal = 8.dp, vertical = 4.dp),
-                    fontFamily = AppFonts.body, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                Text(stringResource(R.string.path_spectrum).uppercase(), Modifier.weight(1f), fontFamily = AppFonts.body, fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+                Text(stringResource(R.string.path_fullscreen).uppercase(), Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .35f), RectangleShape).clickable(role = Role.Button) { onSpectrum() }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    fontFamily = AppFonts.body, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
             }
             SpectrumAnalyzer(playing, Modifier.fillMaxWidth(), color = accent)
         }
@@ -260,7 +261,7 @@ fun SignalPathSheet(label: String, track: Track?, playing: Boolean, accent: Colo
 
 @Composable
 private fun FidelityMark(fidelity: Fidelity, modifier: Modifier = Modifier, size: Dp = 7.dp) {
-    val color = when (fidelity) { Fidelity.HIRES, Fidelity.LOSSLESS -> Color.White; Fidelity.ENHANCED -> Color(0xFF9E9E9E); Fidelity.LOSSY -> Color(0xFFE0A040) }
+    val color = when (fidelity) { Fidelity.HIRES, Fidelity.LOSSLESS -> MaterialTheme.colorScheme.onSurface; Fidelity.ENHANCED -> Color(0xFF9E9E9E); Fidelity.LOSSY -> Color(0xFFE0A040) }
     Box(modifier.size(size).then(if (fidelity == Fidelity.LOSSLESS) Modifier.border(1.dp, color, RectangleShape) else Modifier.background(color)))
 }
 
@@ -270,10 +271,10 @@ private fun StageRow(stage: Stage, first: Boolean, last: Boolean) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable(role = Role.Button) { open = !open }) {
         Box(Modifier.width(40.dp).fillMaxHeight()) {
-            Box(Modifier.align(Alignment.TopCenter).width(1.dp).height(8.dp).background(if (first) Color.Transparent else Color.White.copy(alpha = .4f)))
-            Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).width(1.dp).fillMaxHeight().background(if (last) Color.Transparent else Color.White.copy(alpha = .4f)))
-            Box(Modifier.align(Alignment.TopCenter).padding(top = 6.dp).size(36.dp).background(Color(0xFF161616)).border(1.dp, Color.White, RectangleShape), contentAlignment = Alignment.Center) {
-                if (stage.icon != null) Icon(stage.icon, null, Modifier.size(18.dp), tint = Color.White)
+            Box(Modifier.align(Alignment.TopCenter).width(1.dp).height(8.dp).background(if (first) Color.Transparent else MaterialTheme.colorScheme.onSurface.copy(alpha = .4f)))
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).width(1.dp).fillMaxHeight().background(if (last) Color.Transparent else MaterialTheme.colorScheme.onSurface.copy(alpha = .4f)))
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 6.dp).size(36.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh).border(1.dp, MaterialTheme.colorScheme.onSurface, RectangleShape), contentAlignment = Alignment.Center) {
+                if (stage.icon != null) Icon(stage.icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
                 else Text(stage.tag.orEmpty(), fontFamily = AppFonts.body, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = .4.sp, maxLines = 1)
             }
         }
@@ -282,9 +283,9 @@ private fun StageRow(stage: Stage, first: Boolean, last: Boolean) {
                 Text(stage.title, Modifier.weight(1f, fill = false), fontFamily = AppFonts.body, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 FidelityMark(stage.fidelity, Modifier.padding(start = 8.dp), 6.dp)
             }
-            Text(stage.detail, Modifier.padding(top = 2.dp), fontFamily = AppFonts.body, fontSize = 14.sp, color = Color.White.copy(alpha = .72f))
+            Text(stage.detail, Modifier.padding(top = 2.dp), fontFamily = AppFonts.body, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f))
             AnimatedVisibility(open, enter = fadeIn(tween(160)) + expandVertically(tween(180)), exit = fadeOut(tween(120)) + shrinkVertically(tween(160))) {
-                Text(stage.explanation, Modifier.padding(top = 6.dp), fontFamily = AppFonts.body, fontSize = 12.sp, lineHeight = 17.sp, color = Color.White.copy(alpha = .55f))
+                Text(stage.explanation, Modifier.padding(top = 6.dp), fontFamily = AppFonts.body, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
             }
         }
     }

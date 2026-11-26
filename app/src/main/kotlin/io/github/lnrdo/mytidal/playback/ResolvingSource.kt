@@ -48,7 +48,7 @@ class ResolvingSource(private val app: OpenTuneApp, private val original: MediaI
                     val offlineCopy = app.library.get(track.id)?.localUri?.startsWith("opentune-offline:") == true
                     handler.post {
                         if (scope === owner) {
-                            val factory = DefaultMediaSourceFactory(app.sources.dataSource(app.settings.state.value.offline || offlineCopy || track.localUri?.startsWith("opentune-offline:") == true))
+                            val factory = DefaultMediaSourceFactory(app.sources.dataSource(app.settings.state.value.offline || offlineCopy || track.localUri?.startsWith("opentune-offline:") == true, track.id))
                             drmProvider?.let(factory::setDrmSessionManagerProvider)
                             factory.setLoadErrorHandlingPolicy(loadPolicy ?: androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(LOAD_RETRIES))
                             val source = factory.createMediaSource(resolved)

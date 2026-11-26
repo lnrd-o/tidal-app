@@ -79,7 +79,7 @@ class StemEngineTest {
         network!!.use {
             val sink = Memory(n)
             val began = System.nanoTime()
-            val ok = StemSeparator(network).separate(source, sink)
+            val ok = StemSeparator(network, power = (args.getString("power") ?: "2").toInt()).separate(source, sink)
             val seconds = (System.nanoTime() - began) / 1e9
             assertTrue(ok)
             val names = listOf("vocals", "drums", "bass", "other")
@@ -91,7 +91,7 @@ class StemEngineTest {
                 val rms = sqrt(sink.out[s][0].fold(0.0) { a, v -> a + v * v } / n)
                 val bands = bandEnergy(sink.out[s][0])
                 Log.i(tag, "  ${names[s]}: rms ${"%.4f".format(rms)}; share of each band (<150, 150-800, 0.8-4k, >4k Hz): " + bands.indices.joinToString(" ") { "%.0f%%".format(100 * bands[it] / total[it].coerceAtLeast(1e-12)) })
-                wav(File(context.filesDir, "stem_${model.id}_${network.where.name.lowercase()}_${names[s]}.wav"), sink.out[s][0], sink.out[s][1])
+                wav(File(context.filesDir, "stem_${model.id}_p${args.getString("power") ?: "2"}_${names[s]}.wav"), sink.out[s][0], sink.out[s][1])
             }
         }
     }

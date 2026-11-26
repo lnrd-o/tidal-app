@@ -1,5 +1,6 @@
 package io.github.lnrdo.mytidal.ui
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,11 +40,11 @@ fun RhythmConfirmCard(trackId: String, modifier: Modifier = Modifier) {
     var tapping by remember(trackId) { mutableStateOf(false) }
     val taps = remember(trackId) { mutableStateListOf<Long>() }
     val shown = RhythmStore.bpmFor(trackId) ?: entry.neuralBpm
-    Column(modifier.fillMaxWidth().border(1.dp, Color.White.copy(alpha = .22f)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+    Column(modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .22f)).padding(horizontal = 12.dp, vertical = 10.dp)) {
         Text(stringResource(R.string.rhythm_heard, "%.1f".format(shown), entry.beatsPerBar, entry.accelerator).uppercase(), fontFamily = AppFonts.mono, fontSize = 11.sp, letterSpacing = 1.sp,
-            color = Color.White.copy(alpha = .85f))
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .85f))
         if (!tapping) {
-            Text(stringResource(R.string.rhythm_ask), Modifier.padding(top = 4.dp), fontSize = 12.sp, color = Color.White.copy(alpha = .6f))
+            Text(stringResource(R.string.rhythm_ask), Modifier.padding(top = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .6f))
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Choice(stringResource(R.string.rhythm_right)) { RhythmStore.answer(trackId, shown) }
                 Choice(stringResource(R.string.rhythm_half)) { RhythmStore.answer(trackId, shown / 2) }
@@ -54,10 +55,10 @@ fun RhythmConfirmCard(trackId: String, modifier: Modifier = Modifier) {
             // Tap tempo: the median gap of the last taps, once there are at least four.
             val bpm = if (taps.size >= 4) taps.zipWithNext { a, b -> b - a }.sorted().let { 60_000.0 / it[it.size / 2] } else null
             Text(if (bpm == null) stringResource(R.string.rhythm_tap_more, (4 - taps.size).coerceAtLeast(0)) else stringResource(R.string.rhythm_tapped, "%.1f".format(bpm)),
-                Modifier.padding(top = 4.dp), fontSize = 12.sp, color = Color.White.copy(alpha = .7f))
+                Modifier.padding(top = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.height(44.dp).weight(1f).border(1.dp, Color.White).clickable { taps.add(System.currentTimeMillis()); if (taps.size > 12) taps.removeAt(0) }, contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.rhythm_tap_here).uppercase(), fontSize = 12.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                Box(Modifier.height(44.dp).weight(1f).border(1.dp, MaterialTheme.colorScheme.onSurface).clickable { taps.add(System.currentTimeMillis()); if (taps.size > 12) taps.removeAt(0) }, contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.rhythm_tap_here).uppercase(), fontSize = 12.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 }
                 if (bpm != null) Choice(stringResource(R.string.rhythm_save)) { RhythmStore.answer(trackId, bpm); tapping = false }
                 Choice(stringResource(R.string.action_cancel)) { tapping = false }
@@ -68,7 +69,7 @@ fun RhythmConfirmCard(trackId: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Choice(label: String, onClick: () -> Unit) {
-    Box(Modifier.border(1.dp, Color.White.copy(alpha = .4f)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)) {
-        Text(label, fontSize = 12.sp, color = Color.White)
+    Box(Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .4f)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp)) {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
     }
 }

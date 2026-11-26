@@ -128,7 +128,7 @@ fun SheetHandle() { androidx.compose.foundation.layout.Box(Modifier.padding(vert
 @Composable
 fun EmptyState(icon: ImageVector, title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(shape = androidx.compose.ui.graphics.RectangleShape, color = MaterialTheme.colorScheme.surfaceContainerLow,
+        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Icon(icon, null, Modifier.padding(24.dp).size(34.dp), tint = MaterialTheme.colorScheme.primary)
         }
@@ -276,20 +276,20 @@ fun UpperLabel(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun TuneButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    androidx.compose.material3.Button(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape,
+    androidx.compose.material3.Button(onClick, modifier, enabled, shape = MaterialTheme.shapes.extraLarge,
         contentPadding = PaddingValues(horizontal = 22.dp, vertical = 13.dp), content = content)
 }
 
 @Composable
 fun TuneTonalButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    FilledTonalButton(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape,
+    FilledTonalButton(onClick, modifier, enabled, shape = MaterialTheme.shapes.extraLarge,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 13.dp), content = content)
 }
 
 @Composable
 fun TuneOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     contentPadding: PaddingValues = PaddingValues(horizontal = 18.dp, vertical = 13.dp), content: @Composable RowScope.() -> Unit) {
-    OutlinedButton(onClick, modifier, enabled, shape = androidx.compose.ui.graphics.RectangleShape, contentPadding = contentPadding, content = content)
+    OutlinedButton(onClick, modifier, enabled, shape = MaterialTheme.shapes.extraLarge, contentPadding = contentPadding, content = content)
 }
 
 /** What D'JAI has kept about songs, by track id. The activity provides it, and the rows of the lists read it. */
